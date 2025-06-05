@@ -1,0 +1,23 @@
+{
+"name": "Lightning Piggy",
+"publisher": "LightningPiggy Foundation",
+"short_description": "Display wallet that shows balance, transactions, receive QR code etc.",
+"long_description": "See https://www.LightningPiggy.com",
+"icon_url": "https://apps.micropythonos.com/apps/com.lightningpiggy.displaywallet/icons/com.lightningpiggy.displaywallet_0.0.1_64x64.png",
+"download_url": "https://apps.micropythonos.com/apps/com.lightningpiggy.displaywallet/mpks/com.lightningpiggy.displaywallet_0.0.1.mpk",
+"fullname": "com.lightningpiggy.displaywallet",
+"version": "0.0.1",
+"category": "finance",
+"activities": [
+    {
+      "entrypoint": "assets/displaywallet.py",
+      "classname": "DisplayWallet",
+      "intent_filters": [
+        {
+          "action": "main",
+          "category": "launcher"
+        }
+      ]
+    }
+  ]
+}
