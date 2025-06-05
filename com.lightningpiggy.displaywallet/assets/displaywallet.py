@@ -39,10 +39,11 @@ class DisplayWallet(Activity):
         self.payments_label.align_to(balance_line,lv.ALIGN.OUT_BOTTOM_LEFT,0,10)
         self.payments_label.set_style_text_font(lv.font_montserrat_16, 0)
         settings_button = lv.button(main_screen)
+        settings_button.set_size(lv.pct(20), lv.pct(20))
         settings_button.align(lv.ALIGN.BOTTOM_RIGHT, 0, 0)
-        snap_label = lv.label(settings_button)
-        snap_label.set_text(lv.SYMBOL.SETTINGS)
-        snap_label.center()
+        settings_label = lv.label(settings_button)
+        settings_label.set_text(lv.SYMBOL.SETTINGS)
+        settings_label.center()
         settings_button.add_event_cb(self.settings_button_tap,lv.EVENT.CLICKED,None)
         self.setContentView(main_screen)
 
@@ -127,7 +128,7 @@ class SettingsActivity(Activity):
             {"title": "Wallet Type", "key": "wallet_type", "value_label": None, "cont": None},
             {"title": "LNBits URL", "key": "lnbits_url", "value_label": None, "cont": None},
             {"title": "LNBits Read Key", "key": "lnbits_readkey", "value_label": None, "cont": None},
-            {"title": "Static receive code", "key": "lnbits_static_receive_code", "value_label": None, "cont": None},
+            {"title": "Receive code", "key": "lnbits_static_receive_code", "value_label": None, "cont": None, "placeholder": "Optional Lightning Address or LNURL-pay code. Will be fetched if empty."},
             {"title": "NWC URL", "key": "nwc_url", "value_label": None, "cont": None},
         ]
         self.keyboard = None
@@ -163,7 +164,7 @@ class SettingsActivity(Activity):
 
             # Value label (smaller, below title)
             value = lv.label(setting_cont)
-            value.set_text(self.prefs.get_string(setting["key"], "Not set"))
+            value.set_text(self.prefs.get_string(setting["key"], "(not set)"))
             value.set_style_text_font(lv.font_montserrat_12, 0)
             value.set_style_text_color(lv.color_hex(0x666666), 0)
             value.set_pos(0, 20)
@@ -249,7 +250,11 @@ class SettingActivity(Activity):
             self.textarea = lv.textarea(settings_screen_detail)
             self.textarea.set_width(lv.pct(100))
             self.textarea.set_height(lv.SIZE_CONTENT)
+            self.textarea.align_to(top_cont, lv.ALIGN.OUT_BOTTOM_MID, 0, 0)
             self.textarea.set_text(self.prefs.get_string(setting["key"], ""))
+            placeholder = setting.get("placeholder")
+            if placeholder:
+                self.textarea.set_placeholder_text(placeholder)
             self.textarea.add_event_cb(self.show_keyboard, lv.EVENT.CLICKED, None)
             self.textarea.add_event_cb(self.show_keyboard, lv.EVENT.FOCUSED, None)
             self.textarea.add_event_cb(self.hide_keyboard, lv.EVENT.DEFOCUSED, None)
@@ -350,7 +355,7 @@ class SettingActivity(Activity):
         editor = self.prefs.edit()
         editor.put_string(setting["key"], new_value)
         editor.commit()
-        setting["value_label"].set_text(new_value if new_value else "Not set")
+        setting["value_label"].set_text(new_value if new_value else "(not set)")
         self.finish()
 
 class FullscreenQR(Activity):
