@@ -101,10 +101,13 @@ class Payment:
 
 class Wallet:
 
+    # Public variables
     # These values could be loading from a cache.json file at __init__
     last_known_balance = -1
-
     payment_list = None
+    static_receive_code = None
+
+    # Variables
     keep_running = True
     
     # Callbacks:
@@ -150,20 +153,18 @@ class Wallet:
             self.payments_updated_cb()
 
     def handle_new_static_receive_code(self, new_static_receive_code):
-        if not self.keep_running:
-            return
         print("handle_new_static_receive_code")
+        if not self.keep_running or not new_static_receive_code:
+            return
         if self.static_receive_code != new_static_receive_code:
             print("new list of payments")
             self.static_receive_code = new_static_receive_code
             self.static_receive_code_updated_cb()
 
-    # Need callbacks for:
+    # Maybe also add callbacks for:
     #    - started (so the user can show the UI) 
     #    - stopped (so the user can delete/free it)
     #    - error (so the user can show the error)
-    #    - balance
-    #    - transactions
     def start(self, balance_updated_cb, payments_updated_cb, static_receive_code_updated_cb = None):
         self.keep_running = True
         self.balance_updated_cb = balance_updated_cb
@@ -178,10 +179,14 @@ class Wallet:
     def is_running(self):
         return self.keep_running
 
+
+
+
+
+
 class LNBitsWallet(Wallet):
 
     ws = None
-    static_receive_code = None
 
     def __init__(self, lnbits_url, lnbits_readkey):
         super().__init__()
@@ -241,10 +246,9 @@ class LNBitsWallet(Wallet):
                 new_balance = self.fetch_balance() # TODO: only do this every 60 seconds, but loop the main thread more frequently
             except Exception as e:
                 print(f"WARNING: wallet_manager_thread got exception {e}, ignorning.")
-            if not static_receive_code:
-                self.static_receive_code = self.fetch_static_receive_code()
-                # TODO: trigger callback to update UI
-            if not websocket_running and self.keep_running: # after
+            if not self.static_receive_code:
+                self.handle_new_static_receive_code(self.fetch_static_receive_code())
+            if not websocket_running and self.keep_running: # after the other things, listen for incoming payments
                 websocket_running = True
                 _thread.stack_size(mpos.apps.good_stack_size())
                 _thread.start_new_thread(self.websocket_thread, ())
@@ -282,7 +286,7 @@ class LNBitsWallet(Wallet):
                 raise e
 
     def fetch_payments(self):
-        paymentsurl = self.lnbits_url + "/lnurlp/api/v1/links?all_wallets=false"
+        paymentsurl = self.lnbits_url + "/api/v1/payments?limit=6"
         headers = {
             "X-Api-Key": self.lnbits_readkey,
         }
@@ -307,7 +311,6 @@ class LNBitsWallet(Wallet):
                 #raise e
 
     def fetch_static_receive_code(self):
-        to_return = None
         url = self.lnbits_url + "/lnurlp/api/v1/links?all_wallets=false"
         headers = {
             "X-Api-Key": self.lnbits_readkey,
@@ -326,13 +329,21 @@ class LNBitsWallet(Wallet):
                 print(f"Got links: {reply_object}")
                 for link in reply_object:
                     print(f"Got link: {link}")
-                    #paymentObj = self.parseLNBitsPayment(transaction)
-                    #self.handle_new_payment(paymentObj)
-                    # TODO
+                    return link.get("lnurl")
             except Exception as e:
                 print(f"Could not parse reponse text '{response_text}' as JSON: {e}")
                 #raise e
-        return to_return
+
+
+
+
+
+
+
+
+
+
+
 
 class NWCWallet(Wallet):
 
@@ -358,6 +369,8 @@ class NWCWallet(Wallet):
         return comment
 
     def wallet_manager_thread(self):
+        self.handle_new_static_receive_code(self.lud16)
+
         self.private_key = PrivateKey(bytes.fromhex(self.secret))
         self.relay_manager = RelayManager()
         self.relay_manager.add_relay(self.relay)

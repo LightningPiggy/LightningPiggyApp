@@ -23,12 +23,13 @@ class DisplayWallet(Activity):
         self.balance_label.align(lv.ALIGN.TOP_LEFT, 0, 0)
         self.balance_label.set_style_text_font(lv.font_montserrat_22, 0)
         self.receive_qr = lv.qrcode(main_screen)
-        self.receive_qr.set_size(50)
+        self.receive_qr.set_size(80)
+        #self.receive_qr.set_size(240) bigger will result in simpler code (less error correction?)
         self.receive_qr.set_dark_color(lv.color_black())
         self.receive_qr.set_light_color(lv.color_white())
         self.receive_qr.align(lv.ALIGN.TOP_RIGHT,0,0)
         self.receive_qr.set_style_border_color(lv.color_white(), 0)
-        self.receive_qr.set_style_border_width(2, 0);
+        self.receive_qr.set_style_border_width(1, 0);
         self.receive_qr.add_flag(lv.obj.FLAG.CLICKABLE)
         self.receive_qr.add_event_cb(self.qr_clicked_cb,lv.EVENT.CLICKED,None)
         balance_line = lv.line(main_screen)
@@ -61,22 +62,15 @@ class DisplayWallet(Activity):
         if wallet_type == "lnbits":
             try:
                 self.wallet = LNBitsWallet(config.get_string("lnbits_url"), config.get_string("lnbits_readkey"))
-                self.receive_qr_data = config.get_string("lnbits_static_receive_code")
-                if not self.receive_qr_data:
-                    self.wallet.fetch_static_receive_code()
             except Exception as e:
                 self.payments_label.set_text(f"Couldn't initialize LNBitsWallet\nbecause: {e}")
         elif wallet_type == "nwc":
             try:
                 self.wallet = NWCWallet(config.get_string("nwc_url"))
-                self.receive_qr_data = wallet.lud16
             except Exception as e:
                 self.payments_label.set_text(f"Couldn't initialize NWCWallet\nbecause: {e}")
         else:
             self.payments_label.set_text(f"No or unsupported wallet\ntype configured: '{wallet_type}'")
-        if self.receive_qr_data:
-            print(f"Setting static_receive_code: {self.receive_qr_data}")
-            self.receive_qr.update(self.receive_qr_data, len(self.receive_qr_data))
         can_check_network = True
         try:
             import network
@@ -87,7 +81,7 @@ class DisplayWallet(Activity):
         else:
             if self.wallet:
                 self.payments_label.set_text(f"Connecting to {wallet_type} backend...")
-                self.wallet.start(self.redraw_balance_cb, self.redraw_payments_cb)
+                self.wallet.start(self.redraw_balance_cb, self.redraw_payments_cb, self.redraw_static_receive_code_cb)
             else:
                 self.payments_label.set_text(f"Could not start {wallet_type}  backend.")
 
@@ -104,13 +98,18 @@ class DisplayWallet(Activity):
         # this gets called from another thread (the wallet) so make sure it happens in the LVGL thread using lv.async_call():
         lv.async_call(lambda l: self.payments_label.set_text(str(self.wallet.payment_list)), None)
 
+    def redraw_static_receive_code_cb(self):
+        # this gets called from another thread (the wallet) so make sure it happens in the LVGL thread using lv.async_call():
+        self.receive_qr_data = self.wallet.static_receive_code
+        lv.async_call(lambda l: self.receive_qr.update(self.receive_qr_data, len(self.receive_qr_data)), None)
+
     def settings_button_tap(self, event):
         self.startActivity(Intent(activity_class=SettingsActivity))
     
     def main_ui_set_defaults(self):
         self.balance_label.set_text(lv.SYMBOL.REFRESH)
         self.payments_label.set_text(lv.SYMBOL.REFRESH)
-        self.receive_qr.update("EMPTY PLACEHOLDER", len("EMPTY PLACEHOLDER"))
+        #self.receive_qr.update("EMPTY PLACEHOLDER", len("EMPTY PLACEHOLDER"))
     
     def qr_clicked_cb(self, event):
         print("QR clicked")
@@ -360,12 +359,21 @@ class FullscreenQR(Activity):
     def onCreate(self):
         receive_qr_data = self.getIntent().extras.get("receive_qr_data")
         qr_screen = lv.obj()
+        qr_screen.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
+        qr_screen.set_scroll_dir(lv.DIR.NONE)
         big_receive_qr = lv.qrcode(qr_screen)
         big_receive_qr.set_size(240) # TODO: make this dynamic
         big_receive_qr.set_dark_color(lv.color_black())
         big_receive_qr.set_light_color(lv.color_white())
         big_receive_qr.center()
         big_receive_qr.set_style_border_color(lv.color_white(), 0)
-        big_receive_qr.set_style_border_width(3, 0);
+        big_receive_qr.set_style_border_width(0, 0);
         big_receive_qr.update(receive_qr_data, len(receive_qr_data))
+        close_button = lv.button(qr_screen)
+        close_button.set_size(round((320-240)/2),round((320-240)/2)) # TODO: make this dynamic
+        close_button.align(lv.ALIGN.TOP_RIGHT, 0, round(mpos.ui.NOTIFICATION_BAR_HEIGHT/2))
+        close_label = lv.label(close_button)
+        close_label.set_text(lv.SYMBOL.CLOSE)
+        close_label.center()
+        close_button.add_event_cb(lambda e: self.finish(),lv.EVENT.CLICKED,None)
         self.setContentView(qr_screen)
