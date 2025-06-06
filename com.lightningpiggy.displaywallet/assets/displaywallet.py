@@ -57,21 +57,24 @@ class DisplayWallet(Activity):
         config = mpos.config.SharedPreferences("com.lightningpiggy.displaywallet")
         wallet_type = config.get_string("wallet_type")
         if not wallet_type:
-            self.balance_label.set_text("Welcome!")
             self.payments_label.set_text(f"Please go into the settings\n to set a Wallet Type.")
             return # nothing is configured, nothing to do
         if wallet_type == "lnbits":
             try:
                 self.wallet = LNBitsWallet(config.get_string("lnbits_url"), config.get_string("lnbits_readkey"))
             except Exception as e:
-                self.payments_label.set_text(f"Couldn't initialize LNBitsWallet\nbecause: {e}")
+                self.payments_label.set_text(f"Couldn't initialize\nLNBits wallet because\n{e}")
+                return
         elif wallet_type == "nwc":
             try:
                 self.wallet = NWCWallet(config.get_string("nwc_url"))
             except Exception as e:
-                self.payments_label.set_text(f"Couldn't initialize NWCWallet\nbecause: {e}")
+                self.payments_label.set_text(f"Couldn't initialize\nNWC Wallet because\n{e}")
+                return
         else:
             self.payments_label.set_text(f"No or unsupported wallet\ntype configured: '{wallet_type}'")
+            return
+
         can_check_network = True
         try:
             import network
@@ -79,12 +82,9 @@ class DisplayWallet(Activity):
             can_check_network = False
         if can_check_network and not network.WLAN(network.STA_IF).isconnected():
             self.payments_label.set_text(f"WiFi is not connected, can't\ntalk to {wallet_type} backend.")
-        else:
-            if self.wallet:
-                self.payments_label.set_text(f"Connecting\nto {wallet_type} backend...")
-                self.wallet.start(self.redraw_balance_cb, self.redraw_payments_cb, self.redraw_static_receive_code_cb)
-            else:
-                self.payments_label.set_text(f"Could not\nstart {wallet_type}  backend.")
+        else: # by now, self.wallet can be assumed
+            self.payments_label.set_text(f"Connecting\nto {wallet_type} backend...\n\nIf this takes too long, it might be\ndown or something's wrong with\nthe settings.")
+            self.wallet.start(self.redraw_balance_cb, self.redraw_payments_cb, self.redraw_static_receive_code_cb)
 
     def onStop(self, main_screen):
         if self.wallet and self.destination != FullscreenQR:
@@ -108,10 +108,9 @@ class DisplayWallet(Activity):
         self.startActivity(Intent(activity_class=SettingsActivity))
     
     def main_ui_set_defaults(self):
-        self.balance_label.set_text(lv.SYMBOL.REFRESH)
+        self.balance_label.set_text("Welcome!")
         self.payments_label.set_text(lv.SYMBOL.REFRESH)
-        #self.receive_qr.update("EMPTY PLACEHOLDER", len("EMPTY PLACEHOLDER"))
-    
+
     def qr_clicked_cb(self, event):
         print("QR clicked")
         if not self.receive_qr_data:
@@ -135,8 +134,7 @@ class SettingsActivity(Activity):
     def onCreate(self):
         screen = lv.obj()
         print("creating SettingsActivity ui...")
-        #screen.set_size(lv.pct(100), lv.pct(100))
-        screen.set_style_pad_all(10, 0)
+        screen.set_style_pad_all(mpos.ui.pct_of_display_width(2), 0)
         screen.set_flex_flow(lv.FLEX_FLOW.COLUMN)
         screen.set_style_border_width(0, 0)
         self.setContentView(screen)
@@ -159,7 +157,7 @@ class SettingsActivity(Activity):
             setting_cont.set_height(lv.SIZE_CONTENT)
             setting_cont.set_style_border_width(1, 0)
             setting_cont.set_style_border_side(lv.BORDER_SIDE.BOTTOM, 0)
-            setting_cont.set_style_pad_all(8, 0)
+            setting_cont.set_style_pad_all(mpos.ui.pct_of_display_width(2), 0)
             setting_cont.add_flag(lv.obj.FLAG.CLICKABLE)
             setting["cont"] = setting_cont  # Store container reference for visibility control
 
@@ -201,13 +199,14 @@ class SettingActivity(Activity):
     def onCreate(self):
         setting = self.getIntent().extras.get("setting")
         settings_screen_detail = lv.obj()
-        settings_screen_detail.set_style_pad_all(10, 0)
+        settings_screen_detail.set_style_pad_all(mpos.ui.pct_of_display_width(2), 0)
         settings_screen_detail.set_flex_flow(lv.FLEX_FLOW.COLUMN)
 
         top_cont = lv.obj(settings_screen_detail)
         top_cont.set_width(lv.pct(100))
+        top_cont.set_style_border_width(0, 0)
         top_cont.set_height(lv.SIZE_CONTENT)
-        top_cont.set_style_pad_all(0, 0)
+        top_cont.set_style_pad_all(mpos.ui.pct_of_display_width(1), 0)
         top_cont.set_flex_flow(lv.FLEX_FLOW.ROW)
         top_cont.set_style_flex_main_place(lv.FLEX_ALIGN.SPACE_BETWEEN, 0)
 
@@ -223,7 +222,6 @@ class SettingActivity(Activity):
         cambuttonlabel.set_text("SCAN QR")
         cambuttonlabel.center()
         cambutton.add_event_cb(self.cambutton_cb, lv.EVENT.CLICKED, None)
-
         if setting["key"] == "wallet_type":
             cambutton.add_flag(lv.obj.FLAG.HIDDEN)
             # Create container for radio buttons
@@ -252,7 +250,9 @@ class SettingActivity(Activity):
             self.textarea.set_width(lv.pct(100))
             self.textarea.set_height(lv.SIZE_CONTENT)
             self.textarea.align_to(top_cont, lv.ALIGN.OUT_BOTTOM_MID, 0, 0)
-            self.textarea.set_text(self.prefs.get_string(setting["key"], ""))
+            current = self.prefs.get_string(setting["key"])
+            if current:
+                self.textarea.set_text(current)
             placeholder = setting.get("placeholder")
             if placeholder:
                 self.textarea.set_placeholder_text(placeholder)
@@ -269,8 +269,8 @@ class SettingActivity(Activity):
         # Button container
         btn_cont = lv.obj(settings_screen_detail)
         btn_cont.set_width(lv.pct(100))
+        btn_cont.set_style_border_width(0, 0)
         btn_cont.set_height(lv.SIZE_CONTENT)
-        btn_cont.set_style_pad_all(5, 0)
         btn_cont.set_flex_flow(lv.FLEX_FLOW.ROW)
         btn_cont.set_style_flex_main_place(lv.FLEX_ALIGN.SPACE_BETWEEN, 0)
         # Save button

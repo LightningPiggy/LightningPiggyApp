@@ -190,6 +190,10 @@ class LNBitsWallet(Wallet):
 
     def __init__(self, lnbits_url, lnbits_readkey):
         super().__init__()
+        if not lnbits_url:
+            raise ValueError('LNBits URL is not set.')
+        elif not lnbits_readkey:
+            raise ValueError('LNBits Read Key is not set.')
         self.lnbits_url = lnbits_url
         self.lnbits_readkey = lnbits_readkey
 
@@ -238,6 +242,7 @@ class LNBitsWallet(Wallet):
         self.ws.run_forever()
 
 
+    # Currently, there's no mechanism for this thread to signal fatal errors, like typos in the URLs.
     def wallet_manager_thread(self):
         print("wallet_manager_thread")
         websocket_running = False
@@ -320,6 +325,7 @@ class LNBitsWallet(Wallet):
             response = requests.get(url, timeout=10, headers=headers)
         except Exception as e:
             print("Request failed:", e)
+            return
         if response and response.status_code == 200 and self.keep_running:
             response_text = response.text
             print(f"Got response text: {response_text}")
@@ -350,8 +356,18 @@ class NWCWallet(Wallet):
     def __init__(self, nwc_url):
         super().__init__()
         self.nwc_url = nwc_url
+        if not nwc_url:
+            raise ValueError('NWC URL is not set.')
         self.connected = False
         self.relay, self.wallet_pubkey, self.secret, self.lud16 = self.parse_nwc_url(self.nwc_url)
+        if not self.relay:
+            raise ValueError('Missing relay in NWC URL.')
+        if not self.wallet_pubkey:
+            raise ValueError('Missing public key in NWC URL.')
+        if not self.secret:
+            raise ValueError('Missing "secret" in NWC URL.')
+        if not self.lud16:
+            raise ValueError('Missing lud16 (= lighning address) in NWC URL.')
 
     def getCommentFromTransaction(self, transaction):
         comment = ""
