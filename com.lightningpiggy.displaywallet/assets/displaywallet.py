@@ -132,10 +132,6 @@ class SettingsActivity(Activity):
             {"title": "Receive code", "key": "lnbits_static_receive_code", "value_label": None, "cont": None, "placeholder": "Optional Lightning Address or LNURL-pay code. Will be fetched if empty."},
             {"title": "NWC URL", "key": "nwc_url", "value_label": None, "cont": None},
         ]
-        self.keyboard = None
-        self.textarea = None
-        self.radio_container = None
-        self.active_radio_index = 0  # Track active radio button index
 
     def onCreate(self):
         screen = lv.obj()
@@ -197,6 +193,12 @@ class SettingsActivity(Activity):
 
 # Used to edit one setting:
 class SettingActivity(Activity):
+
+    keyboard = None
+    textarea = None
+    radio_container = None
+    active_radio_index = 0  # Track active radio button index
+
     def __init__(self):
         super().__init__()
         self.prefs = mpos.config.SharedPreferences("com.lightningpiggy.displaywallet")
@@ -256,16 +258,14 @@ class SettingActivity(Activity):
             placeholder = setting.get("placeholder")
             if placeholder:
                 self.textarea.set_placeholder_text(placeholder)
-            self.textarea.add_event_cb(self.show_keyboard, lv.EVENT.CLICKED, None)
-            self.textarea.add_event_cb(self.show_keyboard, lv.EVENT.FOCUSED, None)
-            self.textarea.add_event_cb(self.hide_keyboard, lv.EVENT.DEFOCUSED, None)
+            self.textarea.add_event_cb(lambda *args: mpos.ui.anim.smooth_show(self.keyboard), lv.EVENT.CLICKED, None) # it might be focused, but keyboard hidden (because ready/cancel clicked)
+            self.textarea.add_event_cb(lambda *args: mpos.ui.anim.smooth_hide(self.keyboard), lv.EVENT.DEFOCUSED, None)
             # Initialize keyboard (hidden initially)
             self.keyboard = lv.keyboard(lv.layer_sys())
-            self.keyboard.set_size(lv.pct(100), lv.pct(40))
             self.keyboard.align(lv.ALIGN.BOTTOM_MID, 0, 0)
             self.keyboard.add_flag(lv.obj.FLAG.HIDDEN)
-            self.keyboard.add_event_cb(self.keyboard_cb, lv.EVENT.READY, None)
-            self.keyboard.add_event_cb(self.keyboard_cb, lv.EVENT.CANCEL, None)
+            self.keyboard.add_event_cb(lambda *args: mpos.ui.anim.smooth_hide(self.keyboard), lv.EVENT.READY, None)
+            self.keyboard.add_event_cb(lambda *args: mpos.ui.anim.smooth_hide(self.keyboard), lv.EVENT.CANCEL, None)
             self.keyboard.set_textarea(self.textarea)
 
         # Button container
@@ -290,21 +290,6 @@ class SettingActivity(Activity):
         cancel_label.center()
         cancel_btn.add_event_cb(lambda e: self.finish(), lv.EVENT.CLICKED, None)
         self.setContentView(settings_screen_detail)
-
-    def hide_keyboard(self, event=None):
-        print("hide_keyboard: hiding keyboard")
-        self.keyboard.add_flag(lv.obj.FLAG.HIDDEN)
-
-    def show_keyboard(self, event):
-        print("showing keyboard")
-        self.keyboard.remove_flag(lv.obj.FLAG.HIDDEN)
-
-    def keyboard_cb(self, event=None):
-        print("keyboard_cb: Keyboard event triggered")
-        code = event.get_code()
-        if code == lv.EVENT.READY or code == lv.EVENT.CANCEL:
-            print("keyboard_cb: READY or CANCEL or RETURN clicked, hiding keyboard")
-            self.hide_keyboard()
 
     def radio_event_handler(self, event):
         old_cb = self.radio_container.get_child(self.active_radio_index)
