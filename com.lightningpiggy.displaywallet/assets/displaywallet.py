@@ -1,5 +1,6 @@
 from mpos.apps import Activity, Intent
 import mpos.config
+import mpos.ui
 
 from wallet import LNBitsWallet, NWCWallet
 from captureqr import Camera
@@ -23,7 +24,7 @@ class DisplayWallet(Activity):
         self.balance_label.align(lv.ALIGN.TOP_LEFT, 0, 0)
         self.balance_label.set_style_text_font(lv.font_montserrat_22, 0)
         self.receive_qr = lv.qrcode(main_screen)
-        self.receive_qr.set_size(80)
+        self.receive_qr.set_size(mpos.ui.pct_of_display_width(20))
         #self.receive_qr.set_size(240) bigger will result in simpler code (less error correction?)
         self.receive_qr.set_dark_color(lv.color_black())
         self.receive_qr.set_light_color(lv.color_white())
@@ -81,10 +82,10 @@ class DisplayWallet(Activity):
             self.payments_label.set_text(f"WiFi is not connected, can't\ntalk to {wallet_type} backend.")
         else:
             if self.wallet:
-                self.payments_label.set_text(f"Connecting to {wallet_type} backend...")
+                self.payments_label.set_text(f"Connecting\nto {wallet_type} backend...")
                 self.wallet.start(self.redraw_balance_cb, self.redraw_payments_cb, self.redraw_static_receive_code_cb)
             else:
-                self.payments_label.set_text(f"Could not start {wallet_type}  backend.")
+                self.payments_label.set_text(f"Could not\nstart {wallet_type}  backend.")
 
     def onStop(self, main_screen):
         if self.wallet and self.destination != FullscreenQR:
@@ -367,7 +368,7 @@ class FullscreenQR(Activity):
         qr_screen.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
         qr_screen.set_scroll_dir(lv.DIR.NONE)
         big_receive_qr = lv.qrcode(qr_screen)
-        big_receive_qr.set_size(240) # TODO: make this dynamic
+        big_receive_qr.set_size(mpos.ui.min_resolution())
         big_receive_qr.set_dark_color(lv.color_black())
         big_receive_qr.set_light_color(lv.color_white())
         big_receive_qr.center()
@@ -375,7 +376,7 @@ class FullscreenQR(Activity):
         big_receive_qr.set_style_border_width(0, 0);
         big_receive_qr.update(receive_qr_data, len(receive_qr_data))
         close_button = lv.button(qr_screen)
-        close_button.set_size(round((320-240)/2),round((320-240)/2)) # TODO: make this dynamic
+        close_button.set_size(round((mpos.ui.max_resolution()-mpos.ui.min_resolution())/2),round((mpos.ui.max_resolution()-mpos.ui.min_resolution())/2))
         close_button.align(lv.ALIGN.TOP_RIGHT, 0, round(mpos.ui.NOTIFICATION_BAR_HEIGHT/2))
         close_label = lv.label(close_button)
         close_label.set_text(lv.SYMBOL.CLOSE)
