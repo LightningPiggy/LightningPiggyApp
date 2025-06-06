@@ -24,8 +24,7 @@ class DisplayWallet(Activity):
         self.balance_label.align(lv.ALIGN.TOP_LEFT, 0, 0)
         self.balance_label.set_style_text_font(lv.font_montserrat_22, 0)
         self.receive_qr = lv.qrcode(main_screen)
-        self.receive_qr.set_size(mpos.ui.pct_of_display_width(20))
-        #self.receive_qr.set_size(240) bigger will result in simpler code (less error correction?)
+        self.receive_qr.set_size(mpos.ui.pct_of_display_width(20)) # bigger QR results in simpler code (less error correction?)
         self.receive_qr.set_dark_color(lv.color_black())
         self.receive_qr.set_light_color(lv.color_white())
         self.receive_qr.align(lv.ALIGN.TOP_RIGHT,0,0)
@@ -40,10 +39,11 @@ class DisplayWallet(Activity):
         self.payments_label.align_to(balance_line,lv.ALIGN.OUT_BOTTOM_LEFT,0,10)
         self.payments_label.set_style_text_font(lv.font_montserrat_16, 0)
         settings_button = lv.button(main_screen)
-        settings_button.set_size(lv.pct(20), lv.pct(20))
+        settings_button.set_size(lv.pct(20), lv.pct(25))
         settings_button.align(lv.ALIGN.BOTTOM_RIGHT, 0, 0)
         settings_label = lv.label(settings_button)
         settings_label.set_text(lv.SYMBOL.SETTINGS)
+        settings_label.set_style_text_font(lv.font_montserrat_22, 0)
         settings_label.center()
         settings_button.add_event_cb(self.settings_button_tap,lv.EVENT.CLICKED,None)
         self.setContentView(main_screen)
@@ -55,12 +55,11 @@ class DisplayWallet(Activity):
         if self.wallet and self.wallet.is_running():
             return # wallet is already running, nothing to do
         config = mpos.config.SharedPreferences("com.lightningpiggy.displaywallet")
-        if not config:
-            return # nothing is configured, nothing to do
         wallet_type = config.get_string("wallet_type")
         if not wallet_type:
-            return # don't know what wallet to use so can't start it, nothing to do
-
+            self.balance_label.set_text("Welcome!")
+            self.payments_label.set_text(f"Please go into the settings\n to set a Wallet Type.")
+            return # nothing is configured, nothing to do
         if wallet_type == "lnbits":
             try:
                 self.wallet = LNBitsWallet(config.get_string("lnbits_url"), config.get_string("lnbits_readkey"))
@@ -124,7 +123,7 @@ class DisplayWallet(Activity):
 class SettingsActivity(Activity):
     def __init__(self):
         super().__init__()
-        self.prefs = mpos.config.SharedPreferences("com.lightningpiggy.displaywallet")
+        self.prefs = None
         self.settings = [
             {"title": "Wallet Type", "key": "wallet_type", "value_label": None, "cont": None},
             {"title": "LNBits URL", "key": "lnbits_url", "value_label": None, "cont": None},
@@ -136,13 +135,24 @@ class SettingsActivity(Activity):
     def onCreate(self):
         screen = lv.obj()
         print("creating SettingsActivity ui...")
-        screen.set_size(lv.pct(100), lv.pct(100))
+        #screen.set_size(lv.pct(100), lv.pct(100))
         screen.set_style_pad_all(10, 0)
         screen.set_flex_flow(lv.FLEX_FLOW.COLUMN)
         screen.set_style_border_width(0, 0)
-        
+        self.setContentView(screen)
+
+    def onResume(self, screen):
+        # reload settings because the SettingsActivity might have changed them - could be optimized to only load if it did:
+        self.prefs = mpos.config.SharedPreferences("com.lightningpiggy.displaywallet")
+        wallet_type = self.prefs.get_string("wallet_type")
+
         # Create settings entries
+        screen.clean()
         for setting in self.settings:
+            if wallet_type != "lnbits" and setting["key"].startswith("lnbits_"):
+                continue
+            if wallet_type != "nwc" and setting["key"].startswith("nwc_"):
+                continue
             # Container for each setting
             setting_cont = lv.obj(screen)
             setting_cont.set_width(lv.pct(100))
@@ -169,22 +179,6 @@ class SettingsActivity(Activity):
             setting_cont.add_event_cb(
                 lambda e, s=setting: self.startSettingActivity(s), lv.EVENT.CLICKED, None
             )
-        self.setContentView(screen)
-
-    def onResume(self, screen):
-        wallet_type = self.prefs.get_string("wallet_type", "lnbits")
-        # update setting visibility based on wallet_type:
-        for setting in self.settings:
-            if setting["key"].startswith("lnbits_"):
-                if wallet_type != "lnbits":
-                    setting["cont"].add_flag(lv.obj.FLAG.HIDDEN)
-                else:
-                    setting["cont"].remove_flag(lv.obj.FLAG.HIDDEN)
-            elif setting["key"].startswith("nwc_"):
-                if wallet_type != "nwc":
-                    setting["cont"].add_flag(lv.obj.FLAG.HIDDEN)
-                else:
-                    setting["cont"].remove_flag(lv.obj.FLAG.HIDDEN)
 
     def startSettingActivity(self, setting):
         intent = Intent(activity_class=SettingActivity)
@@ -241,8 +235,12 @@ class SettingActivity(Activity):
 
             # Create radio buttons
             options = [("LNBits", "lnbits"), ("Nostr Wallet Connect", "nwc")]
-            current_wallet = self.prefs.get_string("wallet_type", "lnbits")
-            self.active_radio_index = 0 if current_wallet == "lnbits" else 1
+            current_wallet = self.prefs.get_string("wallet_type")
+            self.active_radio_index = -1 # none
+            if current_wallet == "lnbits":
+                self.active_radio_index = 0
+            elif current_wallet == "nwc":
+                self.active_radio_index = 1
 
             for i, (text, _) in enumerate(options):
                 cb = self.create_radio_button(self.radio_container, text, i)
@@ -333,7 +331,12 @@ class SettingActivity(Activity):
     def save_setting(self, setting):
         if setting["key"] == "wallet_type" and self.radio_container:
             selected_idx = self.active_radio_index
-            new_value = "lnbits" if selected_idx == 0 else "nwc"
+            if selected_idx == 0:
+                new_value = "lnbits"
+            elif selected_idx == 1:
+                new_value = "nwc"
+            else:
+                return # nothing to save
         elif self.textarea:
             new_value = self.textarea.get_text()
         else:
