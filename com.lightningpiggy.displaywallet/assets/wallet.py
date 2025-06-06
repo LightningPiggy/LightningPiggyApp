@@ -411,6 +411,7 @@ class NWCWallet(Wallet):
         self.subscription_id = "micropython_nwc_" + str(round(time.time()))
         print(f"DEBUG: Setting up subscription with ID: {self.subscription_id}")
         self.filters = Filters([Filter(
+            #event_ids=[self.subscription_id], would be nice to filter, but not like this
             kinds=[23195, 23196],  # NWC reponses and notifications
             authors=[self.wallet_pubkey],
             pubkey_refs=[self.private_key.public_key.hex()]
@@ -496,7 +497,8 @@ class NWCWallet(Wallet):
         print(f"DEBUG: Creating encrypted DM to wallet pubkey: {self.wallet_pubkey}")
         dm = EncryptedDirectMessage(
             recipient_pubkey=self.wallet_pubkey,
-            cleartext_content=json.dumps(balance_request)
+            cleartext_content=json.dumps(balance_request),
+            kind=23194
         )
         print(f"DEBUG: Signing DM {json.dumps(dm)} with private key")
         self.private_key.sign_event(dm) # sign also does encryption if it's a encrypted dm
@@ -515,8 +517,8 @@ class NWCWallet(Wallet):
         }
         dm = EncryptedDirectMessage(
             recipient_pubkey=self.wallet_pubkey,
-            cleartext_content=json.dumps(list_transactions)
-            #cleartext_content='{"params":{"limit": 4 },"method":"list_transactions"}'
+            cleartext_content=json.dumps(list_transactions),
+            kind=23194
         )
         self.private_key.sign_event(dm) # sign also does encryption if it's a encrypted dm
         print("Publishing DM to fetch payments...")
