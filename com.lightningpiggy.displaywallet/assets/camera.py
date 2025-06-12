@@ -13,6 +13,7 @@ except Exception as e:
     print(f"Info: could not import webcam module: {e}")
 
 from mpos.apps import Activity
+import mpos.time
 
 class Camera(Activity):
 
@@ -107,14 +108,14 @@ class Camera(Activity):
         if self.cam:
             self.image.set_rotation(900) # internal camera is rotated 90 degrees
         else:
-            print("camtest.py: no internal camera found, trying webcam on /dev/video0")
+            print("camera app: no internal camera found, trying webcam on /dev/video0")
             try:
                 self.cam = webcam.init("/dev/video0")
                 self.use_webcam = True
             except Exception as e:
-                print(f"camtest.py: webcam exception: {e}")
+                print(f"camera app: webcam exception: {e}")
         if self.cam:
-            print("Camera initialized, continuing...")
+            print("Camera app initialized, continuing...")
             self.capture_timer = lv.timer_create(self.try_capture, 100, None)
             self.status_label_cont.add_flag(lv.obj.FLAG.HIDDEN)
             if self.scanqr_mode:
@@ -123,20 +124,20 @@ class Camera(Activity):
                 self.qr_button.remove_flag(lv.obj.FLAG.HIDDEN)
                 self.snap_button.remove_flag(lv.obj.FLAG.HIDDEN)
         else:
-            print("No camera found, stopping camtest.py")
+            print("No camera found, stopping camera app")
             if self.scanqr_mode:
                 self.finish()
 
 
     def onStop(self, screen):
-        print("camtest.py backgrounded, cleaning up...")
+        print("camera app backgrounded, cleaning up...")
         if self.capture_timer:
             self.capture_timer.delete()
         if self.use_webcam:
             webcam.deinit(self.cam)
         elif self.cam:
             self.cam.deinit()
-        print("camtest.py cleanup done.")
+        print("camera app cleanup done.")
 
     def qrdecode_one(self):
         try:
@@ -172,11 +173,11 @@ class Camera(Activity):
         except OSError:
             pass
         try:
-            os.mkdir("data/com.example.camtest")
+            os.mkdir("data/images")
         except OSError:
             pass
         if self.current_cam_buffer is not None:
-            filename="data/com.example.camtest/capture.raw"
+            filename=f"data/images/camera_capture_{mpos.time.epoch_seconds()}_{self.width}x{self.height}_RGB565.raw"
             try:
                 with open(filename, 'wb') as f:
                     f.write(self.current_cam_buffer)
@@ -222,7 +223,6 @@ class Camera(Activity):
                     self.qrdecode_one()
         except Exception as e:
             print(f"Camera capture exception: {e}")
-
 
 
 # Non-class functions:
