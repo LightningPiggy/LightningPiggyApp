@@ -3,7 +3,7 @@ import mpos.config
 import mpos.ui
 
 from wallet import LNBitsWallet, NWCWallet
-from captureqr import Camera
+from camera import Camera
 
 class DisplayWallet(Activity):
 
