@@ -71,6 +71,8 @@ class DisplayWallet(Activity):
         elif wallet_type == "nwc":
             try:
                 self.wallet = NWCWallet(config.get_string("nwc_url"))
+                self.wallet.static_receive_code = config.get_string("nwc_static_receive_code")
+                self.redraw_static_receive_code_cb()
             except Exception as e:
                 self.payments_label.set_text(f"Couldn't initialize\nNWC Wallet because\n{e}")
                 return

@@ -366,8 +366,8 @@ class NWCWallet(Wallet):
             raise ValueError('Missing public key in NWC URL.')
         if not self.secret:
             raise ValueError('Missing "secret" in NWC URL.')
-        if not self.lud16:
-            raise ValueError('Missing lud16 (= lighning address) in NWC URL.')
+        #if not self.lud16:
+        #    raise ValueError('Missing lud16 (= lightning address) in NWC URL.')
 
     def getCommentFromTransaction(self, transaction):
         comment = ""
@@ -385,7 +385,8 @@ class NWCWallet(Wallet):
         return comment
 
     def wallet_manager_thread(self):
-        self.handle_new_static_receive_code(self.lud16)
+        if self.lud16:
+            self.handle_new_static_receive_code(self.lud16)
 
         self.private_key = PrivateKey(bytes.fromhex(self.secret))
         self.relay_manager = RelayManager()
