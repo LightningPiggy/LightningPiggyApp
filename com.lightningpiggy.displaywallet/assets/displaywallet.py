@@ -247,7 +247,6 @@ class SettingActivity(Activity):
         setting_label.set_style_text_font(lv.font_montserrat_26, 0)
 
         if setting["key"] == "wallet_type":
-            cambutton.add_flag(lv.obj.FLAG.HIDDEN)
             # Create container for radio buttons
             self.radio_container = lv.obj(settings_screen_detail)
             self.radio_container.set_width(lv.pct(100))
@@ -312,19 +311,22 @@ class SettingActivity(Activity):
         cancel_label.set_text("Cancel")
         cancel_label.center()
         cancel_btn.add_event_cb(lambda e: self.finish(), lv.EVENT.CLICKED, None)
-        # Camera for text
-        cambutton = lv.button(settings_screen_detail)
-        cambutton.align(lv.ALIGN.BOTTOM_MID,0,0)
-        cambutton.set_size(lv.pct(100), lv.pct(30))
-        cambuttonlabel = lv.label(cambutton)
-        cambuttonlabel.set_text("Scan data from QR code")
-        cambuttonlabel.set_style_text_font(lv.font_montserrat_18, 0)
-        cambuttonlabel.align(lv.ALIGN.TOP_MID, 0, 0)
-        cambuttonlabel2 = lv.label(cambutton)
-        cambuttonlabel2.set_text("Tip: Create your own QR code,\nusing https://genqrcode.com or another tool.")
-        cambuttonlabel2.set_style_text_font(lv.font_montserrat_10, 0)
-        cambuttonlabel2.align(lv.ALIGN.BOTTOM_MID, 0, 0)
-        cambutton.add_event_cb(self.cambutton_cb, lv.EVENT.CLICKED, None)
+
+        if setting["key"] != "wallet_type":
+            # Scan QR button for text settings
+            cambutton = lv.button(settings_screen_detail)
+            cambutton.align(lv.ALIGN.BOTTOM_MID,0,0)
+            cambutton.set_size(lv.pct(100), lv.pct(30))
+            cambuttonlabel = lv.label(cambutton)
+            cambuttonlabel.set_text("Scan data from QR code")
+            cambuttonlabel.set_style_text_font(lv.font_montserrat_18, 0)
+            cambuttonlabel.align(lv.ALIGN.TOP_MID, 0, 0)
+            cambuttonlabel2 = lv.label(cambutton)
+            cambuttonlabel2.set_text("Tip: Create your own QR code,\nusing https://genqrcode.com or another tool.")
+            cambuttonlabel2.set_style_text_font(lv.font_montserrat_10, 0)
+            cambuttonlabel2.align(lv.ALIGN.BOTTOM_MID, 0, 0)
+            cambutton.add_event_cb(self.cambutton_cb, lv.EVENT.CLICKED, None)
+
         self.setContentView(settings_screen_detail)
 
     def onStop(self, screen):
