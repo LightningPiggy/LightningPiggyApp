@@ -15,7 +15,7 @@ except Exception as e:
 from mpos.apps import Activity
 import mpos.time
 
-class Camera(Activity):
+class CameraApp(Activity):
 
     width = 240
     height = 240

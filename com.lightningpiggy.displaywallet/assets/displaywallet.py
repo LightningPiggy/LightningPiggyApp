@@ -3,7 +3,7 @@ import mpos.config
 import mpos.ui
 
 from wallet import LNBitsWallet, NWCWallet
-from camera import Camera
+from camera import CameraApp
 
 class DisplayWallet(Activity):
 
@@ -96,17 +96,21 @@ class DisplayWallet(Activity):
         self.destination = None
 
     def redraw_balance_cb(self):
+        print("Redrawing balance...")
+        balance_text = "Unknown Balance"
         balance = self.wallet.last_known_balance
-        #balance_text = "丰 " + str(balance) # font doesnt support it
-        balance_text = str(balance) + " sat"
-        if balance > 1:
-            balance_text += "s"
-        if self.balance_mode_btc:
-            balance = balance / 100000000
-            #balance_text = "₿ " + str(balance) # font doesnt support it - although it should https://fonts.google.com/specimen/Montserrat
-            balance_text = str(balance) + " BTC"
+        if balance:
+            if self.balance_mode_btc:
+                balance = balance / 100000000
+                #balance_text = "₿ " + str(balance) # font doesnt support it - although it should https://fonts.google.com/specimen/Montserrat
+                balance_text = str(balance) + " BTC"
+            else:
+                #balance_text = "丰 " + str(balance) # font doesnt support it
+                balance_text = str(balance) + " sat"
+                if balance > 1:
+                    balance_text += "s"
         # this gets called from another thread (the wallet) so make sure it happens in the LVGL thread using lv.async_call():
-        lv.async_call(lambda l: self.balance_label.set_text(str(balance_text)), None)
+        lv.async_call(lambda l: self.balance_label.set_text(balance_text), None)
     
     def redraw_payments_cb(self):
         # this gets called from another thread (the wallet) so make sure it happens in the LVGL thread using lv.async_call():
@@ -349,7 +353,7 @@ class SettingActivity(Activity):
 
     def cambutton_cb(self, event):
         print("cambutton clicked!")
-        self.startActivityForResult(Intent(activity_class=Camera).putExtra("scanqr_mode", True), self.gotqr_result_callback)
+        self.startActivityForResult(Intent(activity_class=CameraApp).putExtra("scanqr_mode", True), self.gotqr_result_callback)
 
     def save_setting(self, setting):
         if setting["key"] == "wallet_type" and self.radio_container:
