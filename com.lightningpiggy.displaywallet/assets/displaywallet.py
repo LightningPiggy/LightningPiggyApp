@@ -23,7 +23,7 @@ class DisplayWallet(Activity):
         self.balance_label = lv.label(main_screen)
         self.balance_label.set_text("")
         self.balance_label.align(lv.ALIGN.TOP_LEFT, 0, 0)
-        self.balance_label.set_style_text_font(lv.font_montserrat_22, 0)
+        self.balance_label.set_style_text_font(lv.font_montserrat_26, 0)
         self.balance_label.add_flag(lv.obj.FLAG.CLICKABLE)
         self.balance_label.add_event_cb(self.balance_label_clicked_cb,lv.EVENT.CLICKED,None)
         self.receive_qr = lv.qrcode(main_screen)
@@ -46,7 +46,7 @@ class DisplayWallet(Activity):
         settings_button.align(lv.ALIGN.BOTTOM_RIGHT, 0, 0)
         settings_label = lv.label(settings_button)
         settings_label.set_text(lv.SYMBOL.SETTINGS)
-        settings_label.set_style_text_font(lv.font_montserrat_22, 0)
+        settings_label.set_style_text_font(lv.font_montserrat_26, 0)
         settings_label.center()
         settings_button.add_event_cb(self.settings_button_tap,lv.EVENT.CLICKED,None)
         self.setContentView(main_screen)
@@ -95,6 +95,12 @@ class DisplayWallet(Activity):
             self.wallet.stop()
         self.destination = None
 
+    def float_to_string(self, value):
+        # Format float to string with fixed-point notation, up to 6 decimal places
+        s = "{:.6f}".format(value)
+        # Remove trailing zeros and decimal point if no decimals remain
+        return s.rstrip("0").rstrip(".")
+
     def redraw_balance_cb(self):
         print("Redrawing balance...")
         balance_text = "Unknown Balance"
@@ -103,7 +109,7 @@ class DisplayWallet(Activity):
             if self.balance_mode_btc:
                 balance = balance / 100000000
                 #balance_text = "₿ " + str(balance) # font doesnt support it - although it should https://fonts.google.com/specimen/Montserrat
-                balance_text = str(balance) + " BTC"
+                balance_text = self.float_to_string(balance) + " BTC"
             else:
                 #balance_text = "丰 " + str(balance) # font doesnt support it
                 balance_text = str(balance) + " sat"
@@ -149,8 +155,9 @@ class SettingsActivity(Activity):
             {"title": "Wallet Type", "key": "wallet_type", "value_label": None, "cont": None},
             {"title": "LNBits URL", "key": "lnbits_url", "value_label": None, "cont": None},
             {"title": "LNBits Read Key", "key": "lnbits_readkey", "value_label": None, "cont": None},
-            {"title": "Receive code", "key": "lnbits_static_receive_code", "value_label": None, "cont": None, "placeholder": "Optional Lightning Address or LNURL-pay code. Will be fetched if empty."},
+            {"title": "Optional LN Address", "key": "lnbits_static_receive_code", "value_label": None, "cont": None, "placeholder": "Will be fetched if empty."},
             {"title": "NWC URL", "key": "nwc_url", "value_label": None, "cont": None},
+            {"title": "Optional LN Address", "key": "nwc_static_receive_code", "value_label": None, "cont": None, "placeholder": "Optional if present in NWC URL."},
         ]
 
     def onCreate(self):
@@ -235,7 +242,7 @@ class SettingActivity(Activity):
         setting_label = lv.label(top_cont)
         setting_label.set_text(setting["title"])
         setting_label.align(lv.ALIGN.TOP_LEFT,0,0)
-        setting_label.set_style_text_font(lv.font_montserrat_22, 0)
+        setting_label.set_style_text_font(lv.font_montserrat_26, 0)
 
         # Camera for text
         cambutton = lv.button(top_cont)
