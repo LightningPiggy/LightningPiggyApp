@@ -155,10 +155,10 @@ class SettingsActivity(Activity):
         self.prefs = None
         self.settings = [
             {"title": "Wallet Type", "key": "wallet_type", "value_label": None, "cont": None},
-            {"title": "LNBits URL", "key": "lnbits_url", "value_label": None, "cont": None},
-            {"title": "LNBits Read Key", "key": "lnbits_readkey", "value_label": None, "cont": None},
+            {"title": "LNBits URL", "key": "lnbits_url", "value_label": None, "cont": None, "placeholder": "https://demo.lnpiggy.com"},
+            {"title": "LNBits Read Key", "key": "lnbits_readkey", "value_label": None, "cont": None, "placeholder": "fd92e3f8168ba314dc22e54182784045"},
             {"title": "Optional LN Address", "key": "lnbits_static_receive_code", "value_label": None, "cont": None, "placeholder": "Will be fetched if empty."},
-            {"title": "NWC URL", "key": "nwc_url", "value_label": None, "cont": None},
+            {"title": "NWC URL", "key": "nwc_url", "value_label": None, "cont": None, "placeholder": "nostr+walletconnect://69effe7b..."},
             {"title": "Optional LN Address", "key": "nwc_static_receive_code", "value_label": None, "cont": None, "placeholder": "Optional if present in NWC URL."},
         ]
 
