@@ -97,15 +97,15 @@ class DisplayWallet(Activity):
 
     def float_to_string(self, value):
         # Format float to string with fixed-point notation, up to 6 decimal places
-        s = "{:.6f}".format(value)
+        s = "{:.8f}".format(value)
         # Remove trailing zeros and decimal point if no decimals remain
         return s.rstrip("0").rstrip(".")
 
     def redraw_balance_cb(self):
         print("Redrawing balance...")
-        balance_text = "Unknown Balance"
+        #balance_text = "Unknown Balance"
         balance = self.wallet.last_known_balance
-        if balance:
+        if balance and balance != -1:
             if self.balance_mode_btc:
                 balance = balance / 100000000
                 #balance_text = "₿ " + str(balance) # font doesnt support it - although it should https://fonts.google.com/specimen/Montserrat
@@ -115,8 +115,8 @@ class DisplayWallet(Activity):
                 balance_text = str(balance) + " sat"
                 if balance > 1:
                     balance_text += "s"
-        # this gets called from another thread (the wallet) so make sure it happens in the LVGL thread using lv.async_call():
-        lv.async_call(lambda l: self.balance_label.set_text(balance_text), None)
+            # this gets called from another thread (the wallet) so make sure it happens in the LVGL thread using lv.async_call():
+            lv.async_call(lambda l: self.balance_label.set_text(balance_text), None)
     
     def redraw_payments_cb(self):
         # this gets called from another thread (the wallet) so make sure it happens in the LVGL thread using lv.async_call():
@@ -244,14 +244,6 @@ class SettingActivity(Activity):
         setting_label.align(lv.ALIGN.TOP_LEFT,0,0)
         setting_label.set_style_text_font(lv.font_montserrat_26, 0)
 
-        # Camera for text
-        cambutton = lv.button(top_cont)
-        cambutton.align(lv.ALIGN.TOP_RIGHT,0,0)
-        cambutton.set_size(lv.SIZE_CONTENT, mpos.ui.pct_of_display_height(15))
-        cambuttonlabel = lv.label(cambutton)
-        cambuttonlabel.set_text("SCAN QR")
-        cambuttonlabel.center()
-        cambutton.add_event_cb(self.cambutton_cb, lv.EVENT.CLICKED, None)
         if setting["key"] == "wallet_type":
             cambutton.add_flag(lv.obj.FLAG.HIDDEN)
             # Create container for radio buttons
@@ -318,6 +310,19 @@ class SettingActivity(Activity):
         cancel_label.set_text("Cancel")
         cancel_label.center()
         cancel_btn.add_event_cb(lambda e: self.finish(), lv.EVENT.CLICKED, None)
+        # Camera for text
+        cambutton = lv.button(settings_screen_detail)
+        cambutton.align(lv.ALIGN.BOTTOM_MID,0,0)
+        cambutton.set_size(lv.pct(100), lv.pct(30))
+        cambuttonlabel = lv.label(cambutton)
+        cambuttonlabel.set_text("Scan data from QR code")
+        cambuttonlabel.set_style_text_font(lv.font_montserrat_18, 0)
+        cambuttonlabel.align(lv.ALIGN.TOP_MID, 0, 0)
+        cambuttonlabel2 = lv.label(cambutton)
+        cambuttonlabel2.set_text("Tip: Create your own QR code,\nusing https://genqrcode.com or another tool.")
+        cambuttonlabel2.set_style_text_font(lv.font_montserrat_10, 0)
+        cambuttonlabel2.align(lv.ALIGN.BOTTOM_MID, 0, 0)
+        cambutton.add_event_cb(self.cambutton_cb, lv.EVENT.CLICKED, None)
         self.setContentView(settings_screen_detail)
 
     def onStop(self, screen):
