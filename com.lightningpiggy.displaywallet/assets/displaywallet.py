@@ -314,7 +314,8 @@ class SettingActivity(Activity):
         self.setContentView(settings_screen_detail)
 
     def onStop(self, screen):
-        mpos.ui.anim.smooth_hide(self.keyboard)
+        if self.keyboard:
+            mpos.ui.anim.smooth_hide(self.keyboard)
 
     def radio_event_handler(self, event):
         old_cb = self.radio_container.get_child(self.active_radio_index)
