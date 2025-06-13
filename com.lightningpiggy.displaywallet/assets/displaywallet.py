@@ -10,6 +10,7 @@ class DisplayWallet(Activity):
     wallet = None
     receive_qr_data = None
     destination = None
+    balance_mode_btc = False # show BTC or sats?
 
     # widgets
     balance_label = None
@@ -23,6 +24,8 @@ class DisplayWallet(Activity):
         self.balance_label.set_text("")
         self.balance_label.align(lv.ALIGN.TOP_LEFT, 0, 0)
         self.balance_label.set_style_text_font(lv.font_montserrat_22, 0)
+        self.balance_label.add_flag(lv.obj.FLAG.CLICKABLE)
+        self.balance_label.add_event_cb(self.balance_label_clicked_cb,lv.EVENT.CLICKED,None)
         self.receive_qr = lv.qrcode(main_screen)
         self.receive_qr.set_size(mpos.ui.pct_of_display_width(20)) # bigger QR results in simpler code (less error correction?)
         self.receive_qr.set_dark_color(lv.color_black())
@@ -83,6 +86,7 @@ class DisplayWallet(Activity):
         if can_check_network and not network.WLAN(network.STA_IF).isconnected():
             self.payments_label.set_text(f"WiFi is not connected, can't\ntalk to {wallet_type} backend.")
         else: # by now, self.wallet can be assumed
+            self.balance_label.set_text(lv.SYMBOL.REFRESH)
             self.payments_label.set_text(f"Connecting\nto {wallet_type} backend...\n\nIf this takes too long, it might be\ndown or something's wrong with\nthe settings.")
             self.wallet.start(self.redraw_balance_cb, self.redraw_payments_cb, self.redraw_static_receive_code_cb)
 
@@ -92,8 +96,17 @@ class DisplayWallet(Activity):
         self.destination = None
 
     def redraw_balance_cb(self):
+        balance = self.wallet.last_known_balance
+        #balance_text = "丰 " + str(balance) # font doesnt support it
+        balance_text = str(balance) + " sat"
+        if balance > 1:
+            balance_text += "s"
+        if self.balance_mode_btc:
+            balance = balance / 100000000
+            #balance_text = "₿ " + str(balance) # font doesnt support it - although it should https://fonts.google.com/specimen/Montserrat
+            balance_text = str(balance) + " BTC"
         # this gets called from another thread (the wallet) so make sure it happens in the LVGL thread using lv.async_call():
-        lv.async_call(lambda l: self.balance_label.set_text(str(self.wallet.last_known_balance)), None)
+        lv.async_call(lambda l: self.balance_label.set_text(str(balance_text)), None)
     
     def redraw_payments_cb(self):
         # this gets called from another thread (the wallet) so make sure it happens in the LVGL thread using lv.async_call():
@@ -110,6 +123,11 @@ class DisplayWallet(Activity):
     def main_ui_set_defaults(self):
         self.balance_label.set_text("Welcome!")
         self.payments_label.set_text(lv.SYMBOL.REFRESH)
+
+    def balance_label_clicked_cb(self, event):
+        print("Balance clicked")
+        self.balance_mode_btc = not self.balance_mode_btc
+        self.redraw_balance_cb()
 
     def qr_clicked_cb(self, event):
         print("QR clicked")
@@ -218,6 +236,7 @@ class SettingActivity(Activity):
         # Camera for text
         cambutton = lv.button(top_cont)
         cambutton.align(lv.ALIGN.TOP_RIGHT,0,0)
+        cambutton.set_size(lv.SIZE_CONTENT, mpos.ui.pct_of_display_height(15))
         cambuttonlabel = lv.label(cambutton)
         cambuttonlabel.set_text("SCAN QR")
         cambuttonlabel.center()
@@ -261,6 +280,7 @@ class SettingActivity(Activity):
             # Initialize keyboard (hidden initially)
             self.keyboard = lv.keyboard(lv.layer_sys())
             self.keyboard.align(lv.ALIGN.BOTTOM_MID, 0, 0)
+            self.keyboard.set_style_min_height(150, 0)
             self.keyboard.add_flag(lv.obj.FLAG.HIDDEN)
             self.keyboard.add_event_cb(lambda *args: mpos.ui.anim.smooth_hide(self.keyboard), lv.EVENT.READY, None)
             self.keyboard.add_event_cb(lambda *args: mpos.ui.anim.smooth_hide(self.keyboard), lv.EVENT.CANCEL, None)
@@ -288,6 +308,9 @@ class SettingActivity(Activity):
         cancel_label.center()
         cancel_btn.add_event_cb(lambda e: self.finish(), lv.EVENT.CLICKED, None)
         self.setContentView(settings_screen_detail)
+
+    def onStop(self, screen):
+        mpos.ui.anim.smooth_hide(self.keyboard)
 
     def radio_event_handler(self, event):
         old_cb = self.radio_container.get_child(self.active_radio_index)
