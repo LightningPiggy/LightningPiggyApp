@@ -11,22 +11,28 @@ class DisplayWallet(Activity):
     receive_qr_data = None
     destination = None
     balance_mode_btc = False # show BTC or sats?
+    stop_receive_animation_timer = None
+
+    # screens:
+    main_screen = None
 
     # widgets
     balance_label = None
     receive_qr = None
     payments_label = None
+    receive_animation_gif = None
 
     def onCreate(self):
-        main_screen = lv.obj()
-        main_screen.set_style_pad_all(10, 0)
-        self.balance_label = lv.label(main_screen)
+        self.main_screen = lv.obj()
+        self.main_screen.set_style_pad_all(10, 0)
+        self.balance_label = lv.label(self.main_screen)
         self.balance_label.set_text("")
         self.balance_label.align(lv.ALIGN.TOP_LEFT, 0, 0)
         self.balance_label.set_style_text_font(lv.font_montserrat_26, 0)
         self.balance_label.add_flag(lv.obj.FLAG.CLICKABLE)
+        self.balance_label.set_width(mpos.ui.pct_of_display_width(75)) # 100 - receive_qr
         self.balance_label.add_event_cb(self.balance_label_clicked_cb,lv.EVENT.CLICKED,None)
-        self.receive_qr = lv.qrcode(main_screen)
+        self.receive_qr = lv.qrcode(self.main_screen)
         self.receive_qr.set_size(mpos.ui.pct_of_display_width(20)) # bigger QR results in simpler code (less error correction?)
         self.receive_qr.set_dark_color(lv.color_black())
         self.receive_qr.set_light_color(lv.color_white())
@@ -35,21 +41,30 @@ class DisplayWallet(Activity):
         self.receive_qr.set_style_border_width(1, 0);
         self.receive_qr.add_flag(lv.obj.FLAG.CLICKABLE)
         self.receive_qr.add_event_cb(self.qr_clicked_cb,lv.EVENT.CLICKED,None)
-        balance_line = lv.line(main_screen)
+        balance_line = lv.line(self.main_screen)
         balance_line.set_points([{'x':0,'y':35},{'x':200,'y':35}],2)
-        self.payments_label = lv.label(main_screen)
+        self.payments_label = lv.label(self.main_screen)
         self.payments_label.set_text("")
         self.payments_label.align_to(balance_line,lv.ALIGN.OUT_BOTTOM_LEFT,0,10)
         self.payments_label.set_style_text_font(lv.font_montserrat_16, 0)
-        settings_button = lv.button(main_screen)
+        self.payments_label.set_width(mpos.ui.pct_of_display_width(75)) # 100 - receive_qr
+        settings_button = lv.button(self.main_screen)
         settings_button.set_size(lv.pct(20), lv.pct(25))
         settings_button.align(lv.ALIGN.BOTTOM_RIGHT, 0, 0)
+        settings_button.add_event_cb(self.settings_button_tap,lv.EVENT.CLICKED,None)
         settings_label = lv.label(settings_button)
         settings_label.set_text(lv.SYMBOL.SETTINGS)
         settings_label.set_style_text_font(lv.font_montserrat_26, 0)
         settings_label.center()
-        settings_button.add_event_cb(self.settings_button_tap,lv.EVENT.CLICKED,None)
-        self.setContentView(main_screen)
+        send_button = lv.button(self.main_screen)
+        send_button.set_size(lv.pct(20), lv.pct(25))
+        send_button.align_to(settings_button, lv.ALIGN.OUT_TOP_MID, 0, -mpos.ui.pct_of_display_height(2))
+        send_button.add_event_cb(self.send_button_tap,lv.EVENT.CLICKED,None)
+        send_label = lv.label(send_button)
+        send_label.set_text(lv.SYMBOL.UPLOAD)
+        send_label.set_style_text_font(lv.font_montserrat_26, 0)
+        send_label.center()
+        self.setContentView(self.main_screen)
 
     def onStart(self, main_screen):
         self.main_ui_set_defaults()
@@ -96,6 +111,7 @@ class DisplayWallet(Activity):
         if self.wallet and self.destination != FullscreenQR:
             self.wallet.stop()
         self.destination = None
+        self.stop_receive_animation()
 
     def float_to_string(self, value):
         # Format float to string with fixed-point notation, up to 6 decimal places
@@ -129,6 +145,28 @@ class DisplayWallet(Activity):
         self.receive_qr_data = self.wallet.static_receive_code
         lv.async_call(lambda l: self.receive_qr.update(self.receive_qr_data, len(self.receive_qr_data)), None)
 
+    def send_button_tap(self, event):
+        self.stop_receive_animation()
+        self.receive_animation_gif = lv.gif(lv.layer_top())
+        self.receive_animation_gif.add_flag(lv.obj.FLAG.HIDDEN)
+        self.receive_animation_gif.set_pos(0,0)
+        self.receive_animation_gif.set_src("M:data/images/raining_gold_coins2_cropped.gif")
+        #self.receive_animation_gif.set_src("M:data/images/party_popper1_320x240.gif")
+        mpos.ui.anim.smooth_show(self.receive_animation_gif)
+        self.stop_receive_animation_timer = lv.timer_create(self.stop_receive_animation,10000,None)
+        self.stop_receive_animation_timer.set_repeat_count(1)
+
+    def stop_receive_animation(self, timer=None):
+        print("Stopping receive_animation_gif")
+        try:
+            if self.receive_animation_gif:
+                mpos.ui.anim.smooth_hide(self.receive_animation_gif)
+                #self.receive_animation_gif.add_flag(lv.obj.FLAG.HIDDEN)
+                #self.receive_animation_gif.set_src(None)
+                #self.receive_animation_gif.delete()
+        except Exception as e:
+            print(f"stop_receive_animation gif delete got exception: {e}")
+
     def settings_button_tap(self, event):
         self.startActivity(Intent(activity_class=SettingsActivity))
     
@@ -158,7 +196,7 @@ class SettingsActivity(Activity):
             {"title": "LNBits URL", "key": "lnbits_url", "value_label": None, "cont": None, "placeholder": "https://demo.lnpiggy.com"},
             {"title": "LNBits Read Key", "key": "lnbits_readkey", "value_label": None, "cont": None, "placeholder": "fd92e3f8168ba314dc22e54182784045"},
             {"title": "Optional LN Address", "key": "lnbits_static_receive_code", "value_label": None, "cont": None, "placeholder": "Will be fetched if empty."},
-            {"title": "NWC URL", "key": "nwc_url", "value_label": None, "cont": None, "placeholder": "nostr+walletconnect://69effe7b..."},
+            {"title": "Nost Wallet Connect", "key": "nwc_url", "value_label": None, "cont": None, "placeholder": "nostr+walletconnect://69effe7b..."},
             {"title": "Optional LN Address", "key": "nwc_static_receive_code", "value_label": None, "cont": None, "placeholder": "Optional if present in NWC URL."},
         ]
 
