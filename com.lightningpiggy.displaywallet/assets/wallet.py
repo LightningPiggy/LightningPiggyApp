@@ -125,13 +125,14 @@ class Wallet:
             return "NWCWallet"
 
     def handle_new_balance(self, new_balance, fetchPaymentsIfChanged=True):
-        if not self.keep_running:
+        if not self.keep_running or not new_balance:
             return
+        sats_added = new_balance - self.last_known_balance
         if new_balance != self.last_known_balance:
             print("Balance changed!")
             self.last_known_balance = new_balance
             print("Calling balance_updated_cb")
-            self.balance_updated_cb()
+            self.balance_updated_cb(sats_added)
             if fetchPaymentsIfChanged: # Fetching *all* payments isn't necessary if balance was changed by a payment notification
                 print("Refreshing payments...")
                 self.fetch_payments() # if the balance changed, then re-list transactions
@@ -155,11 +156,14 @@ class Wallet:
     def handle_new_static_receive_code(self, new_static_receive_code):
         print("handle_new_static_receive_code")
         if not self.keep_running or not new_static_receive_code:
+            print("not self.keep_running or not new_static_receive_code")
             return
         if self.static_receive_code != new_static_receive_code:
-            print("new list of payments")
+            print("it's really a new static_receive_code")
             self.static_receive_code = new_static_receive_code
             self.static_receive_code_updated_cb()
+        else:
+            print(f"self.static_receive_code {self.static_receive_code } == new_static_receive_code {new_static_receive_code}")
 
     # Maybe also add callbacks for:
     #    - started (so the user can show the UI) 
@@ -220,7 +224,7 @@ class LNBitsWallet(Wallet):
             payment_notification = json.loads(message)
             new_balance = payment_notification.get("wallet_balance")
             if new_balance:
-                self.handle_new_balance(new_balance, False) # handle new balance BUT don't trigger a full fetch_payments
+                self.handle_new_balance(new_balance, False) # refresh balance on display BUT don't trigger a full fetch_payments
                 transaction = payment_notification.get("payment")
                 print(f"Got transaction: {transaction}")
                 paymentObj = self.parseLNBitsPayment(transaction)
@@ -252,7 +256,9 @@ class LNBitsWallet(Wallet):
             except Exception as e:
                 print(f"WARNING: wallet_manager_thread got exception {e}, ignorning.")
             if not self.static_receive_code:
-                self.handle_new_static_receive_code(self.fetch_static_receive_code())
+                static_receive_code = self.fetch_static_receive_code()
+                if static_receive_code:
+                    self.handle_new_static_receive_code(static_receive_code)
             if not websocket_running and self.keep_running: # after the other things, listen for incoming payments
                 websocket_running = True
                 _thread.stack_size(mpos.apps.good_stack_size())
@@ -472,7 +478,7 @@ class NWCWallet(Wallet):
                                 print(f"WARNING: invalid notification type {type}, ignoring.")
                                 continue
                             new_balance = self.last_known_balance + amount
-                            self.handle_new_balance(new_balance, False)
+                            self.handle_new_balance(new_balance, False) # don't trigger full fetch because payment info is in notification
                             epoch_time = notification["created_at"]
                             comment = self.getCommentFromTransaction(notification)
                             paymentObj = Payment(epoch_time, amount, comment)

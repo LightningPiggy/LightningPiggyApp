@@ -11,7 +11,7 @@ class DisplayWallet(Activity):
     receive_qr_data = None
     destination = None
     balance_mode_btc = False # show BTC or sats?
-    stop_receive_animation_timer = None
+    receive_animation_in_progress = False
 
     # screens:
     main_screen = None
@@ -119,8 +119,10 @@ class DisplayWallet(Activity):
         # Remove trailing zeros and decimal point if no decimals remain
         return s.rstrip("0").rstrip(".")
 
-    def redraw_balance_cb(self):
+    def redraw_balance_cb(self, sats_added):
         print("Redrawing balance...")
+        if sats_added > 0:
+            self.start_receive_animation()
         #balance_text = "Unknown Balance"
         balance = self.wallet.last_known_balance
         if balance and balance != -1:
@@ -143,18 +145,41 @@ class DisplayWallet(Activity):
     def redraw_static_receive_code_cb(self):
         # this gets called from another thread (the wallet) so make sure it happens in the LVGL thread using lv.async_call():
         self.receive_qr_data = self.wallet.static_receive_code
-        lv.async_call(lambda l: self.receive_qr.update(self.receive_qr_data, len(self.receive_qr_data)), None)
+        if self.receive_qr_data:
+            lv.async_call(lambda l: self.receive_qr.update(self.receive_qr_data, len(self.receive_qr_data)), None)
+        else:
+            print("Warning: redraw_static_receive_code_cb() was called while self.wallet.static_receive_code is None...")
 
     def send_button_tap(self, event):
-        self.stop_receive_animation()
+        print("send_button clicked")
+        #self.start_receive_animation()
+
+    def start_receive_animation(self, event=None):
+        if self.receive_animation_in_progress == True:
+            print("Not starting receive animation because already in progress.")
+            return
+        self.receive_animation_in_progress = True
+        if self.receive_animation_gif:
+            self.receive_animation_gif.set_src(None) # This fixes out of memory issues
+            self.receive_animation_gif = None # This fixes out of memory issues
+        # Fixes crashes:
+        lv.image.cache_drop(None)
+        import gc
+        gc.collect() # Force garbage collection seems to fix memory alloc issues!
         self.receive_animation_gif = lv.gif(lv.layer_top())
         self.receive_animation_gif.add_flag(lv.obj.FLAG.HIDDEN)
         self.receive_animation_gif.set_pos(0,0)
-        self.receive_animation_gif.set_src("M:data/images/raining_gold_coins2_cropped.gif")
-        #self.receive_animation_gif.set_src("M:data/images/party_popper1_320x240.gif")
+        import random
+        randomnr = random.randint(0,2)
+        if randomnr == 0:
+            self.receive_animation_gif.set_src("M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/party_popper1_320x240.gif")
+        elif randomnr == 1:
+            self.receive_animation_gif.set_src("M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/party_popper2_320x240.gif")
+        else:
+            self.receive_animation_gif.set_src("M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/raining_gold_coins2_cropped.gif")
         mpos.ui.anim.smooth_show(self.receive_animation_gif)
-        self.stop_receive_animation_timer = lv.timer_create(self.stop_receive_animation,10000,None)
-        self.stop_receive_animation_timer.set_repeat_count(1)
+        stop_receive_animation_timer = lv.timer_create(self.stop_receive_animation,10000,None)
+        stop_receive_animation_timer.set_repeat_count(1)
 
     def stop_receive_animation(self, timer=None):
         print("Stopping receive_animation_gif")
@@ -166,10 +191,11 @@ class DisplayWallet(Activity):
                 #self.receive_animation_gif.delete()
         except Exception as e:
             print(f"stop_receive_animation gif delete got exception: {e}")
+        self.receive_animation_in_progress = False
 
     def settings_button_tap(self, event):
         self.startActivity(Intent(activity_class=SettingsActivity))
-    
+
     def main_ui_set_defaults(self):
         self.balance_label.set_text("Welcome!")
         self.payments_label.set_text(lv.SYMBOL.REFRESH)
