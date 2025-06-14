@@ -75,13 +75,13 @@ class DisplayWallet(Activity):
         config = mpos.config.SharedPreferences("com.lightningpiggy.displaywallet")
         wallet_type = config.get_string("wallet_type")
         if not wallet_type:
-            self.payments_label.set_text(f"Please go into the settings\n to set a Wallet Type.")
+            self.payments_label.set_text(f"Please go into the settings to set a Wallet Type.")
             return # nothing is configured, nothing to do
         if wallet_type == "lnbits":
             try:
                 self.wallet = LNBitsWallet(config.get_string("lnbits_url"), config.get_string("lnbits_readkey"))
             except Exception as e:
-                self.payments_label.set_text(f"Couldn't initialize\nLNBits wallet because\n{e}")
+                self.payments_label.set_text(f"Couldn't initialize LNBits wallet because: {e}")
                 return
         elif wallet_type == "nwc":
             try:
@@ -89,10 +89,10 @@ class DisplayWallet(Activity):
                 self.wallet.static_receive_code = config.get_string("nwc_static_receive_code")
                 self.redraw_static_receive_code_cb()
             except Exception as e:
-                self.payments_label.set_text(f"Couldn't initialize\nNWC Wallet because\n{e}")
+                self.payments_label.set_text(f"Couldn't initialize NWC Wallet because: {e}")
                 return
         else:
-            self.payments_label.set_text(f"No or unsupported wallet\ntype configured: '{wallet_type}'")
+            self.payments_label.set_text(f"No or unsupported wallet type configured: '{wallet_type}'")
             return
 
         can_check_network = True
@@ -101,10 +101,10 @@ class DisplayWallet(Activity):
         except Exception as e:
             can_check_network = False
         if can_check_network and not network.WLAN(network.STA_IF).isconnected():
-            self.payments_label.set_text(f"WiFi is not connected, can't\ntalk to {wallet_type} backend.")
+            self.payments_label.set_text(f"WiFi is not connected, can't talk to {wallet_type} backend.")
         else: # by now, self.wallet can be assumed
             self.balance_label.set_text(lv.SYMBOL.REFRESH)
-            self.payments_label.set_text(f"Connecting\nto {wallet_type} backend...\n\nIf this takes too long, it might be\ndown or something's wrong with\nthe settings.")
+            self.payments_label.set_text(f"\nConnecting to {wallet_type} backend.\n\nIf this takes too long, it might be down or something's wrong with the settings.")
             self.wallet.start(self.redraw_balance_cb, self.redraw_payments_cb, self.redraw_static_receive_code_cb)
 
     def onStop(self, main_screen):
