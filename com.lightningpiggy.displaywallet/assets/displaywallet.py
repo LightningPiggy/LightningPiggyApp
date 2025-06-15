@@ -396,14 +396,17 @@ class SettingActivity(Activity):
             mpos.ui.anim.smooth_hide(self.keyboard)
 
     def radio_event_handler(self, event):
-        old_cb = self.radio_container.get_child(self.active_radio_index)
-        old_cb.remove_state(lv.STATE.CHECKED)
+        print("radio_event_handler called")
+        if self.active_radio_index > 0:
+            print(f"removing old CHECKED state from child {self.active_radio_index}")
+            old_cb = self.radio_container.get_child(self.active_radio_index)
+            old_cb.remove_state(lv.STATE.CHECKED)
         self.active_radio_index = -1
         for childnr in range(self.radio_container.get_child_count()):
             child = self.radio_container.get_child(childnr)
             state = child.get_state()
             print(f"radio_container child's state: {state}")
-            if state != lv.STATE.DEFAULT: # State can be something like 19 = lv.STATE.HOVERED & lv.STATE.CHECKED & lv.STATE.FOCUSED
+            if state & lv.STATE.CHECKED: # State can be something like 19 = lv.STATE.HOVERED  (16) & lv.STATE.FOCUSED (2) & lv.STATE.CHECKED (1)
                 self.active_radio_index = childnr
                 break
         print(f"active_radio_index is now {self.active_radio_index}")
