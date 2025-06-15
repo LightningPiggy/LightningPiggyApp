@@ -393,7 +393,7 @@ class SettingActivity(Activity):
 
     def radio_event_handler(self, event):
         print("radio_event_handler called")
-        if self.active_radio_index > 0:
+        if self.active_radio_index >= 0:
             print(f"removing old CHECKED state from child {self.active_radio_index}")
             old_cb = self.radio_container.get_child(self.active_radio_index)
             old_cb.remove_state(lv.STATE.CHECKED)
