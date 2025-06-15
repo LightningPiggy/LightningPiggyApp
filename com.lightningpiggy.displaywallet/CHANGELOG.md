@@ -6,3 +6,8 @@
 0.0.3
 =====
 - Add gold coins and party confetti animation when receiving sats 
+
+0.0.2
+=====
+- Improve "Scan QR" button: make it big and add a tip
+- Add "Optional LN Address" option for Nostr Wallet Connect because not all providers include lud16 tag
