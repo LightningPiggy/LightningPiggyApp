@@ -1,3 +1,7 @@
+0.0.5
+=====
+- Fix wallet type selection radio buttons
+
 0.0.4
 =====
 - Fix Nostr Wallet Connect setting selection not being indicated if settings were empty
