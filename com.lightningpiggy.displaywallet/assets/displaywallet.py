@@ -56,14 +56,15 @@ class DisplayWallet(Activity):
         settings_label.set_text(lv.SYMBOL.SETTINGS)
         settings_label.set_style_text_font(lv.font_montserrat_26, 0)
         settings_label.center()
-        #send_button = lv.button(self.main_screen)
-        #send_button.set_size(lv.pct(20), lv.pct(25))
-        #send_button.align_to(settings_button, lv.ALIGN.OUT_TOP_MID, 0, -mpos.ui.pct_of_display_height(2))
-        #send_button.add_event_cb(self.send_button_tap,lv.EVENT.CLICKED,None)
-        #send_label = lv.label(send_button)
-        #send_label.set_text(lv.SYMBOL.UPLOAD)
-        #send_label.set_style_text_font(lv.font_montserrat_26, 0)
-        #send_label.center()
+        if False: # send button disabled for now, not implemented
+            send_button = lv.button(self.main_screen)
+            send_button.set_size(lv.pct(20), lv.pct(25))
+            send_button.align_to(settings_button, lv.ALIGN.OUT_TOP_MID, 0, -mpos.ui.pct_of_display_height(2))
+            send_button.add_event_cb(self.send_button_tap,lv.EVENT.CLICKED,None)
+            send_label = lv.label(send_button)
+            send_label.set_text(lv.SYMBOL.UPLOAD)
+            send_label.set_style_text_font(lv.font_montserrat_26, 0)
+            send_label.center()
         self.setContentView(self.main_screen)
 
     def onStart(self, main_screen):
@@ -152,7 +153,7 @@ class DisplayWallet(Activity):
 
     def send_button_tap(self, event):
         print("send_button clicked")
-        #self.start_receive_animation()
+        self.start_receive_animation() # for testing the receive animation
 
     def start_receive_animation(self, event=None):
         if self.receive_animation_in_progress == True:
@@ -169,12 +170,7 @@ class DisplayWallet(Activity):
         self.receive_animation_gif = lv.gif(lv.layer_top())
         self.receive_animation_gif.add_flag(lv.obj.FLAG.HIDDEN)
         self.receive_animation_gif.set_pos(0,0)
-        import random
-        randomnr = random.randint(0,1)
-        if randomnr == 0:
-            self.receive_animation_gif.set_src("M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/raining_gold_coins2_cropped.gif")
-        elif randomnr == 1:
-            self.receive_animation_gif.set_src("M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/party_popper2_320x240.gif")
+        self.receive_animation_gif.set_src("M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/party_popper2_320x240.gif")
         mpos.ui.anim.smooth_show(self.receive_animation_gif)
         stop_receive_animation_timer = lv.timer_create(self.stop_receive_animation,10000,None)
         stop_receive_animation_timer.set_repeat_count(1)
