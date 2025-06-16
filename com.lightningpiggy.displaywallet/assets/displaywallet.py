@@ -120,7 +120,7 @@ class DisplayWallet(Activity):
         # Remove trailing zeros and decimal point if no decimals remain
         return s.rstrip("0").rstrip(".")
 
-    def redraw_balance_cb(self, sats_added):
+    def redraw_balance_cb(self, sats_added=0):
         print("Redrawing balance...")
         if sats_added > 0:
             self.start_receive_animation()
