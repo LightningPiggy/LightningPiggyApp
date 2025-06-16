@@ -116,6 +116,7 @@ class CameraApp(Activity):
                 print(f"camera app: webcam exception: {e}")
         if self.cam:
             print("Camera app initialized, continuing...")
+            self.set_image_size()
             self.capture_timer = lv.timer_create(self.try_capture, 100, None)
             self.status_label_cont.add_flag(lv.obj.FLAG.HIDDEN)
             if self.scanqr_mode:
@@ -139,6 +140,20 @@ class CameraApp(Activity):
             self.cam.deinit()
         print("camera app cleanup done.")
 
+    def set_image_size(self):
+        target_h = mpos.ui.vertical_resolution
+        target_w = target_h
+        if target_w == self.width and target_h == self.height:
+            print("Target width and height are the same as native image, no scaling required.")
+            return
+        print(f"scaling to size: {target_w}x{target_h}")
+        scale_factor_w = round(target_w * 256 / self.width)
+        scale_factor_h = round(target_h * 256 / self.height)
+        print(f"scale_factors: {scale_factor_w},{scale_factor_h}")
+        self.image.set_size(target_w, target_h)
+        #self.image.set_scale(max(scale_factor_w,scale_factor_h)) # fills the entire screen but cuts off borders
+        self.image.set_scale(min(scale_factor_w,scale_factor_h))
+
     def qrdecode_one(self):
         try:
             import qrdecode
@@ -147,7 +162,6 @@ class CameraApp(Activity):
             if not result:
                 self.status_label.set_text(self.status_label_text_searching)
             else:
-                self.stop_qr_decoding()
                 result = remove_bom(result)
                 result = print_qr_buffer(result)
                 print(f"QR decoding found: {result}")
@@ -156,6 +170,7 @@ class CameraApp(Activity):
                     self.finish()
                 else:
                     self.status_label.set_text(result) # in the future, the status_label text should be copy-paste-able
+                self.stop_qr_decoding()
         except ValueError as e:
             print("QR ValueError: ", e)
             self.status_label.set_text(self.status_label_text_searching)
