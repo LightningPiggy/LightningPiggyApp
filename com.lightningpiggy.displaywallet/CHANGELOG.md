@@ -1,3 +1,7 @@
+0.0.6
+=====
+- Improve QR scanning behavior on larger displays
+
 0.0.5
 =====
 - Fix wallet type selection radio buttons
