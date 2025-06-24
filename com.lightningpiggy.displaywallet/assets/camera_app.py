@@ -138,6 +138,20 @@ class CameraApp(Activity):
             webcam.deinit(self.cam)
         elif self.cam:
             self.cam.deinit()
+            # Power off, otherwise it keeps using a lot of current
+            try:
+                from machine import Pin, I2C
+                i2c = I2C(1, scl=Pin(16), sda=Pin(21))  # Adjust pins and frequency
+                #devices = i2c.scan()
+                #print([hex(addr) for addr in devices]) # finds it on 60 = 0x3C after init
+                camera_addr = 0x3C # for OV5640
+                reg_addr = 0x3008
+                reg_high = (reg_addr >> 8) & 0xFF  # 0x30
+                reg_low = reg_addr & 0xFF         # 0x08
+                power_off_command = 0x42 # Power off command
+                i2c.writeto(camera_addr, bytes([reg_high, reg_low, power_off_command]))
+            except Exception as e:
+                print(f"Warning: powering off camera got exception: {e}")
         print("camera app cleanup done.")
 
     def set_image_size(self):

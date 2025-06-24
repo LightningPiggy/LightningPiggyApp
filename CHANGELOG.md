@@ -1,3 +1,7 @@
+0.0.7
+=====
+- Power off camera after closing to conserve power
+
 0.0.6
 =====
 - Improve QR scanning behavior on larger displays
