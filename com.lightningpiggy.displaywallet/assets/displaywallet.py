@@ -121,12 +121,11 @@ class DisplayWallet(Activity):
         return s.rstrip("0").rstrip(".")
 
     def redraw_balance_cb(self, sats_added=0):
-        print("Redrawing balance...")
+        print("Redrawing balance for sats_added {sats_added}")
         if sats_added > 0:
             self.start_receive_animation()
-        #balance_text = "Unknown Balance"
         balance = self.wallet.last_known_balance
-        if balance and balance != -1:
+        if balance is not None and balance != -1:
             if self.balance_mode_btc:
                 balance = balance / 100000000
                 #balance_text = "₿ " + str(balance) # font doesnt support it - although it should https://fonts.google.com/specimen/Montserrat
@@ -138,6 +137,8 @@ class DisplayWallet(Activity):
                     balance_text += "s"
             # this gets called from another thread (the wallet) so make sure it happens in the LVGL thread using lv.async_call():
             lv.async_call(lambda l: self.balance_label.set_text(balance_text), None)
+        else:
+            print("Not drawing balance because it's None or -1")
     
     def redraw_payments_cb(self):
         # this gets called from another thread (the wallet) so make sure it happens in the LVGL thread using lv.async_call():
@@ -460,6 +461,7 @@ class FullscreenQR(Activity):
         qr_screen = lv.obj()
         qr_screen.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
         qr_screen.set_scroll_dir(lv.DIR.NONE)
+        qr_screen.add_event_cb(lambda e: self.finish(),lv.EVENT.CLICKED,None)
         big_receive_qr = lv.qrcode(qr_screen)
         big_receive_qr.set_size(mpos.ui.min_resolution())
         big_receive_qr.set_dark_color(lv.color_black())
@@ -468,11 +470,4 @@ class FullscreenQR(Activity):
         big_receive_qr.set_style_border_color(lv.color_white(), 0)
         big_receive_qr.set_style_border_width(0, 0);
         big_receive_qr.update(receive_qr_data, len(receive_qr_data))
-        close_button = lv.button(qr_screen)
-        close_button.set_size(round((mpos.ui.max_resolution()-mpos.ui.min_resolution())/2),round((mpos.ui.max_resolution()-mpos.ui.min_resolution())/2))
-        close_button.align(lv.ALIGN.TOP_RIGHT, 0, round(mpos.ui.NOTIFICATION_BAR_HEIGHT/2))
-        close_label = lv.label(close_button)
-        close_label.set_text(lv.SYMBOL.CLOSE)
-        close_label.center()
-        close_button.add_event_cb(lambda e: self.finish(),lv.EVENT.CLICKED,None)
         self.setContentView(qr_screen)
