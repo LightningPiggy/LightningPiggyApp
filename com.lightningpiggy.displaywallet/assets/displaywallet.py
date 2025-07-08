@@ -121,7 +121,7 @@ class DisplayWallet(Activity):
         return s.rstrip("0").rstrip(".")
 
     def redraw_balance_cb(self, sats_added=0):
-        print("Redrawing balance for sats_added {sats_added}")
+        print(f"Redrawing balance for sats_added {sats_added}")
         if sats_added > 0:
             self.start_receive_animation()
         balance = self.wallet.last_known_balance

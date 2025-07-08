@@ -126,7 +126,7 @@ class Wallet:
             return "NWCWallet"
 
     def handle_new_balance(self, new_balance, fetchPaymentsIfChanged=True):
-        if not self.keep_running or not new_balance:
+        if not self.keep_running or new_balance is None:
             return
         sats_added = new_balance - self.last_known_balance
         if new_balance != self.last_known_balance:
@@ -299,7 +299,7 @@ class LNBitsWallet(Wallet):
             except Exception as e:
                 raise RuntimeError(f"Could not parse reponse '{response_text}' as JSON: {e}")
             balance_msat = balance_reply.get("balance")
-            if balance_msat:
+            if balance_msat is not None:
                 print(f"balance_msat: {balance_msat}")
                 new_balance = round(int(balance_msat) / 1000)
                 self.handle_new_balance(new_balance)
@@ -327,6 +327,8 @@ class LNBitsWallet(Wallet):
             except Exception as e:
                 raise RuntimeError(f"Could not parse reponse '{response_text}' as JSON: {e}")
             print(f"Got payments: {payments_reply}")
+            if len(payments_reply) == 0:
+                self.handle_new_payment(Payment(1751987292, 0, "Start Stacking!"))
             for transaction in payments_reply:
                 print(f"Got transaction: {transaction}")
                 paymentObj = self.parseLNBitsPayment(transaction)
