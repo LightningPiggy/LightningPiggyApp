@@ -114,6 +114,7 @@ class Wallet:
     balance_updated_cb = None
     payments_updated_cb = None
     static_receive_code_updated_cb = None
+    error_cb = None
 
     def __init__(self):
         self.payment_list = UniqueSortedList()
@@ -161,19 +162,25 @@ class Wallet:
         if self.static_receive_code != new_static_receive_code:
             print("it's really a new static_receive_code")
             self.static_receive_code = new_static_receive_code
-            self.static_receive_code_updated_cb()
+            if self.static_receive_code_updated_cb:
+                self.static_receive_code_updated_cb()
         else:
             print(f"self.static_receive_code {self.static_receive_code } == new_static_receive_code {new_static_receive_code}")
+
+    def handle_error(self, e):
+        if self.error_cb:
+            self.error_cb(e)
 
     # Maybe also add callbacks for:
     #    - started (so the user can show the UI) 
     #    - stopped (so the user can delete/free it)
     #    - error (so the user can show the error)
-    def start(self, balance_updated_cb, payments_updated_cb, static_receive_code_updated_cb = None):
+    def start(self, balance_updated_cb, payments_updated_cb, static_receive_code_updated_cb = None, error_cb = None):
         self.keep_running = True
         self.balance_updated_cb = balance_updated_cb
         self.payments_updated_cb = payments_updated_cb
         self.static_receive_code_updated_cb = static_receive_code_updated_cb
+        self.error_cb = error_cb
         _thread.stack_size(mpos.apps.good_stack_size())
         _thread.start_new_thread(self.wallet_manager_thread, ())
 
@@ -254,7 +261,8 @@ class LNBitsWallet(Wallet):
             try:
                 new_balance = self.fetch_balance() # TODO: only do this every 60 seconds, but loop the main thread more frequently
             except Exception as e:
-                print(f"WARNING: wallet_manager_thread got exception {e}, ignorning.")
+                print(f"WARNING: wallet_manager_thread got exception {e}")
+                self.handle_error(e)
             if not self.static_receive_code:
                 static_receive_code = self.fetch_static_receive_code()
                 if static_receive_code:
@@ -281,20 +289,24 @@ class LNBitsWallet(Wallet):
             print(f"Fetching balance with GET to {walleturl}")
             response = requests.get(walleturl, timeout=10, headers=headers)
         except Exception as e:
-            print("fetch_balance: get request failed:", e)
-        if response and response.status_code == 200 and self.keep_running:
+            raise RuntimeError(f"fetch_balance: GET request to {walleturl} with header 'X-Api-Key: {self.lnbits_readkey} failed: {e}")
+        if response and self.keep_running:
             response_text = response.text
             print(f"Got response text: {response_text}")
             response.close()
             try:
                 balance_reply = json.loads(response_text)
-                print(f"Got balance: {balance_reply['balance']}")
-                balance_msat = balance_reply['balance']
+            except Exception as e:
+                raise RuntimeError(f"Could not parse reponse '{response_text}' as JSON: {e}")
+            balance_msat = balance_reply.get("balance")
+            if balance_msat:
+                print(f"balance_msat: {balance_msat}")
                 new_balance = round(int(balance_msat) / 1000)
                 self.handle_new_balance(new_balance)
-            except Exception as e:
-                print(f"Could not parse reponse text '{response_text}' as JSON: {e}")
-                raise e
+            else:
+                error = balance_reply.get("detail")
+                if error:
+                    raise RuntimeError(f"LNBits backend replied: {error}")
 
     def fetch_payments(self):
         paymentsurl = self.lnbits_url + "/api/v1/payments?limit=6"
@@ -305,21 +317,20 @@ class LNBitsWallet(Wallet):
             print(f"Fetching payments with GET to {paymentsurl}")
             response = requests.get(paymentsurl, timeout=10, headers=headers)
         except Exception as e:
-            print("fetch_payments: get request failed:", e)
+            raise RuntimeError(f"fetch_payments: GET request to {paymentsurl} with header 'X-Api-Key: {self.lnbits_readkey} failed: {e}")
         if response and response.status_code == 200 and self.keep_running:
             response_text = response.text
             #print(f"Got response text: {response_text}")
             response.close()
             try:
                 payments_reply = json.loads(response_text)
-                print(f"Got payments: {payments_reply}")
-                for transaction in payments_reply:
-                    print(f"Got transaction: {transaction}")
-                    paymentObj = self.parseLNBitsPayment(transaction)
-                    self.handle_new_payment(paymentObj)
             except Exception as e:
-                print(f"Could not parse reponse text '{response_text}' as JSON: {e}")
-                #raise e
+                raise RuntimeError(f"Could not parse reponse '{response_text}' as JSON: {e}")
+            print(f"Got payments: {payments_reply}")
+            for transaction in payments_reply:
+                print(f"Got transaction: {transaction}")
+                paymentObj = self.parseLNBitsPayment(transaction)
+                self.handle_new_payment(paymentObj)
 
     def fetch_static_receive_code(self):
         url = self.lnbits_url + "/lnurlp/api/v1/links?all_wallets=false"
@@ -330,23 +341,19 @@ class LNBitsWallet(Wallet):
             print(f"Fetching static_receive_code with GET to {url}")
             response = requests.get(url, timeout=10, headers=headers)
         except Exception as e:
-            print("Request failed:", e)
-            return
+            raise RuntimeError(f"fetch_static_receive_code: GET request to {url} with header 'X-Api-Key: {self.lnbits_readkey} failed: {e}")
         if response and response.status_code == 200 and self.keep_running:
             response_text = response.text
             print(f"Got response text: {response_text}")
             response.close()
             try:
                 reply_object = json.loads(response_text)
-                print(f"Got links: {reply_object}")
-                for link in reply_object:
-                    print(f"Got link: {link}")
-                    return link.get("lnurl")
             except Exception as e:
-                print(f"Could not parse reponse text '{response_text}' as JSON: {e}")
-                #raise e
-
-
+                raise RuntimeError(f"Could not parse reponse '{response_text}' as JSON: {e}")
+            print(f"Got links: {reply_object}")
+            for link in reply_object:
+                print(f"Got link: {link}")
+                return link.get("lnurl")
 
 
 
@@ -583,5 +590,6 @@ class NWCWallet(Wallet):
             print(f"DEBUG: Parsed NWC data - Relay: {relay}, Pubkey: {pubkey}, Secret: {secret}, lud16: {lud16}")
             return relay, pubkey, secret, lud16
         except Exception as e:
-            print(f"DEBUG: Error parsing NWC URL: {e}")
+            raise RuntimeError(f"Exception parsing NWC URL {nwc_url}: {e}")
+
 

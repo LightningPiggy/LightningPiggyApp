@@ -82,7 +82,7 @@ class DisplayWallet(Activity):
             try:
                 self.wallet = LNBitsWallet(config.get_string("lnbits_url"), config.get_string("lnbits_readkey"))
             except Exception as e:
-                self.payments_label.set_text(f"Couldn't initialize LNBits wallet because: {e}")
+                self.error_cb(f"Couldn't initialize LNBits wallet because: {e}")
                 return
         elif wallet_type == "nwc":
             try:
@@ -90,10 +90,10 @@ class DisplayWallet(Activity):
                 self.wallet.static_receive_code = config.get_string("nwc_static_receive_code")
                 self.redraw_static_receive_code_cb()
             except Exception as e:
-                self.payments_label.set_text(f"Couldn't initialize NWC Wallet because: {e}")
+                self.error_cb(f"Couldn't initialize NWC Wallet because: {e}")
                 return
         else:
-            self.payments_label.set_text(f"No or unsupported wallet type configured: '{wallet_type}'")
+            self.error_cb(f"No or unsupported wallet type configured: '{wallet_type}'")
             return
 
         can_check_network = True
@@ -106,7 +106,7 @@ class DisplayWallet(Activity):
         else: # by now, self.wallet can be assumed
             self.balance_label.set_text(lv.SYMBOL.REFRESH)
             self.payments_label.set_text(f"\nConnecting to {wallet_type} backend.\n\nIf this takes too long, it might be down or something's wrong with the settings.")
-            self.wallet.start(self.redraw_balance_cb, self.redraw_payments_cb, self.redraw_static_receive_code_cb)
+            self.wallet.start(self.redraw_balance_cb, self.redraw_payments_cb, self.redraw_static_receive_code_cb, self.error_cb)
 
     def onStop(self, main_screen):
         if self.wallet and self.destination != FullscreenQR:
@@ -151,6 +151,9 @@ class DisplayWallet(Activity):
             lv.async_call(lambda l: self.receive_qr.update(self.receive_qr_data, len(self.receive_qr_data)), None)
         else:
             print("Warning: redraw_static_receive_code_cb() was called while self.wallet.static_receive_code is None...")
+
+    def error_cb(self, error):
+        lv.async_call(lambda l: self.payments_label.set_text(str(error)), None)
 
     def send_button_tap(self, event):
         print("send_button clicked")
