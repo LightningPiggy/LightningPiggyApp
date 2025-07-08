@@ -1,3 +1,7 @@
+0.0.9
+=====
+- Improve user feedback in case of 0 balance
+
 0.0.8
 =====
 - Close fullscreen QR code with any click

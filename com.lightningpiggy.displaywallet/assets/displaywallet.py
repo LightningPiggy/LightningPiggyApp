@@ -110,7 +110,7 @@ class DisplayWallet(Activity):
 
     def onStop(self, main_screen):
         if self.wallet and self.destination != FullscreenQR:
-            self.wallet.stop()
+            self.wallet.stop() # don't stop the wallet for the fullscreen QR activity
         self.destination = None
         self.stop_receive_animation()
 
@@ -160,6 +160,7 @@ class DisplayWallet(Activity):
         self.start_receive_animation() # for testing the receive animation
 
     def start_receive_animation(self, event=None):
+        # TODO: close fullscreen QR Activity if it's open
         if self.receive_animation_in_progress == True:
             print("Not starting receive animation because already in progress.")
             return
