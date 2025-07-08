@@ -1,3 +1,9 @@
+0.0.8
+=====
+- Close fullscreen QR code with any click
+- Fix fullscreen QR code window compatibility with MicroPythonOS 0.0.9
+- Also update balance if it's 0
+
 0.0.7
 =====
 - Power off camera after closing to conserve power
