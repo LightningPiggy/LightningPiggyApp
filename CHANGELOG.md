@@ -1,3 +1,7 @@
+0.0.10
+======
+- Fix Keypad handling (for devices without touchscreen)
+
 0.0.9
 =====
 - Improve user feedback in case of 0 balance
