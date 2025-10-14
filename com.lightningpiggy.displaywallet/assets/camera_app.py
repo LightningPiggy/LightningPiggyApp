@@ -97,8 +97,7 @@ class CameraApp(Activity):
         self.status_label_cont.set_style_border_width(0, 0)
         self.status_label = lv.label(self.status_label_cont)
         self.status_label.set_text("No camera found.")
-        self.status_label.set_long_mode(lv.label.LONG.WRAP)
-        self.status_label.set_style_text_color(lv.color_white(), 0)
+        self.status_label.set_long_mode(lv.label.LONG_MODE.WRAP)
         self.status_label.set_width(lv.pct(100))
         self.status_label.center()
         self.setContentView(main_screen)
@@ -171,11 +170,15 @@ class CameraApp(Activity):
     def qrdecode_one(self):
         try:
             import qrdecode
+            import utime
+            before = utime.ticks_ms()
             result = qrdecode.qrdecode_rgb565(self.current_cam_buffer, self.width, self.height)
+            after = utime.ticks_ms()
             #result = bytearray("INSERT_QR_HERE", "utf-8")
             if not result:
                 self.status_label.set_text(self.status_label_text_searching)
             else:
+                print(f"SUCCESSFUL QR DECODE TOOK: {after-before}ms")
                 result = remove_bom(result)
                 result = print_qr_buffer(result)
                 print(f"QR decoding found: {result}")

@@ -1,3 +1,7 @@
+0.0.11
+======
+- Adapt for compatibility with LVGL 9.3.0 (be sure to update to MicroPythonOS 0.1.1)
+
 0.0.10
 ======
 - Fix Keypad handling (for devices without touchscreen)
