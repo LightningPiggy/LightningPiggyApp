@@ -1,6 +1,7 @@
 0.0.12
 ======
 - Don't update the UI after the user has closed the app
+- Don't allow newlines in single-line fields
 
 0.0.11
 ======
