@@ -1,5 +1,6 @@
 0.0.12
 ======
+- Improve non-touchscreen (keypad) usage for settings
 - Don't update the UI after the user has closed the app
 - Don't allow newlines in single-line fields
 
