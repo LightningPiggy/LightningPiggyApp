@@ -352,6 +352,7 @@ class SettingActivity(Activity):
             # Textarea for other settings
             self.textarea = lv.textarea(settings_screen_detail)
             self.textarea.set_width(lv.pct(100))
+            self.textarea.set_one_line(True) # might not be good for all settings but it's good for most
             self.textarea.set_height(lv.SIZE_CONTENT)
             self.textarea.align_to(top_cont, lv.ALIGN.OUT_BOTTOM_MID, 0, 0)
             current = self.prefs.get_string(setting["key"])
