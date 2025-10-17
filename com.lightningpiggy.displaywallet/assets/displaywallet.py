@@ -298,9 +298,12 @@ class SettingsActivity(Activity):
 # Used to edit one setting:
 class SettingActivity(Activity):
 
+    btn_cont = None
+    cambutton = None
     keyboard = None
     textarea = None
     radio_container = None
+
     active_radio_index = 0  # Track active radio button index
 
     def __init__(self):
@@ -311,21 +314,26 @@ class SettingActivity(Activity):
     def onCreate(self):
         setting = self.getIntent().extras.get("setting")
         settings_screen_detail = lv.obj()
-        settings_screen_detail.set_style_pad_all(mpos.ui.pct_of_display_width(2), 0)
+        settings_screen_detail.set_style_pad_all(0, 0)
+        settings_screen_detail.set_scroll_dir(lv.DIR.NONE)
+        settings_screen_detail.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
+        settings_screen_detail.set_style_pad_all(mpos.ui.pct_of_display_width(1), 0)
         settings_screen_detail.set_flex_flow(lv.FLEX_FLOW.COLUMN)
 
         top_cont = lv.obj(settings_screen_detail)
         top_cont.set_width(lv.pct(100))
         top_cont.set_style_border_width(0, 0)
         top_cont.set_height(lv.SIZE_CONTENT)
-        top_cont.set_style_pad_all(mpos.ui.pct_of_display_width(1), 0)
+        #top_cont.set_style_pad_all(mpos.ui.pct_of_display_width(5), 0)
+        top_cont.set_style_pad_all(0, 0)
         top_cont.set_flex_flow(lv.FLEX_FLOW.ROW)
         top_cont.set_style_flex_main_place(lv.FLEX_ALIGN.SPACE_BETWEEN, 0)
 
+        #setting_label = lv.label(settings_screen_detail)
         setting_label = lv.label(top_cont)
         setting_label.set_text(setting["title"])
         setting_label.align(lv.ALIGN.TOP_LEFT,0,0)
-        setting_label.set_style_text_font(lv.font_montserrat_26, 0)
+        setting_label.set_style_text_font(lv.font_montserrat_20, 0)
 
         if setting["key"] == "wallet_type":
             # Create container for radio buttons
@@ -351,43 +359,52 @@ class SettingActivity(Activity):
         else:
             # Textarea for other settings
             self.textarea = lv.textarea(settings_screen_detail)
-            self.textarea.set_width(lv.pct(100))
+            #self.textarea = lv.textarea(top_cont)
+            self.textarea.set_width(lv.pct(90))
+            #self.textarea.set_height(lv.SIZE_CONTENT)
             self.textarea.set_one_line(True) # might not be good for all settings but it's good for most
-            self.textarea.set_height(lv.SIZE_CONTENT)
-            self.textarea.align_to(top_cont, lv.ALIGN.OUT_BOTTOM_MID, 0, 0)
+            #self.textarea.align_to(top_cont, lv.ALIGN.OUT_BOTTOM_LEFT, mpos.ui.pct_of_display_width(10), 0)
+            #self.textarea.align(lv.ALIGN.BOTTOM_LEFT,20,0)
+            #self.textarea.align_to(top_cont, lv.ALIGN.OUT_BOTTOM_LEFT, mpos.ui.pct_of_display_width(10), 0)
+            #self.textarea.align_to(setting_label, lv.ALIGN.OUT_BOTTOM_MID, 20, 20)
+            #self.textarea.align_to(setting_label, lv.ALIGN.OUT_BOTTOM_LEFT, 20, 20)
+            #self.textarea.set_style_pad_all(10, 0)
             current = self.prefs.get_string(setting["key"])
             if current:
                 self.textarea.set_text(current)
             placeholder = setting.get("placeholder")
             if placeholder:
                 self.textarea.set_placeholder_text(placeholder)
-            self.textarea.add_event_cb(lambda *args: mpos.ui.anim.smooth_show(self.keyboard), lv.EVENT.CLICKED, None) # it might be focused, but keyboard hidden (because ready/cancel clicked)
-            self.textarea.add_event_cb(lambda *args: mpos.ui.anim.smooth_hide(self.keyboard), lv.EVENT.DEFOCUSED, None)
+            self.textarea.add_event_cb(lambda *args: self.show_keyboard(), lv.EVENT.CLICKED, None)
             # Initialize keyboard (hidden initially)
-            self.keyboard = lv.keyboard(lv.layer_sys())
+            #self.keyboard = lv.keyboard(lv.layer_sys()) # this makes it linger in the focus group somehow
+            self.keyboard = lv.keyboard(settings_screen_detail)
             self.keyboard.align(lv.ALIGN.BOTTOM_MID, 0, 0)
-            self.keyboard.set_style_min_height(150, 0)
-            self.keyboard.add_flag(lv.obj.FLAG.HIDDEN)
-            self.keyboard.add_event_cb(lambda *args: mpos.ui.anim.smooth_hide(self.keyboard), lv.EVENT.READY, None)
-            self.keyboard.add_event_cb(lambda *args: mpos.ui.anim.smooth_hide(self.keyboard), lv.EVENT.CANCEL, None)
             self.keyboard.set_textarea(self.textarea)
+            self.keyboard.set_style_min_height(160, 0)
+            #self.keyboard.add_event_cb(lambda *args: mpos.ui.anim.smooth_hide(self.keyboard), lv.EVENT.READY, None)
+            self.keyboard.add_event_cb(lambda *args: self.hide_keyboard(), lv.EVENT.READY, None)
+            #self.keyboard.add_event_cb(lambda *args: mpos.ui.anim.smooth_hide(self.keyboard), lv.EVENT.CANCEL, None)
+            self.keyboard.add_event_cb(lambda *args: self.hide_keyboard(), lv.EVENT.CANCEL, None)
+            self.keyboard.add_flag(lv.obj.FLAG.HIDDEN)
+            self.keyboard.add_event_cb(self.handle_keyboard_events, lv.EVENT.VALUE_CHANGED, None)
 
         # Button container
-        btn_cont = lv.obj(settings_screen_detail)
-        btn_cont.set_width(lv.pct(100))
-        btn_cont.set_style_border_width(0, 0)
-        btn_cont.set_height(lv.SIZE_CONTENT)
-        btn_cont.set_flex_flow(lv.FLEX_FLOW.ROW)
-        btn_cont.set_style_flex_main_place(lv.FLEX_ALIGN.SPACE_BETWEEN, 0)
+        self.btn_cont = lv.obj(settings_screen_detail)
+        self.btn_cont.set_width(lv.pct(100))
+        self.btn_cont.set_style_border_width(0, 0)
+        self.btn_cont.set_height(lv.SIZE_CONTENT)
+        self.btn_cont.set_flex_flow(lv.FLEX_FLOW.ROW)
+        self.btn_cont.set_style_flex_main_place(lv.FLEX_ALIGN.SPACE_BETWEEN, 0)
         # Save button
-        save_btn = lv.button(btn_cont)
+        save_btn = lv.button(self.btn_cont)
         save_btn.set_size(lv.pct(45), lv.SIZE_CONTENT)
         save_label = lv.label(save_btn)
         save_label.set_text("Save")
         save_label.center()
         save_btn.add_event_cb(lambda e, s=setting: self.save_setting(s), lv.EVENT.CLICKED, None)
         # Cancel button
-        cancel_btn = lv.button(btn_cont)
+        cancel_btn = lv.button(self.btn_cont)
         cancel_btn.set_size(lv.pct(45), lv.SIZE_CONTENT)
         cancel_label = lv.label(cancel_btn)
         cancel_label.set_text("Cancel")
@@ -396,24 +413,51 @@ class SettingActivity(Activity):
 
         if setting["key"] != "wallet_type":
             # Scan QR button for text settings
-            cambutton = lv.button(settings_screen_detail)
-            cambutton.align(lv.ALIGN.BOTTOM_MID,0,0)
-            cambutton.set_size(lv.pct(100), lv.pct(30))
-            cambuttonlabel = lv.label(cambutton)
+            self.cambutton = lv.button(settings_screen_detail)
+            self.cambutton.align(lv.ALIGN.BOTTOM_MID,0,0)
+            self.cambutton.set_size(lv.pct(100), lv.pct(30))
+            cambuttonlabel = lv.label(self.cambutton)
             cambuttonlabel.set_text("Scan data from QR code")
             cambuttonlabel.set_style_text_font(lv.font_montserrat_18, 0)
             cambuttonlabel.align(lv.ALIGN.TOP_MID, 0, 0)
-            cambuttonlabel2 = lv.label(cambutton)
+            cambuttonlabel2 = lv.label(self.cambutton)
             cambuttonlabel2.set_text("Tip: Create your own QR code,\nusing https://genqrcode.com or another tool.")
             cambuttonlabel2.set_style_text_font(lv.font_montserrat_10, 0)
             cambuttonlabel2.align(lv.ALIGN.BOTTOM_MID, 0, 0)
-            cambutton.add_event_cb(self.cambutton_cb, lv.EVENT.CLICKED, None)
+            self.cambutton.add_event_cb(self.cambutton_cb, lv.EVENT.CLICKED, None)
 
         self.setContentView(settings_screen_detail)
 
     def onStop(self, screen):
+        self.hide_keyboard()
+
+    def show_keyboard(self):
+        self.btn_cont.add_flag(lv.obj.FLAG.HIDDEN)
+        if self.cambutton: # not always set
+            self.cambutton.add_flag(lv.obj.FLAG.HIDDEN)
+        mpos.ui.anim.smooth_show(self.keyboard)
+        focusgroup = lv.group_get_default()
+        if focusgroup:
+            # move the focus to the keyboard to save the user a "next" button press (optional but nice)
+            # this is focusing on the right thing (keyboard) but the focus is not "active" (shown or used) somehow
+            print(f"current focus object: {lv.group_get_default().get_focused()}")
+            focusgroup.focus_next()
+            print(f"current focus object: {lv.group_get_default().get_focused()}")
+
+    def hide_keyboard(self):
         if self.keyboard:
+            self.btn_cont.remove_flag(lv.obj.FLAG.HIDDEN)
+            self.cambutton.remove_flag(lv.obj.FLAG.HIDDEN)
             mpos.ui.anim.smooth_hide(self.keyboard)
+
+    def handle_keyboard_events(self, event):
+        target_obj=event.get_target_obj() # keyboard
+        button = target_obj.get_selected_button()
+        text = target_obj.get_button_text(button)
+        #print(f"button {button} and text {text}")
+        if text == lv.SYMBOL.NEW_LINE:
+            print("Newline pressed, closing the keyboard...")
+            self.hide_keyboard()
 
     def radio_event_handler(self, event):
         print("radio_event_handler called")
