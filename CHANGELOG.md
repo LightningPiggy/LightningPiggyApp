@@ -1,3 +1,7 @@
+0.0.12
+======
+- Don't update the UI after the user has closed the app
+
 0.0.11
 ======
 - Adapt for compatibility with LVGL 9.3.0 (be sure to update to MicroPythonOS 0.1.1)

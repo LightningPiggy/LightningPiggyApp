@@ -153,7 +153,8 @@ class DisplayWallet(Activity):
             print("Warning: redraw_static_receive_code_cb() was called while self.wallet.static_receive_code is None...")
 
     def error_cb(self, error):
-        lv.async_call(lambda l: self.payments_label.set_text(str(error)), None)
+        if self.wallet and self.wallet.is_running():
+            lv.async_call(lambda l: self.payments_label.set_text(str(error)), None)
 
     def send_button_tap(self, event):
         print("send_button clicked")
