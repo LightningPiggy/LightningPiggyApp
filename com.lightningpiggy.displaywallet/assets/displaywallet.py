@@ -71,6 +71,7 @@ class DisplayWallet(Activity):
         self.main_ui_set_defaults()
     
     def onResume(self, main_screen):
+        super().onResume(main_screen)
         if self.wallet and self.wallet.is_running():
             return # wallet is already running, nothing to do
         config = mpos.config.SharedPreferences("com.lightningpiggy.displaywallet")
@@ -136,25 +137,25 @@ class DisplayWallet(Activity):
                 if balance > 1:
                     balance_text += "s"
             # this gets called from another thread (the wallet) so make sure it happens in the LVGL thread using lv.async_call():
-            lv.async_call(lambda l: self.balance_label.set_text(balance_text), None)
+            self.update_ui_threadsafe_if_foreground(self.balance_label.set_text, balance_text)
         else:
             print("Not drawing balance because it's None or -1")
     
     def redraw_payments_cb(self):
         # this gets called from another thread (the wallet) so make sure it happens in the LVGL thread using lv.async_call():
-        lv.async_call(lambda l: self.payments_label.set_text(str(self.wallet.payment_list)), None)
+        self.update_ui_threadsafe_if_foreground(self.payments_label.set_text, str(self.wallet.payment_list))
 
     def redraw_static_receive_code_cb(self):
         # this gets called from another thread (the wallet) so make sure it happens in the LVGL thread using lv.async_call():
         self.receive_qr_data = self.wallet.static_receive_code
         if self.receive_qr_data:
-            lv.async_call(lambda l: self.receive_qr.update(self.receive_qr_data, len(self.receive_qr_data)), None)
+            self.update_ui_threadsafe_if_foreground(self.receive_qr.update, self.receive_qr_data, len(self.receive_qr_data))
         else:
             print("Warning: redraw_static_receive_code_cb() was called while self.wallet.static_receive_code is None...")
 
     def error_cb(self, error):
         if self.wallet and self.wallet.is_running():
-            lv.async_call(lambda l: self.payments_label.set_text(str(error)), None)
+            self.update_ui_threadsafe_if_foreground(self.payments_label.set_text, str(error))
 
     def send_button_tap(self, event):
         print("send_button clicked")

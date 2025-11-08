@@ -1,3 +1,8 @@
+0.0.13
+======
+- Use update_ui_threadsafe_if_foreground()
+- Improve QR scanning help text
+
 0.0.12
 ======
 - Improve non-touchscreen (keypad) usage for settings
