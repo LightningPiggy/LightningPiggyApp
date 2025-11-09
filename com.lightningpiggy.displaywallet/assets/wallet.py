@@ -52,7 +52,7 @@ class UniqueSortedList:
         return len(self._items)
 
     def __str__(self):
-        print("UniqueSortedList tostring called")
+        #print("UniqueSortedList tostring called")
         return "\n".join(str(item) for item in self._items)
 
     def __eq__(self, other):
@@ -100,6 +100,8 @@ class Payment:
         return (self.epoch_time, self.amount_sats, self.comment) >= (other.epoch_time, other.amount_sats, other.comment)
 
 class Wallet:
+
+    PAYMENTS_TO_SHOW = 6
 
     # Public variables
     # These values could be loading from a cache.json file at __init__
@@ -309,7 +311,7 @@ class LNBitsWallet(Wallet):
                     raise RuntimeError(f"LNBits backend replied: {error}")
 
     def fetch_payments(self):
-        paymentsurl = self.lnbits_url + "/api/v1/payments?limit=6"
+        paymentsurl = self.lnbits_url + "/api/v1/payments?limit=" + self.PAYMENTS_TO_SHOW
         headers = {
             "X-Api-Key": self.lnbits_readkey,
         }
@@ -396,7 +398,7 @@ class NWCWallet(Wallet):
             else:
                 print("text/plain field is missing from JSON description")
         except Exception as e:
-            print(f"Info: could not parse comment as JSON, using as-is: {e}")
+            print(f"Info: could not parse comment as JSON, this is fine, using as-is ({e})")
         return comment
 
     def wallet_manager_thread(self):
@@ -434,58 +436,79 @@ class NWCWallet(Wallet):
         )])
         print(f"DEBUG: Subscription filters: {self.filters.to_json_array()}")
         self.relay_manager.add_subscription(self.subscription_id, self.filters)
-        print(f"DEBUG: Publishing subscription request")
+        print(f"DEBUG: Creating subscription request")
         request_message = [ClientMessageType.REQUEST, self.subscription_id]
         request_message.extend(self.filters.to_json_array())
+        print(f"DEBUG: Publishing subscription request")
         self.relay_manager.publish_message(json.dumps(request_message))
-        for _ in range(10):
+        print(f"DEBUG: Published subscription request")
+        for _ in range(4):
             if not self.keep_running:
                 return
+            print("Waiting a bit before self.fetch_balance()")
             time.sleep(0.5)
 
         self.fetch_balance()
 
-        print(f"DEBUG: Waiting for incoming NWC events...")
-        while self.keep_running:
-            if self.relay_manager.message_pool.has_events():
-                print(f"DEBUG: Event received from message pool")
-                event_msg = self.relay_manager.message_pool.get_event()
-                event_created_at = event_msg.event.created_at
-                print(f"Received at {time.localtime()} a message with timestamp {event_created_at}")
-                try:
-                    decrypted_content = self.private_key.decrypt_message(
-                        event_msg.event.content,
-                        event_msg.event.public_key
-                    )
-                    print(f"DEBUG: Decrypted content: {decrypted_content}")
-                    response = json.loads(decrypted_content)
-                    print(f"DEBUG: Parsed response: {response}")
-                    result = response.get("result")
-                    if result:
-                        if result.get("balance"):
-                            new_balance = round(int(result["balance"]) / 1000)
-                            print(f"Got balance: {new_balance}")
-                            self.handle_new_balance(new_balance)
-                        elif result.get("transactions"):
-                            print("Response contains transactions!")
-                            for transaction in result["transactions"]:
-                                amount = transaction["amount"]
-                                amount = round(amount / 1000)
-                                comment = self.getCommentFromTransaction(transaction)
-                                epoch_time = transaction["created_at"]
-                                paymentObj = Payment(epoch_time, amount, comment)
-                                self.handle_new_payment(paymentObj)
-                    else:
-                        notification = response.get("notification")
-                        if notification:
-                            amount = notification["amount"]
+        print("DEBUG: creating periodic check_event timer")
+        from machine import Timer
+        self.timer = Timer(1)
+        self.timer.init(mode=Timer.PERIODIC,period=1000,callback=self.check_event)
+        print(f"DEBUG: check_event timer initialized, waiting for incoming NWC events")
+        print("NWCWallet: reached end of manage_wallet_thread.")
+
+    def check_event(self, timer):
+        #print(f"check_event called with arg {timer}")
+        if not self.keep_running:
+            print("NWCWallet: manage_wallet_thread stopping, closing connections...")
+            self.relay_manager.close_connections()
+            if self.timer:
+                self.timer.deinit()
+
+        start_time = time.ticks_ms()
+        if self.relay_manager.message_pool.has_events():
+            print(f"DEBUG: Event received from message pool after {time.ticks_ms()-start_time}ms")
+            event_msg = self.relay_manager.message_pool.get_event()
+            event_created_at = event_msg.event.created_at
+            print(f"Received at {time.localtime()} a message with timestamp {event_created_at} after {time.ticks_ms()-start_time}ms")
+            try:
+                # This takes a very long time, even for short messages:
+                decrypted_content = self.private_key.decrypt_message(
+                    event_msg.event.content,
+                    event_msg.event.public_key,
+                )
+                print(f"DEBUG: Decrypted content: {decrypted_content} after {time.ticks_ms()-start_time}ms")
+                response = json.loads(decrypted_content)
+                print(f"DEBUG: Parsed response: {response}")
+                result = response.get("result")
+                if result:
+                    if result.get("balance") is not None:
+                        new_balance = round(int(result["balance"]) / 1000)
+                        print(f"Got balance: {new_balance}")
+                        self.handle_new_balance(new_balance)
+                    elif result.get("transactions") is not None:
+                        print("Response contains transactions!")
+                        new_payment_list = UniqueSortedList()
+                        for transaction in result["transactions"]:
+                            amount = transaction["amount"]
                             amount = round(amount / 1000)
-                            type = notification["type"]
-                            if type == "outgoing":
-                                amount = -amount
-                            elif type != "incoming":
-                                print(f"WARNING: invalid notification type {type}, ignoring.")
-                                continue
+                            comment = self.getCommentFromTransaction(transaction)
+                            epoch_time = transaction["created_at"]
+                            paymentObj = Payment(epoch_time, amount, comment)
+                            new_payment_list.add(paymentObj)
+                        if len(new_payment_list) > 0:
+                            # do them all in one shot instead of one-by-one because the lv_async() isn't always chronological,
+                            # so when a long list of payments is added, it may be overwritten by a short list
+                            self.handle_new_payments(new_payment_list)
+                else:
+                    notification = response.get("notification")
+                    if notification:
+                        amount = notification["amount"]
+                        amount = round(amount / 1000)
+                        type = notification["type"]
+                        if type == "outgoing":
+                            amount = -amount
+                        elif type == "incoming":
                             new_balance = self.last_known_balance + amount
                             self.handle_new_balance(new_balance, False) # don't trigger full fetch because payment info is in notification
                             epoch_time = notification["created_at"]
@@ -493,13 +516,15 @@ class NWCWallet(Wallet):
                             paymentObj = Payment(epoch_time, amount, comment)
                             self.handle_new_payment(paymentObj)
                         else:
-                            print("Unsupported response, ignoring.")
-                except Exception as e:
-                    print(f"DEBUG: Error processing response: {e}")
-            time.sleep(0.2)
+                            print(f"WARNING: invalid notification type {type}, ignoring.")
+                    else:
+                        print("Unsupported response, ignoring.")
+            except Exception as e:
+                print(f"DEBUG: Error processing response: {e}")
+        else:
+            #print(f"pool has no events after {time.ticks_ms()-start_time}ms") # completes in 0-1ms
+            pass
 
-        print("NWCWallet: manage_wallet_thread stopping, closing connections...")
-        self.relay_manager.close_connections()
 
     def fetch_balance(self):
         if not self.keep_running:
@@ -528,7 +553,7 @@ class NWCWallet(Wallet):
         list_transactions = {
             "method": "list_transactions",
             "params": {
-                "limit": 6
+                "limit": self.PAYMENTS_TO_SHOW
             }
         }
         dm = EncryptedDirectMessage(
@@ -537,7 +562,7 @@ class NWCWallet(Wallet):
             kind=23194
         )
         self.private_key.sign_event(dm) # sign also does encryption if it's a encrypted dm
-        print("Publishing DM to fetch payments...")
+        print("\nPublishing DM to fetch payments...")
         self.relay_manager.publish_event(dm)
 
     def parse_nwc_url(self, nwc_url):

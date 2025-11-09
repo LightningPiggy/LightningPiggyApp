@@ -1,3 +1,8 @@
+0.0.14
+======
+- Fix 0 balance handling
+- Improve NWC performance: much faster list_transactions
+
 0.0.13
 ======
 - Use update_ui_threadsafe_if_foreground()
