@@ -188,6 +188,7 @@ class Wallet:
 
     def stop(self):
         self.keep_running = False
+        # idea: do a "close connections" call here instead of waiting for polling sub-tasks to notice the change
 
     def is_running(self):
         return self.keep_running
@@ -460,7 +461,7 @@ class NWCWallet(Wallet):
     def check_event(self, timer):
         #print(f"check_event called with arg {timer}")
         if not self.keep_running:
-            print("NWCWallet: manage_wallet_thread stopping, closing connections...")
+            print("NWCWallet: not keep_running, closing connections...")
             self.relay_manager.close_connections()
             if self.timer:
                 self.timer.deinit()
