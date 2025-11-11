@@ -388,7 +388,7 @@ class LNBitsWallet(Wallet):
 
 class NWCWallet(Wallet):
 
-    PAYMENTS_TO_SHOW = 6
+    PAYMENTS_TO_SHOW = 4 # slowness appeared again, so reducing this...
     PERIODIC_FETCH_BALANCE_SECONDS = 60 # seconds
     
     relays = []
