@@ -210,6 +210,8 @@ class Wallet:
 class LNBitsWallet(Wallet):
 
     PAYMENTS_TO_SHOW = 6
+    PERIODIC_FETCH_BALANCE_SECONDS = 60 # seconds
+
     ws = None
 
     def __init__(self, lnbits_url, lnbits_readkey):
@@ -259,7 +261,7 @@ class LNBitsWallet(Wallet):
         websocket_running = False
         while self.keep_running:
             try:
-                new_balance = self.fetch_balance() # idea: only do this every 60 seconds, but loop the main thread more frequently
+                new_balance = self.fetch_balance()
             except Exception as e:
                 print(f"WARNING: wallet_manager_thread got exception: {e}")
                 self.handle_error(e)
@@ -282,8 +284,8 @@ class LNBitsWallet(Wallet):
                 except Exception as e:
                     print(f"Got exception while creating task for LNBitsWallet websocket: {e}")
             print("Sleeping a while before re-fetching balance...")
-            for _ in range(120):
-                await asyncio.sleep(0.5)
+            for _ in range(self.PERIODIC_FETCH_BALANCE_SECONDS*10):
+                await asyncio.sleep(0.1)
                 if not self.keep_running:
                     break
         print("LNBitsWallet main() stopping...")
@@ -387,6 +389,7 @@ class LNBitsWallet(Wallet):
 class NWCWallet(Wallet):
 
     PAYMENTS_TO_SHOW = 6
+    PERIODIC_FETCH_BALANCE_SECONDS = 60 # seconds
     
     relays = []
     secret = None
@@ -436,11 +439,11 @@ class NWCWallet(Wallet):
         await self.relay_manager.open_connections({"cert_reqs": ssl.CERT_NONE})
         self.connected = False
         nrconnected = 0
-        for _ in range(20):
-            print("Waiting for relay connections...")
-            await asyncio.sleep(0.5)
+        for _ in range(100):
+            #print("Waiting for relay connections...")
+            await asyncio.sleep(0.1)
             nrconnected = self.relay_manager.connected_relays()
-            print(f"nrconnected: {nrconnected}")
+            #print(f"nrconnected: {nrconnected}")
             if nrconnected == len(self.relays) or not self.keep_running:
                 break
         if nrconnected == 0:
@@ -470,18 +473,21 @@ class NWCWallet(Wallet):
         self.relay_manager.publish_message(json.dumps(request_message))
         print(f"DEBUG: Published subscription request")
 
-        try:
-            await self.fetch_balance()
-        except Exception as e:
-            print(f"fetch_balance got exception {e}") # fetch_balance got exception 'NoneType' object isn't iterable?!
-
-        while True:
+        last_fetch_balance = time.time() - self.PERIODIC_FETCH_BALANCE_SECONDS
+        while True: # handle incoming events and do periodic fetch_balance
             #print(f"checking for incoming events...")
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.1)
             if not self.keep_running:
                 print("NWCWallet: not keep_running, closing connections...")
                 await self.relay_manager.close_connections()
                 break
+
+            if time.time() - last_fetch_balance >= self.PERIODIC_FETCH_BALANCE_SECONDS:
+                last_fetch_balance = time.time()
+                try:
+                    await self.fetch_balance()
+                except Exception as e:
+                    print(f"fetch_balance got exception {e}") # fetch_balance got exception 'NoneType' object isn't iterable?!
 
             start_time = time.ticks_ms()
             if self.relay_manager.message_pool.has_events():
