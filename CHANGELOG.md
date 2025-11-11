@@ -1,3 +1,7 @@
+0.0.15
+======
+- Support multiple relays in Nostr Wallet Connect URL
+
 0.0.14
 ======
 - Fix 0 balance handling
