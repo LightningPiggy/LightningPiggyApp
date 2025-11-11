@@ -102,8 +102,6 @@ class Payment:
 
 class Wallet:
 
-    PAYMENTS_TO_SHOW = 6
-
     # Public variables
     # These values could be loading from a cache.json file at __init__
     last_known_balance = -1
@@ -211,6 +209,7 @@ class Wallet:
 
 class LNBitsWallet(Wallet):
 
+    PAYMENTS_TO_SHOW = 6
     ws = None
 
     def __init__(self, lnbits_url, lnbits_readkey):
@@ -240,7 +239,7 @@ class LNBitsWallet(Wallet):
 
     # Example data: {"wallet_balance": 4936, "payment": {"checking_id": "037c14...56b3", "pending": false, "amount": 1000000, "fee": 0, "memo": "zap2oink", "time": 1711226003, "bolt11": "lnbc10u1pjl70y....qq9renr", "preimage": "0000...000", "payment_hash": "037c1438b20ef4729b1d3dc252c2809dc2a2a2e641c7fb99fe4324e182f356b3", "expiry": 1711226603.0, "extra": {"tag": "lnurlp", "link": "TkjgaB", "extra": "1000000", "comment": ["yes"], "lnaddress": "oink@demo.lnpiggy.com"}, "wallet_id": "c9168...8de4", "webhook": null, "webhook_status": null}}
     def on_message(self, class_obj, message: str):
-        print(f"relay.py _on_message received: {message}")
+        print(f"wallet.py _on_message received: {message}")
         try:
             payment_notification = json.loads(message)
             try:
@@ -343,11 +342,14 @@ class LNBitsWallet(Wallet):
                 raise RuntimeError(f"Could not parse reponse '{response_text}' as JSON: {e}")
             print(f"Got payments: {payments_reply}")
             if len(payments_reply) == 0:
-                self.handle_new_payment(Payment(1751987292, 0, "Start Stacking!"))
-            for transaction in payments_reply:
-                print(f"Got transaction: {transaction}")
-                paymentObj = self.parseLNBitsPayment(transaction)
-                self.handle_new_payment(paymentObj)
+                self.handle_new_payment(Payment(1751987292, 0, "Time to Start Stacking!"))
+            else:
+                new_payment_list = UniqueSortedList()
+                for transaction in payments_reply:
+                    print(f"Got transaction: {transaction}")
+                    paymentObj = self.parseLNBitsPayment(transaction)
+                    new_payment_list.add(paymentObj)
+                self.handle_new_payments(new_payment_list)
 
     def fetch_static_receive_code(self):
         url = self.lnbits_url + "/lnurlp/api/v1/links?all_wallets=false"
@@ -383,6 +385,8 @@ class LNBitsWallet(Wallet):
 
 
 class NWCWallet(Wallet):
+
+    PAYMENTS_TO_SHOW = 6
 
     def __init__(self, nwc_url):
         super().__init__()
@@ -528,6 +532,8 @@ class NWCWallet(Wallet):
                             print("Unsupported response, ignoring.")
                 except Exception as e:
                     print(f"DEBUG: Error processing response: {e}")
+                    import sys
+                    sys.print_exception(e)  # Full traceback on MicroPython
             else:
                 #print(f"pool has no events after {time.ticks_ms()-start_time}ms") # completes in 0-1ms
                 pass
