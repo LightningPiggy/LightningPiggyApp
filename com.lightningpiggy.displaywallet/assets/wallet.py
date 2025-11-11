@@ -249,35 +249,24 @@ class LNBitsWallet(Wallet):
     def websocket_thread(self):
         asyncio.run(self.do_two())
 
-    def do_two(self):
-        try:
-            await self.main()
-        except Exception as e:
-            print(f"LNBitsWallet do_two got error: {e}") # again this NoneType error?!
-
-    def main(self):
-        if not self.keep_running:
-            return
-        print("Opening websocket for payment notifications...")
-        wsurl = self.lnbits_url + "/api/v1/ws/" + self.lnbits_readkey
-        wsurl = wsurl.replace("https://", "wss://")
-        wsurl = wsurl.replace("http://", "ws://")
-        try:
-            self.ws = WebSocketApp(
-                wsurl,
-                on_message=self.on_message,
-            ) # maybe add other callbacks to reconnect when disconnected etc.
-            asyncio.create_task(self.ws.run_forever(),)
-        except Exception as e:
-            print(f"LNBitsWallet main got error: {e}")
-
     # Currently, there's no mechanism for this thread to signal fatal errors, like typos in the URLs.
     def wallet_manager_thread(self):
-        print("wallet_manager_thread")
+        asyncio.run(self.do_two())
+
+    def do_two(self):
+        print("before await self.NOmainHERE()")
+        try:
+            await self.NOmainHERE()
+        except Exception as e:
+            print(f"do_two got exception {e}")
+        print("after await self.NOmainHERE()")
+
+    async def NOmainHERE(self):
+        print("NOmainHERE")
         websocket_running = False
         while self.keep_running:
             try:
-                new_balance = self.fetch_balance() # TODO: only do this every 60 seconds, but loop the main thread more frequently
+                new_balance = self.fetch_balance() # idea: only do this every 60 seconds, but loop the main thread more frequently
             except Exception as e:
                 print(f"WARNING: wallet_manager_thread got exception: {e}")
                 self.handle_error(e)
@@ -287,17 +276,26 @@ class LNBitsWallet(Wallet):
                     self.handle_new_static_receive_code(static_receive_code)
             if not websocket_running and self.keep_running: # after the other things, listen for incoming payments
                 websocket_running = True
-                _thread.stack_size(mpos.apps.good_stack_size())
-                _thread.start_new_thread(self.websocket_thread, ())
+                print("Opening websocket for payment notifications...")
+                wsurl = self.lnbits_url + "/api/v1/ws/" + self.lnbits_readkey
+                wsurl = wsurl.replace("https://", "wss://")
+                wsurl = wsurl.replace("http://", "ws://")
+                try:
+                    self.ws = WebSocketApp(
+                        wsurl,
+                        on_message=self.on_message,
+                    ) # maybe add other callbacks to reconnect when disconnected etc.
+                    asyncio.create_task(self.ws.run_forever(),)
+                except Exception as e:
+                    print(f"Got exception while creating task for LNBitsWallet websocket: {e}")
             print("Sleeping a while before re-fetching balance...")
             for _ in range(120):
-                time.sleep(0.5)
+                await asyncio.sleep(0.5)
                 if not self.keep_running:
                     break
-        print("wallet_manager_thread stopping")
+        print("NOmainHERE stopping")
         if self.ws:
-            #await self.ws.close() # TODO
-            self.ws.close()
+            await self.ws.close()
 
     def fetch_balance(self):
         walleturl = self.lnbits_url + "/api/v1/wallet"
