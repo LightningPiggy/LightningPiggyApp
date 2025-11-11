@@ -247,21 +247,21 @@ class LNBitsWallet(Wallet):
             print(f"websocket on_message got exception: {e}")
 
     def websocket_thread(self):
+        asyncio.run(self.do_two())
+
+    def do_two(self):
+        try:
+            await self.main()
+        except Exception as e:
+            print(f"LNBitsWallet do_two got error: {e}") # again this NoneType error?!
+
+    def main(self):
         if not self.keep_running:
             return
         print("Opening websocket for payment notifications...")
         wsurl = self.lnbits_url + "/api/v1/ws/" + self.lnbits_readkey
         wsurl = wsurl.replace("https://", "wss://")
         wsurl = wsurl.replace("http://", "ws://")
-        asyncio.run(self.do_two(wsurl))
-
-    def do_two(self, wsurl):
-        try:
-            await self.main(wsurl)
-        except Exception as e:
-            print(f"LNBitsWallet do_two got error: {e}")
-
-    def main(self, wsurl):
         try:
             self.ws = WebSocketApp(
                 wsurl,
@@ -296,7 +296,7 @@ class LNBitsWallet(Wallet):
                     break
         print("wallet_manager_thread stopping")
         if self.ws:
-            #await self.ws.close()
+            #await self.ws.close() # TODO
             self.ws.close()
 
     def fetch_balance(self):
@@ -423,9 +423,6 @@ class NWCWallet(Wallet):
         return comment
 
     def wallet_manager_thread(self):
-        if self.lud16:
-            self.handle_new_static_receive_code(self.lud16)
-
         asyncio.run(self.do_two())
 
     def do_two(self):
@@ -437,6 +434,9 @@ class NWCWallet(Wallet):
         print("after await self.NOmainHERE()")
 
     async def NOmainHERE(self):
+        if self.lud16:
+            self.handle_new_static_receive_code(self.lud16)
+
         self.private_key = PrivateKey(bytes.fromhex(self.secret))
         self.relay_manager = RelayManager()
         self.relay_manager.add_relay(self.relay)
