@@ -73,7 +73,8 @@ class DisplayWallet(Activity):
     def onResume(self, main_screen):
         super().onResume(main_screen)
         if self.wallet and self.wallet.is_running():
-            return # wallet is already running, nothing to do
+            print("wallet is already running, nothing to do") # might have come from the QR activity
+            return
         config = mpos.config.SharedPreferences("com.lightningpiggy.displaywallet")
         wallet_type = config.get_string("wallet_type")
         if not wallet_type:
@@ -109,7 +110,7 @@ class DisplayWallet(Activity):
             self.payments_label.set_text(f"\nConnecting to {wallet_type} backend.\n\nIf this takes too long, it might be down or something's wrong with the settings.")
             self.wallet.start(self.redraw_balance_cb, self.redraw_payments_cb, self.redraw_static_receive_code_cb, self.error_cb)
 
-    def onStop(self, main_screen):
+    def onPause(self, main_screen):
         if self.wallet and self.destination != FullscreenQR:
             self.wallet.stop() # don't stop the wallet for the fullscreen QR activity
         self.destination = None
@@ -162,6 +163,7 @@ class DisplayWallet(Activity):
         self.start_receive_animation() # for testing the receive animation
 
     def start_receive_animation(self, event=None):
+        return
         # TODO: close fullscreen QR Activity if it's open
         if self.receive_animation_in_progress == True:
             print("Not starting receive animation because already in progress.")
@@ -169,6 +171,7 @@ class DisplayWallet(Activity):
         self.receive_animation_in_progress = True
         if self.receive_animation_gif:
             self.receive_animation_gif.set_src(None) # This fixes out of memory issues
+            #self.receive_animation_gif.delete()
             self.receive_animation_gif = None # This fixes out of memory issues
         # Fixes crashes:
         lv.image.cache_drop(None)
@@ -183,6 +186,7 @@ class DisplayWallet(Activity):
         stop_receive_animation_timer.set_repeat_count(1)
 
     def stop_receive_animation(self, timer=None):
+        return
         print("Stopping receive_animation_gif")
         try:
             if self.receive_animation_gif:
