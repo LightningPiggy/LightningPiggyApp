@@ -11,7 +11,6 @@ class DisplayWallet(Activity):
     receive_qr_data = None
     destination = None
     balance_mode_btc = False # show BTC or sats?
-    receive_animation_in_progress = False
 
     # screens:
     main_screen = None
@@ -66,6 +65,12 @@ class DisplayWallet(Activity):
             send_label.set_style_text_font(lv.font_montserrat_26, 0)
             send_label.center()
         self.setContentView(self.main_screen)
+        # top layer animation gif
+        self.receive_animation_gif = lv.gif(lv.layer_top())
+        self.receive_animation_gif.set_src("M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/party_popper2_320x240.gif")
+        self.receive_animation_gif.add_flag(lv.obj.FLAG.HIDDEN)
+        self.receive_animation_gif.set_pos(0,0)
+
 
     def onStart(self, main_screen):
         self.main_ui_set_defaults()
@@ -113,8 +118,12 @@ class DisplayWallet(Activity):
     def onPause(self, main_screen):
         if self.wallet and self.destination != FullscreenQR:
             self.wallet.stop() # don't stop the wallet for the fullscreen QR activity
+            self.stop_receive_animation()
         self.destination = None
-        self.stop_receive_animation()
+
+    def onDestroy(self, main_screen):
+        if self.receive_animation_gif:
+            self.receive_animation_gif.delete()
 
     def float_to_string(self, value):
         # Format float to string with fixed-point notation, up to 6 decimal places
@@ -163,40 +172,17 @@ class DisplayWallet(Activity):
         self.start_receive_animation() # for testing the receive animation
 
     def start_receive_animation(self, event=None):
-        return
-        # TODO: close fullscreen QR Activity if it's open
-        if self.receive_animation_in_progress == True:
-            print("Not starting receive animation because already in progress.")
-            return
-        self.receive_animation_in_progress = True
-        if self.receive_animation_gif:
-            self.receive_animation_gif.set_src(None) # This fixes out of memory issues
-            #self.receive_animation_gif.delete()
-            self.receive_animation_gif = None # This fixes out of memory issues
-        # Fixes crashes:
-        lv.image.cache_drop(None)
-        import gc
-        gc.collect() # Force garbage collection seems to fix memory alloc issues!
-        self.receive_animation_gif = lv.gif(lv.layer_top())
-        self.receive_animation_gif.add_flag(lv.obj.FLAG.HIDDEN)
-        self.receive_animation_gif.set_pos(0,0)
-        self.receive_animation_gif.set_src("M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/party_popper2_320x240.gif")
-        mpos.ui.anim.smooth_show(self.receive_animation_gif)
+        self.receive_animation_gif.remove_flag(lv.obj.FLAG.HIDDEN)
+        # schedule the animation stop
         stop_receive_animation_timer = lv.timer_create(self.stop_receive_animation,10000,None)
         stop_receive_animation_timer.set_repeat_count(1)
 
     def stop_receive_animation(self, timer=None):
-        return
         print("Stopping receive_animation_gif")
         try:
-            if self.receive_animation_gif:
-                mpos.ui.anim.smooth_hide(self.receive_animation_gif)
-                #self.receive_animation_gif.add_flag(lv.obj.FLAG.HIDDEN)
-                #self.receive_animation_gif.set_src(None)
-                #self.receive_animation_gif.delete()
+            self.receive_animation_gif.add_flag(lv.obj.FLAG.HIDDEN)
         except Exception as e:
             print(f"stop_receive_animation gif delete got exception: {e}")
-        self.receive_animation_in_progress = False
 
     def settings_button_tap(self, event):
         self.startActivity(Intent(activity_class=SettingsActivity))
