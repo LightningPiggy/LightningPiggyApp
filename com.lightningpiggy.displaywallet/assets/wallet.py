@@ -387,6 +387,10 @@ class LNBitsWallet(Wallet):
 class NWCWallet(Wallet):
 
     PAYMENTS_TO_SHOW = 6
+    
+    relays = []
+    secret = None
+    wallet_pubkey = None
 
     def __init__(self, nwc_url):
         super().__init__()
@@ -394,8 +398,8 @@ class NWCWallet(Wallet):
         if not nwc_url:
             raise ValueError('NWC URL is not set.')
         self.connected = False
-        self.relay, self.wallet_pubkey, self.secret, self.lud16 = self.parse_nwc_url(self.nwc_url)
-        if not self.relay:
+        self.relays, self.wallet_pubkey, self.secret, self.lud16 = self.parse_nwc_url(self.nwc_url)
+        if not self.relays:
             raise ValueError('Missing relay in NWC URL.')
         if not self.wallet_pubkey:
             raise ValueError('Missing public key in NWC URL.')
@@ -425,25 +429,28 @@ class NWCWallet(Wallet):
 
         self.private_key = PrivateKey(bytes.fromhex(self.secret))
         self.relay_manager = RelayManager()
-        self.relay_manager.add_relay(self.relay)
+        for relay in self.relays:
+            self.relay_manager.add_relay(relay)
 
         print(f"DEBUG: Opening relay connections")
         await self.relay_manager.open_connections({"cert_reqs": ssl.CERT_NONE})
         self.connected = False
+        nrconnected = 0
         for _ in range(20):
-            print("Waiting for relay connection...")
+            print("Waiting for relay connections...")
             await asyncio.sleep(0.5)
-            if self.relay_manager.relays[self.relay].connected is True:
-                self.connected = True
+            nrconnected = self.relay_manager.connected_relays()
+            print(f"nrconnected: {nrconnected}")
+            if nrconnected == len(self.relays) or not self.keep_running:
                 break
-            elif not self.keep_running:
-                break
-        if not self.connected or not self.keep_running:
-            print(f"ERROR: could not connect to NWC relay {self.relay} or not self.keep_running, aborting...")
-            # TODO: call an error callback to notify the user
+        if nrconnected == 0:
+            self.handle_error("Could not connect to any Nostr Wallet Connect relays.")
+            return
+        if not self.keep_running:
+            print(f"async_wallet_manager_task does not have self.keep_running, returning...")
             return
 
-        print("All relays connected")
+        print(f"{nrconnected} relays connected")
 
         # Set up subscription to receive response
         self.subscription_id = "micropython_nwc_" + str(round(time.time()))
@@ -581,7 +588,7 @@ class NWCWallet(Wallet):
         self.relay_manager.publish_event(dm)
 
     def parse_nwc_url(self, nwc_url):
-        """Parse Nostr Wallet Connect URL to extract pubkey, relay, secret, and lud16."""
+        """Parse Nostr Wallet Connect URL to extract pubkey, relays, secret, and lud16."""
         print(f"DEBUG: Starting to parse NWC URL: {nwc_url}")
         try:
             # Remove 'nostr+walletconnect://' or 'nwc:' prefix
@@ -606,9 +613,9 @@ class NWCWallet(Wallet):
             if len(pubkey) != 64 or not all(c in '0123456789abcdef' for c in pubkey):
                 raise ValueError("Invalid NWC URL: pubkey must be 64 hex characters")
             # Extract relay, secret, and lud16 from query params
-            relay = None
-            secret = None
+            relays = []
             lud16 = None
+            secret = None
             if len(parts) > 1:
                 print(f"DEBUG: Query parameters found: {parts[1]}")
                 params = parts[1].split('&')
@@ -616,6 +623,7 @@ class NWCWallet(Wallet):
                     if param.startswith('relay='):
                         relay = param[6:]
                         print(f"DEBUG: Extracted relay: {relay}")
+                        relays.append(relay)
                     elif param.startswith('secret='):
                         secret = param[7:]
                         print(f"DEBUG: Extracted secret: {secret}")
@@ -624,13 +632,13 @@ class NWCWallet(Wallet):
                         print(f"DEBUG: Extracted lud16: {lud16}")
             else:
                 print(f"DEBUG: No query parameters found")
-            if not pubkey or not relay or not secret:
+            if not pubkey or not len(relays) > 0 or not secret:
                 raise ValueError("Invalid NWC URL: missing required fields (pubkey, relay, or secret)")
             # Validate secret (should be 64 hex characters)
             if len(secret) != 64 or not all(c in '0123456789abcdef' for c in secret):
                 raise ValueError("Invalid NWC URL: secret must be 64 hex characters")
-            print(f"DEBUG: Parsed NWC data - Relay: {relay}, Pubkey: {pubkey}, Secret: {secret}, lud16: {lud16}")
-            return relay, pubkey, secret, lud16
+            print(f"DEBUG: Parsed NWC data - Relay: {relays}, Pubkey: {pubkey}, Secret: {secret}, lud16: {lud16}")
+            return relays, pubkey, secret, lud16
         except Exception as e:
             raise RuntimeError(f"Exception parsing NWC URL {nwc_url}: {e}")
 
