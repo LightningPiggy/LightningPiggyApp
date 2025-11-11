@@ -246,23 +246,17 @@ class LNBitsWallet(Wallet):
         except Exception as e:
             print(f"websocket on_message got exception: {e}")
 
-    def websocket_thread(self):
-        asyncio.run(self.do_two())
-
     # Currently, there's no mechanism for this thread to signal fatal errors, like typos in the URLs.
     def wallet_manager_thread(self):
-        asyncio.run(self.do_two())
-
-    def do_two(self):
-        print("before await self.NOmainHERE()")
         try:
-            await self.NOmainHERE()
+            asyncio.run(self.main())
         except Exception as e:
-            print(f"do_two got exception {e}")
-        print("after await self.NOmainHERE()")
+            print(f"[FATAL] Wallet manager crashed: {e}")
+            import sys
+            sys.print_exception(e)  # Full traceback on MicroPython
+            self.handle_error(e)
 
-    async def NOmainHERE(self):
-        print("NOmainHERE")
+    async def main(self):
         websocket_running = False
         while self.keep_running:
             try:
@@ -293,8 +287,9 @@ class LNBitsWallet(Wallet):
                 await asyncio.sleep(0.5)
                 if not self.keep_running:
                     break
-        print("NOmainHERE stopping")
+        print("LNBitsWallet main() stopping...")
         if self.ws:
+            print("LNBitsWallet main() closing websocket connection...")
             await self.ws.close()
 
     def fetch_balance(self):
@@ -421,17 +416,15 @@ class NWCWallet(Wallet):
         return comment
 
     def wallet_manager_thread(self):
-        asyncio.run(self.do_two())
-
-    def do_two(self):
-        print("before await self.NOmainHERE()")
         try:
-            await self.NOmainHERE()
+            asyncio.run(self.main())
         except Exception as e:
-            print(f"do_two got exception {e}")
-        print("after await self.NOmainHERE()")
+            print(f"[FATAL] Wallet manager crashed: {e}")
+            import sys
+            sys.print_exception(e)  # Full traceback on MicroPython
+            self.handle_error(e)
 
-    async def NOmainHERE(self):
+    async def main(self):
         if self.lud16:
             self.handle_new_static_receive_code(self.lud16)
 
@@ -474,11 +467,6 @@ class NWCWallet(Wallet):
         print(f"DEBUG: Publishing subscription request")
         self.relay_manager.publish_message(json.dumps(request_message))
         print(f"DEBUG: Published subscription request")
-        for _ in range(4):
-            if not self.keep_running:
-                return
-            print("Waiting a bit before self.fetch_balance()")
-            await asyncio.sleep(0.5)
 
         try:
             await self.fetch_balance()
