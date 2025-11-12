@@ -102,7 +102,12 @@ class DisplayWallet(Activity):
             img.set_src(f"{self.ASSET_PATH}bitcoin_64x64.png")
             img.add_flag(lv.obj.FLAG.HIDDEN)
             self.confetti_images.append(img)
-        for i in range(self.MAX_CONFETTI-iconimages-iconimages): # leave space for the icon
+        for _ in range(iconimages):
+            img = lv.image(lv.layer_top())
+            img.set_src(f"{self.ASSET_PATH}ribbon_64x64.png")
+            img.add_flag(lv.obj.FLAG.HIDDEN)
+            self.confetti_images.append(img)
+        for i in range(self.MAX_CONFETTI-iconimages*3): # leave space for the icon
             confettis = 3
             randomimg = random.randint(0,confettis-1)
             img = lv.image(lv.layer_top())
@@ -265,10 +270,9 @@ class DisplayWallet(Activity):
             img.set_rotation(int(piece['rotation'] * 10))
             orig = img.get_width()
             if orig >= 64:
-                #print(f"{orig}")
-                img.set_scale(int(256 * piece['scale'] / 2))
-            elif orig < 32: # 24x24 images
-                img.set_scale(int(256 * piece['scale'] * 2))
+                img.set_scale(int(256 * piece['scale'] / 1.5))
+            elif orig < 32:
+                img.set_scale(int(256 * piece['scale'] * 1.5))
             else:
                 img.set_scale(int(256 * piece['scale']))
 
