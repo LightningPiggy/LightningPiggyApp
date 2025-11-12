@@ -52,6 +52,8 @@ class DisplayWallet(Activity):
         self.receive_qr.add_event_cb(self.qr_clicked_cb,lv.EVENT.CLICKED,None)
         balance_line = lv.line(self.main_screen)
         balance_line.set_points([{'x':0,'y':35},{'x':200,'y':35}],2)
+        balance_line.add_flag(lv.obj.FLAG.CLICKABLE)
+        balance_line.add_event_cb(self.send_button_tap,lv.EVENT.CLICKED,None)
         self.payments_label = lv.label(self.main_screen)
         self.payments_label.set_text("")
         self.payments_label.align_to(balance_line,lv.ALIGN.OUT_BOTTOM_LEFT,0,10)
@@ -95,7 +97,12 @@ class DisplayWallet(Activity):
             img.set_src(f"{self.ICON_PATH}icon_64x64.png")
             img.add_flag(lv.obj.FLAG.HIDDEN)
             self.confetti_images.append(img)
-        for i in range(self.MAX_CONFETTI-iconimages): # leave space for the icon
+        for _ in range(iconimages):
+            img = lv.image(lv.layer_top())
+            img.set_src(f"{self.ASSET_PATH}bitcoin_64x64.png")
+            img.add_flag(lv.obj.FLAG.HIDDEN)
+            self.confetti_images.append(img)
+        for i in range(self.MAX_CONFETTI-iconimages-iconimages): # leave space for the icon
             confettis = 3
             randomimg = random.randint(0,confettis-1)
             img = lv.image(lv.layer_top())
