@@ -31,7 +31,8 @@ def draw_rectangle_confetti(ctx):
     r = (math.cos(hue * 6.28) * 0.5 + 0.5) * 0.8 + 0.2
     g = (math.cos((hue + 0.33) * 6.28) * 0.5 + 0.5) * 0.8 + 0.2
     b = (math.cos((hue + 0.66) * 6.28) * 0.5 + 0.5) * 0.8 + 0.2
-    ctx.set_source_rgb(r, g, b)
+    #ctx.set_source_rgb(r, g, b)
+    ctx.set_source_rgb(1, 0, 0)
 
     w, h = 16, 8
     x = (SIZE - w) / 2
@@ -56,7 +57,8 @@ def draw_triangle_confetti(ctx):
     r = max(0.3, (math.sin(hue * 6.28) * 0.5 + 0.5))
     g = max(0.3, (math.sin((hue + 0.33) * 6.28) * 0.5 + 0.5))
     b = max(0.3, (math.sin((hue + 0.66) * 6.28) * 0.5 + 0.5))
-    ctx.set_source_rgb(r, g, b)
+    #ctx.set_source_rgb(r, g, b)
+    ctx.set_source_rgb(0, 1, 0)
 
     # Equilateral triangle pointing up
     s = 14
@@ -82,7 +84,8 @@ def draw_star_confetti(ctx):
     r = max(0.4, abs(math.sin(hue * 6.28)) * 0.8 + 0.2)
     g = max(0.4, abs(math.sin((hue + 0.33) * 6.28)) * 0.8 + 0.2)
     b = max(0.4, abs(math.sin((hue + 0.66) * 6.28)) * 0.8 + 0.2)
-    ctx.set_source_rgb(r, g, b)
+    #ctx.set_source_rgb(r, g, b)
+    ctx.set_source_rgb(0, 0, 1)
 
     cx, cy = SIZE // 2, SIZE // 2
     outer = 9
@@ -105,21 +108,21 @@ def draw_star_confetti(ctx):
     ctx.fill()
 
 # Generate 3 confetti images
-random.seed(42)  # Consistent but varied output
+#random.seed(21)  # Consistent but varied output
 
 # Confetti 1: Rounded Rectangle
 surface, ctx = create_surface()
 draw_rectangle_confetti(ctx)
-surface.write_to_png(os.path.join(OUTPUT_DIR, FILENAME.format(1)))
+surface.write_to_png(os.path.join(OUTPUT_DIR, FILENAME.format(0)))
 
 # Confetti 2: Triangle
 surface, ctx = create_surface()
 draw_triangle_confetti(ctx)
-surface.write_to_png(os.path.join(OUTPUT_DIR, FILENAME.format(2)))
+surface.write_to_png(os.path.join(OUTPUT_DIR, FILENAME.format(1)))
 
 # Confetti 3: Star
 surface, ctx = create_surface()
 draw_star_confetti(ctx)
-surface.write_to_png(os.path.join(OUTPUT_DIR, FILENAME.format(3)))
+surface.write_to_png(os.path.join(OUTPUT_DIR, FILENAME.format(2)))
 
 print("Generated: confetti1.png, confetti2.png, confetti3.png")
