@@ -97,21 +97,9 @@ class DisplayWallet(Activity):
             img.set_src(f"{self.ICON_PATH}icon_64x64.png")
             img.add_flag(lv.obj.FLAG.HIDDEN)
             self.confetti_images.append(img)
-        for _ in range(iconimages):
+        for i in range(self.MAX_CONFETTI-iconimages): # leave space for the iconimages
             img = lv.image(lv.layer_top())
-            img.set_src(f"{self.ASSET_PATH}bitcoin_64x64.png")
-            img.add_flag(lv.obj.FLAG.HIDDEN)
-            self.confetti_images.append(img)
-        for _ in range(iconimages):
-            img = lv.image(lv.layer_top())
-            img.set_src(f"{self.ASSET_PATH}ribbon_64x64.png")
-            img.add_flag(lv.obj.FLAG.HIDDEN)
-            self.confetti_images.append(img)
-        for i in range(self.MAX_CONFETTI-iconimages*3): # leave space for the icon
-            confettis = 3
-            randomimg = random.randint(0,confettis-1)
-            img = lv.image(lv.layer_top())
-            img.set_src(f"{self.ASSET_PATH}confetti{randomimg}.png")
+            img.set_src(f"{self.ASSET_PATH}confetti{random.randint(0,4)}.png")
             img.add_flag(lv.obj.FLAG.HIDDEN)
             self.confetti_images.append(img)
 
