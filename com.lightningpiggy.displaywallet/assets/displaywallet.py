@@ -27,6 +27,7 @@ class DisplayWallet(Activity):
     SCREEN_WIDTH = None
     SCREEN_HEIGHT = None
     ASSET_PATH = "M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/"
+    ICON_PATH = "M:apps/com.lightningpiggy.displaywallet/res/mipmap-mdpi/"
     MAX_CONFETTI = 21
     GRAVITY = 100  # pixels/sec²
 
@@ -88,9 +89,17 @@ class DisplayWallet(Activity):
         self.used_img_indices = set()  # Track which image slots are in use
 
         # Pre-create LVGL image objects
-        for i in range(self.MAX_CONFETTI):
+        iconimages = 2
+        for _ in range(iconimages):
             img = lv.image(lv.layer_top())
-            img.set_src(f"{self.ASSET_PATH}confetti{random.randint(1,3)}.png")
+            img.set_src(f"{self.ICON_PATH}icon_64x64.png")
+            img.add_flag(lv.obj.FLAG.HIDDEN)
+            self.confetti_images.append(img)
+        for i in range(self.MAX_CONFETTI-iconimages): # leave space for the icon
+            confettis = 3
+            randomimg = random.randint(0,confettis-1)
+            img = lv.image(lv.layer_top())
+            img.set_src(f"{self.ASSET_PATH}confetti{randomimg}.png")
             img.add_flag(lv.obj.FLAG.HIDDEN)
             self.confetti_images.append(img)
 
@@ -247,7 +256,14 @@ class DisplayWallet(Activity):
             img.remove_flag(lv.obj.FLAG.HIDDEN)
             img.set_pos(int(piece['x']), int(piece['y']))
             img.set_rotation(int(piece['rotation'] * 10))
-            img.set_scale(int(256 * piece['scale'] * 2))
+            orig = img.get_width()
+            if orig >= 64:
+                #print(f"{orig}")
+                img.set_scale(int(256 * piece['scale'] / 2))
+            elif orig < 32: # 24x24 images
+                img.set_scale(int(256 * piece['scale'] * 2))
+            else:
+                img.set_scale(int(256 * piece['scale']))
 
             # Death check
             dead = (
