@@ -28,7 +28,7 @@ class DisplayWallet(Activity):
     SCREEN_HEIGHT = None
     ASSET_PATH = "M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/"
     MAX_CONFETTI = 21
-    GRAVITY = 300  # pixels/sec²
+    GRAVITY = 100  # pixels/sec²
 
     def onCreate(self):
         self.main_screen = lv.obj()
@@ -192,36 +192,49 @@ class DisplayWallet(Activity):
 
     def start_receive_animation(self, event=None):
         self.confetti_paused = False
-        """Hide every image and empty the piece list."""
-        for img in self.confetti_images:
-            img.add_flag(lv.obj.FLAG.HIDDEN)
-        self.confetti_pieces = []
-        self.used_img_indices.clear()
-        # Spawn initial confetti
-        for _ in range(self.MAX_CONFETTI):
-            self.spawn_confetti()
+        self._clear_confetti()
+
+        # Staggered spawn control
+        self.spawn_timer = 0
+        self.spawn_interval = 0.15  # seconds
+        self.animation_start = time.ticks_ms() / 1000.0
+
+        # Initial burst
+        for _ in range(10):
+            self._spawn_one()
+
         mpos.ui.th.add_event_cb(self.update_frame, 1)
-        # schedule the animation stop
-        stop_receive_animation_timer = lv.timer_create(self.stop_receive_animation,10000,None)
-        stop_receive_animation_timer.set_repeat_count(1)
+
+        # Stop spawning after 15 seconds
+        lv.timer_create(self.stop_receive_animation, 15000, None).set_repeat_count(1)
 
     def stop_receive_animation(self, timer=None):
         self.confetti_paused = True
 
+    def _clear_confetti(self):
+        for img in self.confetti_images:
+            img.add_flag(lv.obj.FLAG.HIDDEN)
+        self.confetti_pieces = []
+        self.used_img_indices.clear()
+
     def update_frame(self, a, b):
-        if not self.confetti_pieces and self.confetti_paused:
-            print("Fully stopping confetti updates because all are gone")
-            mpos.ui.th.remove_event_cb(self.update_frame)
-            return
         current_time = time.ticks_ms()
-        delta_ms = time.ticks_diff(current_time, self.last_time)
-        delta_time = delta_ms / 1000.0
+        delta_time = time.ticks_diff(current_time, self.last_time) / 1000.0
         self.last_time = current_time
 
-        new_pieces = []
+        # === STAGGERED SPAWNING ===
+        if not self.confetti_paused:
+            self.spawn_timer += delta_time
+            if self.spawn_timer >= self.spawn_interval:
+                self.spawn_timer = 0
+                for _ in range(random.randint(1, 2)):
+                    if len(self.confetti_pieces) < self.MAX_CONFETTI:
+                        self._spawn_one()
 
+        # === UPDATE ALL PIECES ===
+        new_pieces = []
         for piece in self.confetti_pieces:
-            # === UPDATE PHYSICS ===
+            # Physics
             piece['age'] += delta_time
             piece['x'] += piece['vx'] * delta_time
             piece['y'] += piece['vy'] * delta_time
@@ -229,36 +242,36 @@ class DisplayWallet(Activity):
             piece['rotation'] += piece['spin'] * delta_time
             piece['scale'] = max(0.3, 1.0 - (piece['age'] / piece['lifetime']) * 0.7)
 
-            # === UPDATE LVGL IMAGE ===
+            # Render
             img = self.confetti_images[piece['img_idx']]
             img.remove_flag(lv.obj.FLAG.HIDDEN)
             img.set_pos(int(piece['x']), int(piece['y']))
-            img.set_rotation(int(piece['rotation'] * 10))  # LVGL: 0.1 degrees
-            img.set_scale(int(256 * piece['scale']* 2))       # 256 = 100%
+            img.set_rotation(int(piece['rotation'] * 10))
+            img.set_scale(int(256 * piece['scale'] * 2))
 
-            # === CHECK IF DEAD ===
-            off_screen = (
+            # Death check
+            dead = (
                 piece['x'] < -60 or piece['x'] > self.SCREEN_WIDTH + 60 or
-                piece['y'] > self.SCREEN_HEIGHT + 60
+                piece['y'] > self.SCREEN_HEIGHT + 60 or
+                piece['age'] > piece['lifetime']
             )
-            too_old = piece['age'] > piece['lifetime']
 
-            if off_screen or too_old:
+            if dead:
                 img.add_flag(lv.obj.FLAG.HIDDEN)
                 self.used_img_indices.discard(piece['img_idx'])
-                self.spawn_confetti()  # Replace immediately
             else:
                 new_pieces.append(piece)
 
-        # === APPLY NEW LIST ===
         self.confetti_pieces = new_pieces
 
+        # Full stop when empty and paused
+        if not self.confetti_pieces and self.confetti_paused:
+            print("Confetti finished")
+            mpos.ui.th.remove_event_cb(self.update_frame)
 
-    def spawn_confetti(self):
-        """Safely spawn a new confetti piece with unique img_idx"""
-
+    def _spawn_one(self):
         if self.confetti_paused:
-                return  # no new confetti when paused
+            return
 
         # Find a free image slot
         for idx, img in enumerate(self.confetti_images):
@@ -269,20 +282,18 @@ class DisplayWallet(Activity):
 
         piece = {
             'img_idx': idx,
-            'x': random.uniform(-10, self.SCREEN_WIDTH + 10),
-            'y': random.uniform(50, 100),
-            'vx': random.uniform(-100, 100),
-            'vy': random.uniform(-250, -80),
-            'spin': random.uniform(-400, 400),
+            'x': random.uniform(-50, self.SCREEN_WIDTH + 50),
+            'y': random.uniform(50, 100),  # Start above screen
+            'vx': random.uniform(-80, 80),
+            'vy': random.uniform(-150, 0),
+            'spin': random.uniform(-500, 500),
             'age': 0.0,
-            'lifetime': random.uniform(1.8, 3.5),
+            'lifetime': random.uniform(5.0, 10.0),  # Long enough to fill 10s
             'rotation': random.uniform(0, 360),
             'scale': 1.0
         }
         self.confetti_pieces.append(piece)
         self.used_img_indices.add(idx)
-
-
 
     def settings_button_tap(self, event):
         self.startActivity(Intent(activity_class=SettingsActivity))
