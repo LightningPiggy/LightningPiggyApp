@@ -34,6 +34,11 @@ class DisplayWallet(Activity):
     def onCreate(self):
         self.main_screen = lv.obj()
         self.main_screen.set_style_pad_all(10, 0)
+        # This line needs to be drawn first, otherwise it's over the balance label and steals all the clicks!
+        balance_line = lv.line(self.main_screen)
+        balance_line.set_points([{'x':0,'y':35},{'x':200,'y':35}],2)
+        balance_line.add_flag(lv.obj.FLAG.CLICKABLE)
+        balance_line.add_event_cb(self.send_button_tap,lv.EVENT.CLICKED,None)
         self.balance_label = lv.label(self.main_screen)
         self.balance_label.set_text("")
         self.balance_label.align(lv.ALIGN.TOP_LEFT, 0, 0)
@@ -50,10 +55,6 @@ class DisplayWallet(Activity):
         self.receive_qr.set_style_border_width(1, 0);
         self.receive_qr.add_flag(lv.obj.FLAG.CLICKABLE)
         self.receive_qr.add_event_cb(self.qr_clicked_cb,lv.EVENT.CLICKED,None)
-        balance_line = lv.line(self.main_screen)
-        balance_line.set_points([{'x':0,'y':35},{'x':200,'y':35}],2)
-        balance_line.add_flag(lv.obj.FLAG.CLICKABLE)
-        balance_line.add_event_cb(self.send_button_tap,lv.EVENT.CLICKED,None)
         self.payments_label = lv.label(self.main_screen)
         self.payments_label.set_text("")
         self.payments_label.align_to(balance_line,lv.ALIGN.OUT_BOTTOM_LEFT,0,10)

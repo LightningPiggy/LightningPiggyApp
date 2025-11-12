@@ -1,3 +1,7 @@
+0.0.16
+======
+- Fix click on balance to switch currency denomination
+
 0.0.15
 ======
 - Replace confetti GIF with custom confetti animation to fix slowdown
