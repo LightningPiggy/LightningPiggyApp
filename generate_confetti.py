@@ -11,7 +11,7 @@ import random
 import os
 
 # Configuration
-SIZE = 24
+SIZE = 64
 FILENAME = "confetti{}.png"
 OUTPUT_DIR = "."  # Change if needed
 
@@ -31,10 +31,10 @@ def draw_rectangle_confetti(ctx):
     r = (math.cos(hue * 6.28) * 0.5 + 0.5) * 0.8 + 0.2
     g = (math.cos((hue + 0.33) * 6.28) * 0.5 + 0.5) * 0.8 + 0.2
     b = (math.cos((hue + 0.66) * 6.28) * 0.5 + 0.5) * 0.8 + 0.2
-    #ctx.set_source_rgb(r, g, b)
-    ctx.set_source_rgb(1, 0, 0)
+    ctx.set_source_rgb(r, g, b)
+    #ctx.set_source_rgb(1, 0, 0)
 
-    w, h = 16, 8
+    w, h = SIZE, SIZE/2
     x = (SIZE - w) / 2
     y = (SIZE - h) / 2
 
@@ -57,11 +57,11 @@ def draw_triangle_confetti(ctx):
     r = max(0.3, (math.sin(hue * 6.28) * 0.5 + 0.5))
     g = max(0.3, (math.sin((hue + 0.33) * 6.28) * 0.5 + 0.5))
     b = max(0.3, (math.sin((hue + 0.66) * 6.28) * 0.5 + 0.5))
-    #ctx.set_source_rgb(r, g, b)
-    ctx.set_source_rgb(0, 1, 0)
+    ctx.set_source_rgb(r, g, b)
+    #ctx.set_source_rgb(0, 1, 0)
 
     # Equilateral triangle pointing up
-    s = 14
+    s = SIZE
     h = s * math.sqrt(3) / 2
     cx, cy = SIZE // 2, SIZE // 2
 
@@ -84,12 +84,12 @@ def draw_star_confetti(ctx):
     r = max(0.4, abs(math.sin(hue * 6.28)) * 0.8 + 0.2)
     g = max(0.4, abs(math.sin((hue + 0.33) * 6.28)) * 0.8 + 0.2)
     b = max(0.4, abs(math.sin((hue + 0.66) * 6.28)) * 0.8 + 0.2)
-    #ctx.set_source_rgb(r, g, b)
-    ctx.set_source_rgb(0, 0, 1)
+    ctx.set_source_rgb(r, g, b)
+    #ctx.set_source_rgb(0, 0, 1)
 
-    cx, cy = SIZE // 2, SIZE // 2
-    outer = 9
-    inner = 4
+    cx, cy = SIZE//2, SIZE//2
+    outer = 32
+    inner = 8
     points = 5
 
     ctx.move_to(cx, cy - outer)
