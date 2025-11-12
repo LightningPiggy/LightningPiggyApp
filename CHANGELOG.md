@@ -1,6 +1,9 @@
 0.0.15
 ======
+- Replace confetti GIF with custom confetti animation to fix slowdown
+- Make line under balance clickable for confetti animation
 - Support multiple relays in Nostr Wallet Connect URL
+- Rewrite LNBitsWallet, NWCWallet and Wallet classes for improved speed and stability
 
 0.0.14
 ======
