@@ -67,7 +67,7 @@ class DisplayWallet(Activity):
         self.setContentView(self.main_screen)
         # top layer animation gif
         self.receive_animation_gif = lv.gif(lv.layer_top())
-        self.receive_animation_gif.set_src("M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/party_popper2_320x240.gif")
+        #self.receive_animation_gif.set_src("M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/party_popper2_320x240.gif")
         self.receive_animation_gif.add_flag(lv.obj.FLAG.HIDDEN)
         self.receive_animation_gif.set_pos(0,0)
 
