@@ -1,3 +1,6 @@
+import time
+import random
+
 from mpos.apps import Activity, Intent
 import mpos.config
 import mpos.ui
@@ -19,7 +22,13 @@ class DisplayWallet(Activity):
     balance_label = None
     receive_qr = None
     payments_label = None
-    receive_animation_gif = None
+
+    # confetti:
+    SCREEN_WIDTH = None
+    SCREEN_HEIGHT = None
+    ASSET_PATH = "M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/"
+    MAX_CONFETTI = 21
+    GRAVITY = 300  # pixels/sec²
 
     def onCreate(self):
         self.main_screen = lv.obj()
@@ -65,16 +74,26 @@ class DisplayWallet(Activity):
             send_label.set_style_text_font(lv.font_montserrat_26, 0)
             send_label.center()
         self.setContentView(self.main_screen)
-        # top layer animation gif
-        self.receive_animation_gif = lv.gif(lv.layer_top())
-        #self.receive_animation_gif.set_src("M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/party_popper2_320x240.gif")
-        self.receive_animation_gif.add_flag(lv.obj.FLAG.HIDDEN)
-        self.receive_animation_gif.set_pos(0,0)
-
 
     def onStart(self, main_screen):
         self.main_ui_set_defaults()
-    
+
+        # Confetti
+        self.SCREEN_WIDTH = main_screen.get_display().get_horizontal_resolution()
+        self.SCREEN_HEIGHT = main_screen.get_display().get_vertical_resolution()
+        self.last_time = time.ticks_ms()
+        self.confetti_paused = True
+        self.confetti_pieces = []
+        self.confetti_images = []
+        self.used_img_indices = set()  # Track which image slots are in use
+
+        # Pre-create LVGL image objects
+        for i in range(self.MAX_CONFETTI):
+            img = lv.image(lv.layer_top())
+            img.set_src(f"{self.ASSET_PATH}confetti{random.randint(1,3)}.png")
+            img.add_flag(lv.obj.FLAG.HIDDEN)
+            self.confetti_images.append(img)
+
     def onResume(self, main_screen):
         super().onResume(main_screen)
         if self.wallet and self.wallet.is_running():
@@ -122,8 +141,7 @@ class DisplayWallet(Activity):
         self.destination = None
 
     def onDestroy(self, main_screen):
-        if self.receive_animation_gif:
-            self.receive_animation_gif.delete()
+        pass # would be good to cleanup lv.layer_top() of those confetti images
 
     def float_to_string(self, value):
         # Format float to string with fixed-point notation, up to 6 decimal places
@@ -169,20 +187,102 @@ class DisplayWallet(Activity):
 
     def send_button_tap(self, event):
         print("send_button clicked")
-        self.start_receive_animation() # for testing the receive animation
+        if self.confetti_paused:
+            self.start_receive_animation() # for testing the receive animation
 
     def start_receive_animation(self, event=None):
-        self.receive_animation_gif.remove_flag(lv.obj.FLAG.HIDDEN)
+        self.confetti_paused = False
+        """Hide every image and empty the piece list."""
+        for img in self.confetti_images:
+            img.add_flag(lv.obj.FLAG.HIDDEN)
+        self.confetti_pieces = []
+        self.used_img_indices.clear()
+        # Spawn initial confetti
+        for _ in range(self.MAX_CONFETTI):
+            self.spawn_confetti()
+        mpos.ui.th.add_event_cb(self.update_frame, 1)
         # schedule the animation stop
         stop_receive_animation_timer = lv.timer_create(self.stop_receive_animation,10000,None)
         stop_receive_animation_timer.set_repeat_count(1)
 
     def stop_receive_animation(self, timer=None):
-        print("Stopping receive_animation_gif")
-        try:
-            self.receive_animation_gif.add_flag(lv.obj.FLAG.HIDDEN)
-        except Exception as e:
-            print(f"stop_receive_animation gif delete got exception: {e}")
+        self.confetti_paused = True
+
+    def update_frame(self, a, b):
+        if not self.confetti_pieces and self.confetti_paused:
+            print("Fully stopping confetti updates because all are gone")
+            mpos.ui.th.remove_event_cb(self.update_frame)
+            return
+        current_time = time.ticks_ms()
+        delta_ms = time.ticks_diff(current_time, self.last_time)
+        delta_time = delta_ms / 1000.0
+        self.last_time = current_time
+
+        new_pieces = []
+
+        for piece in self.confetti_pieces:
+            # === UPDATE PHYSICS ===
+            piece['age'] += delta_time
+            piece['x'] += piece['vx'] * delta_time
+            piece['y'] += piece['vy'] * delta_time
+            piece['vy'] += self.GRAVITY * delta_time
+            piece['rotation'] += piece['spin'] * delta_time
+            piece['scale'] = max(0.3, 1.0 - (piece['age'] / piece['lifetime']) * 0.7)
+
+            # === UPDATE LVGL IMAGE ===
+            img = self.confetti_images[piece['img_idx']]
+            img.remove_flag(lv.obj.FLAG.HIDDEN)
+            img.set_pos(int(piece['x']), int(piece['y']))
+            img.set_rotation(int(piece['rotation'] * 10))  # LVGL: 0.1 degrees
+            img.set_scale(int(256 * piece['scale']* 2))       # 256 = 100%
+
+            # === CHECK IF DEAD ===
+            off_screen = (
+                piece['x'] < -60 or piece['x'] > self.SCREEN_WIDTH + 60 or
+                piece['y'] > self.SCREEN_HEIGHT + 60
+            )
+            too_old = piece['age'] > piece['lifetime']
+
+            if off_screen or too_old:
+                img.add_flag(lv.obj.FLAG.HIDDEN)
+                self.used_img_indices.discard(piece['img_idx'])
+                self.spawn_confetti()  # Replace immediately
+            else:
+                new_pieces.append(piece)
+
+        # === APPLY NEW LIST ===
+        self.confetti_pieces = new_pieces
+
+
+    def spawn_confetti(self):
+        """Safely spawn a new confetti piece with unique img_idx"""
+
+        if self.confetti_paused:
+                return  # no new confetti when paused
+
+        # Find a free image slot
+        for idx, img in enumerate(self.confetti_images):
+            if img.has_flag(lv.obj.FLAG.HIDDEN) and idx not in self.used_img_indices:
+                break
+        else:
+            return  # No free slot
+
+        piece = {
+            'img_idx': idx,
+            'x': random.uniform(-10, self.SCREEN_WIDTH + 10),
+            'y': random.uniform(50, 100),
+            'vx': random.uniform(-100, 100),
+            'vy': random.uniform(-250, -80),
+            'spin': random.uniform(-400, 400),
+            'age': 0.0,
+            'lifetime': random.uniform(1.8, 3.5),
+            'rotation': random.uniform(0, 360),
+            'scale': 1.0
+        }
+        self.confetti_pieces.append(piece)
+        self.used_img_indices.add(idx)
+
+
 
     def settings_button_tap(self, event):
         self.startActivity(Intent(activity_class=SettingsActivity))
