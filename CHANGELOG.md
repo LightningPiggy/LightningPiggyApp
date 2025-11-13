@@ -1,3 +1,8 @@
+0.0.17
+======
+- Camera for QR scanning: fix one-in-two "camera image stays blank" issue
+- Payments list: click to change font (not persistent)
+
 0.0.16
 ======
 - Fix click on balance to switch currency denomination
@@ -8,6 +13,8 @@
 - Make line under balance clickable for confetti animation
 - Support multiple relays in Nostr Wallet Connect URL
 - Rewrite LNBitsWallet, NWCWallet and Wallet classes for improved speed and stability
+- NWCWallet: increase number of listed payments from 3 to 6
+- NWCWallet: re-fetch balance balance every 60 seconds
 
 0.0.14
 ======

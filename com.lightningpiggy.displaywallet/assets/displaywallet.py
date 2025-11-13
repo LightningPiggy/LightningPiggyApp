@@ -1,5 +1,6 @@
 import time
 import random
+import lvgl as lv
 
 from mpos.apps import Activity, Intent
 import mpos.config
@@ -14,6 +15,8 @@ class DisplayWallet(Activity):
     receive_qr_data = None
     destination = None
     balance_mode_btc = False # show BTC or sats?
+    payments_label_current_font = 2
+    payments_label_fonts = [ lv.font_montserrat_10, lv.font_unscii_8, lv.font_montserrat_16, lv.font_montserrat_24, lv.font_unscii_16, lv.font_montserrat_30, lv.font_montserrat_40]
 
     # screens:
     main_screen = None
@@ -58,8 +61,10 @@ class DisplayWallet(Activity):
         self.payments_label = lv.label(self.main_screen)
         self.payments_label.set_text("")
         self.payments_label.align_to(balance_line,lv.ALIGN.OUT_BOTTOM_LEFT,0,10)
-        self.payments_label.set_style_text_font(lv.font_montserrat_16, 0)
+        self.update_payments_label_font()
         self.payments_label.set_width(mpos.ui.pct_of_display_width(75)) # 100 - receive_qr
+        self.payments_label.add_flag(lv.obj.FLAG.CLICKABLE)
+        self.payments_label.add_event_cb(self.payments_label_clicked,lv.EVENT.CLICKED,None)
         settings_button = lv.button(self.main_screen)
         settings_button.set_size(lv.pct(20), lv.pct(25))
         settings_button.align(lv.ALIGN.BOTTOM_RIGHT, 0, 0)
@@ -152,6 +157,13 @@ class DisplayWallet(Activity):
 
     def onDestroy(self, main_screen):
         pass # would be good to cleanup lv.layer_top() of those confetti images
+
+    def update_payments_label_font(self):
+        self.payments_label.set_style_text_font(self.payments_label_fonts[self.payments_label_current_font], 0)
+
+    def payments_label_clicked(self, event):
+        self.payments_label_current_font = (self.payments_label_current_font + 1) % len(self.payments_label_fonts)
+        self.update_payments_label_font()
 
     def float_to_string(self, value):
         # Format float to string with fixed-point notation, up to 6 decimal places
