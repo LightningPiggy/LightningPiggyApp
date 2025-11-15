@@ -225,7 +225,7 @@ class DisplayWallet(Activity):
         for _ in range(10):
             self._spawn_one()
 
-        mpos.ui.th.add_event_cb(self.update_frame, 1)
+        mpos.ui.task_handler.add_event_cb(self.update_frame, 1)
 
         # Stop spawning after 15 seconds
         lv.timer_create(self.stop_receive_animation, 15000, None).set_repeat_count(1)
@@ -295,7 +295,7 @@ class DisplayWallet(Activity):
         # Full stop when empty and paused
         if not self.confetti_pieces and self.confetti_paused:
             print("Confetti finished")
-            mpos.ui.th.remove_event_cb(self.update_frame)
+            mpos.ui.task_handler.remove_event_cb(self.update_frame)
 
     def _spawn_one(self):
         if self.confetti_paused:
