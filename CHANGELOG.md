@@ -1,3 +1,8 @@
+0.1.0
+=====
+- Adapt to task_handler API change
+- UI: fix on-screen keyboard button color in light mode
+
 0.0.17
 ======
 - Camera for QR scanning: fix one-in-two "camera image stays blank" issue

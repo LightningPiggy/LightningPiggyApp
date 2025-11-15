@@ -5,6 +5,7 @@ import lvgl as lv
 from mpos.apps import Activity, Intent
 import mpos.config
 import mpos.ui
+import mpos.ui.theme
 
 from wallet import LNBitsWallet, NWCWallet
 from camera_app import CameraApp
@@ -513,6 +514,7 @@ class SettingActivity(Activity):
             self.keyboard.align(lv.ALIGN.BOTTOM_MID, 0, 0)
             self.keyboard.set_textarea(self.textarea)
             self.keyboard.set_style_min_height(160, 0)
+            mpos.ui.theme.fix_keyboard_button_style(self.keyboard)  # Fix button visibility in light mode
             #self.keyboard.add_event_cb(lambda *args: mpos.ui.anim.smooth_hide(self.keyboard), lv.EVENT.READY, None)
             self.keyboard.add_event_cb(lambda *args: self.hide_keyboard(), lv.EVENT.READY, None)
             #self.keyboard.add_event_cb(lambda *args: mpos.ui.anim.smooth_hide(self.keyboard), lv.EVENT.CANCEL, None)
