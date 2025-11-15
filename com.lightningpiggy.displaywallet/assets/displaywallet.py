@@ -2,6 +2,7 @@ import time
 import random
 import lvgl as lv
 
+from mpos.ui.keyboard import MposKeyboard
 from mpos.apps import Activity, Intent
 import mpos.config
 import mpos.ui
@@ -449,7 +450,7 @@ class SettingActivity(Activity):
         settings_screen_detail.set_style_pad_all(0, 0)
         settings_screen_detail.set_scroll_dir(lv.DIR.NONE)
         settings_screen_detail.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
-        settings_screen_detail.set_style_pad_all(mpos.ui.pct_of_display_width(1), 0)
+        #settings_screen_detail.set_style_pad_all(mpos.ui.pct_of_display_width(1), 0)
         settings_screen_detail.set_flex_flow(lv.FLEX_FLOW.COLUMN)
 
         top_cont = lv.obj(settings_screen_detail)
@@ -491,16 +492,8 @@ class SettingActivity(Activity):
         else:
             # Textarea for other settings
             self.textarea = lv.textarea(settings_screen_detail)
-            #self.textarea = lv.textarea(top_cont)
             self.textarea.set_width(lv.pct(90))
-            #self.textarea.set_height(lv.SIZE_CONTENT)
             self.textarea.set_one_line(True) # might not be good for all settings but it's good for most
-            #self.textarea.align_to(top_cont, lv.ALIGN.OUT_BOTTOM_LEFT, mpos.ui.pct_of_display_width(10), 0)
-            #self.textarea.align(lv.ALIGN.BOTTOM_LEFT,20,0)
-            #self.textarea.align_to(top_cont, lv.ALIGN.OUT_BOTTOM_LEFT, mpos.ui.pct_of_display_width(10), 0)
-            #self.textarea.align_to(setting_label, lv.ALIGN.OUT_BOTTOM_MID, 20, 20)
-            #self.textarea.align_to(setting_label, lv.ALIGN.OUT_BOTTOM_LEFT, 20, 20)
-            #self.textarea.set_style_pad_all(10, 0)
             current = self.prefs.get_string(setting["key"])
             if current:
                 self.textarea.set_text(current)
@@ -509,15 +502,11 @@ class SettingActivity(Activity):
                 self.textarea.set_placeholder_text(placeholder)
             self.textarea.add_event_cb(lambda *args: self.show_keyboard(), lv.EVENT.CLICKED, None)
             # Initialize keyboard (hidden initially)
-            #self.keyboard = lv.keyboard(lv.layer_sys()) # this makes it linger in the focus group somehow
-            self.keyboard = lv.keyboard(settings_screen_detail)
+            self.keyboard = MposKeyboard(settings_screen_detail)
             self.keyboard.align(lv.ALIGN.BOTTOM_MID, 0, 0)
             self.keyboard.set_textarea(self.textarea)
-            self.keyboard.set_style_min_height(160, 0)
-            mpos.ui.theme.fix_keyboard_button_style(self.keyboard)  # Fix button visibility in light mode
-            #self.keyboard.add_event_cb(lambda *args: mpos.ui.anim.smooth_hide(self.keyboard), lv.EVENT.READY, None)
+            self.keyboard.set_style_min_height(165, 0)
             self.keyboard.add_event_cb(lambda *args: self.hide_keyboard(), lv.EVENT.READY, None)
-            #self.keyboard.add_event_cb(lambda *args: mpos.ui.anim.smooth_hide(self.keyboard), lv.EVENT.CANCEL, None)
             self.keyboard.add_event_cb(lambda *args: self.hide_keyboard(), lv.EVENT.CANCEL, None)
             self.keyboard.add_flag(lv.obj.FLAG.HIDDEN)
             self.keyboard.add_event_cb(self.handle_keyboard_events, lv.EVENT.VALUE_CHANGED, None)
