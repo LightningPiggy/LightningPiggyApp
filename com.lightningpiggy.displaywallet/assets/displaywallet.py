@@ -4,6 +4,7 @@ import lvgl as lv
 
 from mpos.ui.keyboard import MposKeyboard
 from mpos.apps import Activity, Intent
+from mpos import ConnectivityManager
 import mpos.config
 import mpos.ui
 import mpos.ui.theme
@@ -113,6 +114,29 @@ class DisplayWallet(Activity):
 
     def onResume(self, main_screen):
         super().onResume(main_screen)
+        cm = ConnectivityManager.get()
+        cm.register_callback(self.network_changed)
+        self.network_changed(cm.is_online())
+
+    def onPause(self, main_screen):
+        if self.wallet and self.destination != FullscreenQR:
+            self.wallet.stop() # don't stop the wallet for the fullscreen QR activity
+            self.stop_receive_animation()
+        self.destination = None
+        cm = ConnectivityManager.get()
+        cm.unregister_callback(self.network_changed)
+
+    def onDestroy(self, main_screen):
+        pass # would be good to cleanup lv.layer_top() of those confetti images
+
+    def network_changed(self, online):
+        print("displaywallet.py network_changed, now:", "ONLINE" if online else "OFFLINE")
+        if online:
+            self.went_online()
+        else:
+            self.went_offline()
+
+    def went_online(self):
         if self.wallet and self.wallet.is_running():
             print("wallet is already running, nothing to do") # might have come from the QR activity
             return
@@ -138,27 +162,16 @@ class DisplayWallet(Activity):
         else:
             self.error_cb(f"No or unsupported wallet type configured: '{wallet_type}'")
             return
+        self.balance_label.set_text(lv.SYMBOL.REFRESH)
+        self.payments_label.set_text(f"\nConnecting to {wallet_type} backend.\n\nIf this takes too long, it might be down or something's wrong with the settings.")
+        # by now, self.wallet can be assumed
+        self.wallet.start(self.redraw_balance_cb, self.redraw_payments_cb, self.redraw_static_receive_code_cb, self.error_cb)
 
-        can_check_network = True
-        try:
-            import network
-        except Exception as e:
-            can_check_network = False
-        if can_check_network and not network.WLAN(network.STA_IF).isconnected():
-            self.payments_label.set_text(f"WiFi is not connected, can't talk to {wallet_type} backend.")
-        else: # by now, self.wallet can be assumed
-            self.balance_label.set_text(lv.SYMBOL.REFRESH)
-            self.payments_label.set_text(f"\nConnecting to {wallet_type} backend.\n\nIf this takes too long, it might be down or something's wrong with the settings.")
-            self.wallet.start(self.redraw_balance_cb, self.redraw_payments_cb, self.redraw_static_receive_code_cb, self.error_cb)
-
-    def onPause(self, main_screen):
-        if self.wallet and self.destination != FullscreenQR:
+    def went_offline(self):
+        if self.wallet:
             self.wallet.stop() # don't stop the wallet for the fullscreen QR activity
-            self.stop_receive_animation()
-        self.destination = None
-
-    def onDestroy(self, main_screen):
-        pass # would be good to cleanup lv.layer_top() of those confetti images
+        self.stop_receive_animation()
+        self.payments_label.set_text(f"WiFi is not connected, can't talk to wallet...")
 
     def update_payments_label_font(self):
         self.payments_label.set_style_text_font(self.payments_label_fonts[self.payments_label_current_font], 0)
@@ -505,7 +518,6 @@ class SettingActivity(Activity):
             self.keyboard = MposKeyboard(settings_screen_detail)
             self.keyboard.align(lv.ALIGN.BOTTOM_MID, 0, 0)
             self.keyboard.set_textarea(self.textarea)
-            self.keyboard.set_style_min_height(165, 0)
             self.keyboard.add_event_cb(lambda *args: self.hide_keyboard(), lv.EVENT.READY, None)
             self.keyboard.add_event_cb(lambda *args: self.hide_keyboard(), lv.EVENT.CANCEL, None)
             self.keyboard.add_flag(lv.obj.FLAG.HIDDEN)
