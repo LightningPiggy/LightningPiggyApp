@@ -3,6 +3,7 @@
 - Adapt to task_handler API change
 - UI: fix on-screen keyboard button color in light mode
 - Integrate MposKeyboard: bigger keys, better layout
+- Wait for WiFi connection if not connected already
 
 0.0.17
 ======
