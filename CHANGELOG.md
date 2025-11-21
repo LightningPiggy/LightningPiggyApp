@@ -4,6 +4,7 @@
 - Integrate MposKeyboard: bigger keys, bigger labels, better layout
 - UI: fix on-screen keyboard button color in light mode
 - Adapt to task_handler API change
+- Tweak font sizes
 
 0.0.17
 ======
