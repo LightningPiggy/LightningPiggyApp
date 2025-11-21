@@ -19,7 +19,7 @@ class DisplayWallet(Activity):
     destination = None
     balance_mode_btc = False # show BTC or sats?
     payments_label_current_font = 2
-    payments_label_fonts = [ lv.font_montserrat_10, lv.font_unscii_8, lv.font_montserrat_16, lv.font_montserrat_24, lv.font_unscii_16, lv.font_montserrat_30, lv.font_montserrat_40]
+    payments_label_fonts = [ lv.font_montserrat_10, lv.font_unscii_8, lv.font_montserrat_16, lv.font_montserrat_24, lv.font_unscii_16, lv.font_montserrat_28_compressed, lv.font_montserrat_40]
 
     # screens:
     main_screen = None
@@ -48,7 +48,7 @@ class DisplayWallet(Activity):
         self.balance_label = lv.label(self.main_screen)
         self.balance_label.set_text("")
         self.balance_label.align(lv.ALIGN.TOP_LEFT, 0, 0)
-        self.balance_label.set_style_text_font(lv.font_montserrat_26, 0)
+        self.balance_label.set_style_text_font(lv.font_montserrat_24, 0)
         self.balance_label.add_flag(lv.obj.FLAG.CLICKABLE)
         self.balance_label.set_width(mpos.ui.pct_of_display_width(75)) # 100 - receive_qr
         self.balance_label.add_event_cb(self.balance_label_clicked_cb,lv.EVENT.CLICKED,None)
@@ -74,7 +74,7 @@ class DisplayWallet(Activity):
         settings_button.add_event_cb(self.settings_button_tap,lv.EVENT.CLICKED,None)
         settings_label = lv.label(settings_button)
         settings_label.set_text(lv.SYMBOL.SETTINGS)
-        settings_label.set_style_text_font(lv.font_montserrat_26, 0)
+        settings_label.set_style_text_font(lv.font_montserrat_24, 0)
         settings_label.center()
         if False: # send button disabled for now, not implemented
             send_button = lv.button(self.main_screen)
@@ -83,7 +83,7 @@ class DisplayWallet(Activity):
             send_button.add_event_cb(self.send_button_tap,lv.EVENT.CLICKED,None)
             send_label = lv.label(send_button)
             send_label.set_text(lv.SYMBOL.UPLOAD)
-            send_label.set_style_text_font(lv.font_montserrat_26, 0)
+            send_label.set_style_text_font(lv.font_montserrat_24, 0)
             send_label.center()
         self.setContentView(self.main_screen)
 
