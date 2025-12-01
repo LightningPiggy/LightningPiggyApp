@@ -633,7 +633,7 @@ class SettingActivity(Activity):
 
     def cambutton_cb(self, event):
         print("cambutton clicked!")
-        self.startActivityForResult(Intent(activity_class=CameraApp).putExtra("scanqr_mode", True), self.gotqr_result_callback)
+        self.startActivityForResult(Intent(activity_class=CameraApp).putExtra("scanqr_intent", True), self.gotqr_result_callback)
 
     def save_setting(self, setting):
         if setting["key"] == "wallet_type" and self.radio_container:

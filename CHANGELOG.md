@@ -1,3 +1,7 @@
+0.1.2
+=====
+- Huge overhaul of camera and QR scanning capabilities
+
 0.1.1
 =====
 - Tweak font sizes for compatibility with MicroPythonOS 0.5.0
