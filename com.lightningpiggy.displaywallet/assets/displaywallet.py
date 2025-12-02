@@ -513,15 +513,11 @@ class SettingActivity(Activity):
             placeholder = setting.get("placeholder")
             if placeholder:
                 self.textarea.set_placeholder_text(placeholder)
-            self.textarea.add_event_cb(lambda *args: self.show_keyboard(), lv.EVENT.CLICKED, None)
             # Initialize keyboard (hidden initially)
             self.keyboard = MposKeyboard(settings_screen_detail)
             self.keyboard.align(lv.ALIGN.BOTTOM_MID, 0, 0)
             self.keyboard.set_textarea(self.textarea)
-            self.keyboard.add_event_cb(lambda *args: self.hide_keyboard(), lv.EVENT.READY, None)
-            self.keyboard.add_event_cb(lambda *args: self.hide_keyboard(), lv.EVENT.CANCEL, None)
             self.keyboard.add_flag(lv.obj.FLAG.HIDDEN)
-            self.keyboard.add_event_cb(self.handle_keyboard_events, lv.EVENT.VALUE_CHANGED, None)
 
         # Button container
         self.btn_cont = lv.obj(settings_screen_detail)
@@ -561,37 +557,6 @@ class SettingActivity(Activity):
             self.cambutton.add_event_cb(self.cambutton_cb, lv.EVENT.CLICKED, None)
 
         self.setContentView(settings_screen_detail)
-
-    def onStop(self, screen):
-        self.hide_keyboard()
-
-    def show_keyboard(self):
-        self.btn_cont.add_flag(lv.obj.FLAG.HIDDEN)
-        if self.cambutton: # not always set
-            self.cambutton.add_flag(lv.obj.FLAG.HIDDEN)
-        mpos.ui.anim.smooth_show(self.keyboard)
-        focusgroup = lv.group_get_default()
-        if focusgroup:
-            # move the focus to the keyboard to save the user a "next" button press (optional but nice)
-            # this is focusing on the right thing (keyboard) but the focus is not "active" (shown or used) somehow
-            print(f"current focus object: {lv.group_get_default().get_focused()}")
-            focusgroup.focus_next()
-            print(f"current focus object: {lv.group_get_default().get_focused()}")
-
-    def hide_keyboard(self):
-        if self.keyboard:
-            self.btn_cont.remove_flag(lv.obj.FLAG.HIDDEN)
-            self.cambutton.remove_flag(lv.obj.FLAG.HIDDEN)
-            mpos.ui.anim.smooth_hide(self.keyboard)
-
-    def handle_keyboard_events(self, event):
-        target_obj=event.get_target_obj() # keyboard
-        button = target_obj.get_selected_button()
-        text = target_obj.get_button_text(button)
-        #print(f"button {button} and text {text}")
-        if text == lv.SYMBOL.NEW_LINE:
-            print("Newline pressed, closing the keyboard...")
-            self.hide_keyboard()
 
     def radio_event_handler(self, event):
         print("radio_event_handler called")
