@@ -21,9 +21,9 @@ class CameraApp(Activity):
     button_width = 75
     button_height = 50
 
-    status_label_text = "No camera found."
-    status_label_text_searching = "Searching QR codes...\n\nHold still and try varying scan distance (10-25cm) and make the QR code big (4-12cm). Ensure proper lighting."
-    status_label_text_found = "Found QR, trying to decode... hold still..."
+    STATUS_NO_CAMERA = "No camera found."
+    STATUS_SEARCHING_QR = "Searching QR codes...\n\nHold still and try varying scan distance (10-25cm) and make the QR code big (4-12cm). Ensure proper lighting."
+    STATUS_FOUND_QR = "Found QR, trying to decode... hold still..."
 
     cam = None
     current_cam_buffer = None # Holds the current memoryview to prevent garba
@@ -110,7 +110,7 @@ class CameraApp(Activity):
         self.status_label_cont.set_style_bg_opa(66, 0)
         self.status_label_cont.set_style_border_width(0, 0)
         self.status_label = lv.label(self.status_label_cont)
-        self.status_label.set_text("No camera found.")
+        self.status_label.set_text(self.STATUS_NO_CAMERA)
         self.status_label.set_long_mode(lv.label.LONG_MODE.WRAP)
         self.status_label.set_width(lv.pct(100))
         self.status_label.center()
@@ -188,16 +188,30 @@ class CameraApp(Activity):
         if self.scanqr_mode:
             print("loading scanqr settings...")
             if not self.scanqr_prefs:
-                self.scanqr_prefs = SharedPreferences(self.PACKAGE, filename=self.SCANQR_CONFIG)
-            self.width = self.scanqr_prefs.get_int("resolution_width", CameraSettingsActivity.DEFAULT_SCANQR_WIDTH)
-            self.height = self.scanqr_prefs.get_int("resolution_height", CameraSettingsActivity.DEFAULT_SCANQR_HEIGHT)
-            self.colormode = self.scanqr_prefs.get_bool("colormode", CameraSettingsActivity.DEFAULT_SCANQR_COLORMODE)
+                # Merge common and scanqr-specific defaults
+                scanqr_defaults = {}
+                scanqr_defaults.update(CameraSettingsActivity.COMMON_DEFAULTS)
+                scanqr_defaults.update(CameraSettingsActivity.SCANQR_DEFAULTS)
+                self.scanqr_prefs = SharedPreferences(
+                    self.PACKAGE,
+                    filename=self.SCANQR_CONFIG,
+                    defaults=scanqr_defaults
+                )
+            # Defaults come from constructor, no need to pass them here
+            self.width = self.scanqr_prefs.get_int("resolution_width")
+            self.height = self.scanqr_prefs.get_int("resolution_height")
+            self.colormode = self.scanqr_prefs.get_bool("colormode")
         else:
             if not self.prefs:
-                self.prefs = SharedPreferences(self.PACKAGE)
-            self.width = self.prefs.get_int("resolution_width", CameraSettingsActivity.DEFAULT_WIDTH)
-            self.height = self.prefs.get_int("resolution_height", CameraSettingsActivity.DEFAULT_HEIGHT)
-            self.colormode = self.prefs.get_bool("colormode", CameraSettingsActivity.DEFAULT_COLORMODE)
+                # Merge common and normal-specific defaults
+                normal_defaults = {}
+                normal_defaults.update(CameraSettingsActivity.COMMON_DEFAULTS)
+                normal_defaults.update(CameraSettingsActivity.NORMAL_DEFAULTS)
+                self.prefs = SharedPreferences(self.PACKAGE, defaults=normal_defaults)
+            # Defaults come from constructor, no need to pass them here
+            self.width = self.prefs.get_int("resolution_width")
+            self.height = self.prefs.get_int("resolution_height")
+            self.colormode = self.prefs.get_bool("colormode")
 
     def update_preview_image(self):
         self.image_dsc = lv.image_dsc_t({
@@ -237,10 +251,10 @@ class CameraApp(Activity):
             print(f"qrdecode took {after-before}ms")
         except ValueError as e:
             print("QR ValueError: ", e)
-            self.status_label.set_text(self.status_label_text_searching)
+            self.status_label.set_text(self.STATUS_SEARCHING_QR)
         except TypeError as e:
             print("QR TypeError: ", e)
-            self.status_label.set_text(self.status_label_text_found)
+            self.status_label.set_text(self.STATUS_FOUND_QR)
         except Exception as e:
             print("QR got other error: ", e)
         #result = bytearray("INSERT_TEST_QR_DATA_HERE", "utf-8")
@@ -260,23 +274,36 @@ class CameraApp(Activity):
         print("Taking picture...")
         # Would be nice to check that there's enough free space here, and show an error if not...
         import os
+        path = "data/images"
         try:
             os.mkdir("data")
         except OSError:
             pass
         try:
-            os.mkdir("data/images")
+            os.mkdir(path)
         except OSError:
             pass
         if self.current_cam_buffer is None:
             print("snap_button_click: won't save empty image")
             return
+        # Check enough free space?
+        stat = os.statvfs("data/images")
+        free_space = stat[0] * stat[3]
+        size_needed = len(self.current_cam_buffer)
+        print(f"Free space {free_space} and size needed {size_needed}")
+        if free_space < size_needed:
+            self.status_label.set_text(f"Free storage space is {free_space}, need {size_needed}, not saving...")
+            self.status_label_cont.remove_flag(lv.obj.FLAG.HIDDEN)
+            return
         colorname = "RGB565" if self.colormode else "GRAY"
-        filename=f"data/images/camera_capture_{mpos.time.epoch_seconds()}_{self.width}x{self.height}_{colorname}.raw"
+        filename=f"{path}/picture_{mpos.time.epoch_seconds()}_{self.width}x{self.height}_{colorname}.raw"
         try:
             with open(filename, 'wb') as f:
                 f.write(self.current_cam_buffer) # This takes around 17 seconds to store 921600 bytes, so ~50KB/s, so would be nice to show some progress bar
-            print(f"Successfully wrote image to {filename}")
+            report = f"Successfully wrote image to {filename}"
+            print(report)
+            self.status_label.set_text(report)
+            self.status_label_cont.remove_flag(lv.obj.FLAG.HIDDEN)
         except OSError as e:
             print(f"Error writing to file: {e}")
     
@@ -295,14 +322,14 @@ class CameraApp(Activity):
             self.start_cam()
         self.qr_label.set_text(lv.SYMBOL.EYE_CLOSE)
         self.status_label_cont.remove_flag(lv.obj.FLAG.HIDDEN)
-        self.status_label.set_text(self.status_label_text_searching)
+        self.status_label.set_text(self.STATUS_SEARCHING_QR)
     
     def stop_qr_decoding(self):
         print("Deactivating live QR decoding...")
         self.scanqr_mode = False
         self.qr_label.set_text(lv.SYMBOL.EYE_OPEN)
-        self.status_label_text = self.status_label.get_text()
-        if self.status_label_text not in (self.status_label_text_searching or self.status_label_text_found): # if it found a QR code, leave it
+        status_label_text = self.status_label.get_text()
+        if status_label_text in (self.STATUS_NO_CAMERA, self.STATUS_SEARCHING_QR, self.STATUS_FOUND_QR): # if it found a QR code, leave it
             self.status_label_cont.add_flag(lv.obj.FLAG.HIDDEN)
         # Check if it's necessary to restart the camera:
         oldwidth = self.width
@@ -453,93 +480,95 @@ class CameraApp(Activity):
     
         try:
             # Basic image adjustments
-            brightness = prefs.get_int("brightness", 0)
+            brightness = prefs.get_int("brightness")
             cam.set_brightness(brightness)
     
-            contrast = prefs.get_int("contrast", 0)
+            contrast = prefs.get_int("contrast")
             cam.set_contrast(contrast)
     
-            saturation = prefs.get_int("saturation", 0)
+            saturation = prefs.get_int("saturation")
             cam.set_saturation(saturation)
-    
+
             # Orientation
-            hmirror = prefs.get_bool("hmirror", False)
+            hmirror = prefs.get_bool("hmirror")
             cam.set_hmirror(hmirror)
-    
-            vflip = prefs.get_bool("vflip", True)
+
+            vflip = prefs.get_bool("vflip")
             cam.set_vflip(vflip)
-    
+
             # Special effect
-            special_effect = prefs.get_int("special_effect", 0)
+            special_effect = prefs.get_int("special_effect")
             cam.set_special_effect(special_effect)
-    
+
             # Exposure control (apply master switch first, then manual value)
-            exposure_ctrl = prefs.get_bool("exposure_ctrl", True)
+            exposure_ctrl = prefs.get_bool("exposure_ctrl")
             cam.set_exposure_ctrl(exposure_ctrl)
-    
+
             if not exposure_ctrl:
-                aec_value = prefs.get_int("aec_value", 300)
+                aec_value = prefs.get_int("aec_value")
                 cam.set_aec_value(aec_value)
-    
-            ae_level = prefs.get_int("ae_level", 2 if self.scanqr_mode else 0)
+
+            # Mode-specific default comes from constructor
+            ae_level = prefs.get_int("ae_level")
             cam.set_ae_level(ae_level)
-    
-            aec2 = prefs.get_bool("aec2", False)
+
+            aec2 = prefs.get_bool("aec2")
             cam.set_aec2(aec2)
     
             # Gain control (apply master switch first, then manual value)
-            gain_ctrl = prefs.get_bool("gain_ctrl", True)
+            gain_ctrl = prefs.get_bool("gain_ctrl")
             cam.set_gain_ctrl(gain_ctrl)
-    
+
             if not gain_ctrl:
-                agc_gain = prefs.get_int("agc_gain", 0)
+                agc_gain = prefs.get_int("agc_gain")
                 cam.set_agc_gain(agc_gain)
-    
-            gainceiling = prefs.get_int("gainceiling", 0)
+
+            gainceiling = prefs.get_int("gainceiling")
             cam.set_gainceiling(gainceiling)
-    
+
             # White balance (apply master switch first, then mode)
-            whitebal = prefs.get_bool("whitebal", True)
+            whitebal = prefs.get_bool("whitebal")
             cam.set_whitebal(whitebal)
-    
+
             if not whitebal:
-                wb_mode = prefs.get_int("wb_mode", 0)
+                wb_mode = prefs.get_int("wb_mode")
                 cam.set_wb_mode(wb_mode)
-    
-            awb_gain = prefs.get_bool("awb_gain", True)
+
+            awb_gain = prefs.get_bool("awb_gain")
             cam.set_awb_gain(awb_gain)
     
             # Sensor-specific settings (try/except for unsupported sensors)
             try:
-                sharpness = prefs.get_int("sharpness", 0)
+                sharpness = prefs.get_int("sharpness")
                 cam.set_sharpness(sharpness)
             except:
                 pass  # Not supported on OV2640?
-    
+
             try:
-                denoise = prefs.get_int("denoise", 0)
+                denoise = prefs.get_int("denoise")
                 cam.set_denoise(denoise)
             except:
                 pass  # Not supported on OV2640?
-    
+
             # Advanced corrections
-            colorbar = prefs.get_bool("colorbar", False)
+            colorbar = prefs.get_bool("colorbar")
             cam.set_colorbar(colorbar)
-    
-            dcw = prefs.get_bool("dcw", True)
+
+            dcw = prefs.get_bool("dcw")
             cam.set_dcw(dcw)
-    
-            bpc = prefs.get_bool("bpc", False)
+
+            bpc = prefs.get_bool("bpc")
             cam.set_bpc(bpc)
-    
-            wpc = prefs.get_bool("wpc", True)
+
+            wpc = prefs.get_bool("wpc")
             cam.set_wpc(wpc)
-    
-            raw_gma = prefs.get_bool("raw_gma", False if self.scanqr_mode else True)
+
+            # Mode-specific default comes from constructor
+            raw_gma = prefs.get_bool("raw_gma")
             print(f"applying raw_gma: {raw_gma}")
             cam.set_raw_gma(raw_gma)
-    
-            lenc = prefs.get_bool("lenc", True)
+
+            lenc = prefs.get_bool("lenc")
             cam.set_lenc(lenc)
     
             # JPEG quality (only relevant for JPEG format)

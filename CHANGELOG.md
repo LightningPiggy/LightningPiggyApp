@@ -1,6 +1,7 @@
 0.1.2
 =====
 - Huge overhaul of camera and QR scanning capabilities
+- Cleanup redundant keyboard handling code
 
 0.1.1
 =====

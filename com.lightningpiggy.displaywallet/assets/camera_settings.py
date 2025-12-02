@@ -1,5 +1,4 @@
 import lvgl as lv
-from mpos.ui.keyboard import MposKeyboard
 
 import mpos.ui
 from mpos.apps import Activity
@@ -7,14 +6,6 @@ from mpos.config import SharedPreferences
 from mpos.content.intent import Intent
 
 class CameraSettingsActivity(Activity):
-    """Settings activity for comprehensive camera configuration."""
-
-    DEFAULT_WIDTH = 320 # 240 would be better but webcam doesn't support this (yet)
-    DEFAULT_HEIGHT = 240
-    DEFAULT_COLORMODE = True
-    DEFAULT_SCANQR_WIDTH = 960
-    DEFAULT_SCANQR_HEIGHT = 960
-    DEFAULT_SCANQR_COLORMODE = False
 
     # Original: { 2560, 1920,   0,   0, 2623, 1951, 32, 16, 2844, 1968 }
     # Worked for digital zoom in C: { 2560, 1920, 0, 0, 2623, 1951, 992, 736, 2844, 1968 }
@@ -31,19 +22,61 @@ class CameraSettingsActivity(Activity):
     scale_default=False
     binning_default=False
 
-    # Resolution options for desktop/webcam
-    WEBCAM_RESOLUTIONS = [
-        ("160x120", "160x120"),
-        ("320x180", "320x180"),
-        ("320x240", "320x240"),
-        ("640x360", "640x360"),
-        ("640x480 (30 fps)", "640x480"),
-        ("1280x720 (10 fps)", "1280x720"),
-        ("1920x1080 (5 fps)", "1920x1080"),
-    ]
+    # Common defaults shared by both normal and scanqr modes (25 settings)
+    COMMON_DEFAULTS = {
+        # Basic image adjustments
+        "brightness": 0,
+        "contrast": 0,
+        "saturation": 0,
+        # Orientation
+        "hmirror": False,
+        "vflip": True,
+        # Visual effects
+        "special_effect": 0,
+        # Exposure control
+        "exposure_ctrl": True,
+        "aec_value": 300,
+        "aec2": False,
+        # Gain control
+        "gain_ctrl": True,
+        "agc_gain": 0,
+        "gainceiling": 0,
+        # White balance
+        "whitebal": True,
+        "wb_mode": 0,
+        "awb_gain": True,
+        # Sensor-specific
+        "sharpness": 0,
+        "denoise": 0,
+        # Advanced corrections
+        "colorbar": False,
+        "dcw": True,
+        "bpc": False,
+        "wpc": True,
+        "lenc": True,
+    }
 
-    # Resolution options for internal camera (ESP32)
-    ESP32_RESOLUTIONS = [
+    # Normal mode specific defaults
+    NORMAL_DEFAULTS = {
+        "resolution_width": 240,
+        "resolution_height": 240,
+        "colormode": True,
+        "ae_level": 0,
+        "raw_gma": True,
+    }
+
+    # Scanqr mode specific defaults
+    SCANQR_DEFAULTS = {
+        "resolution_width": 960,
+        "resolution_height": 960,
+        "colormode": False,
+        "ae_level": 2, # Higher auto-exposure compensation
+        "raw_gma": False, # Disable raw gamma for better contrast
+    }
+
+    # Resolution options for both ESP32 and webcam
+    # Webcam supports all ESP32 resolutions via automatic cropping/padding
+    RESOLUTIONS = [
         ("96x96", "96x96"),
         ("160x120", "160x120"),
         ("128x128", "128x128"),
@@ -83,19 +116,11 @@ class CameraSettingsActivity(Activity):
         self.ui_controls = {}
         self.control_metadata = {}  # Store pref_key and option_values for each control
         self.dependent_controls = {}
-        self.is_webcam = False
-        self.resolutions = []
 
     def onCreate(self):
         self.use_webcam = self.getIntent().extras.get("use_webcam")
         self.prefs = self.getIntent().extras.get("prefs")
         self.scanqr_mode = self.getIntent().extras.get("scanqr_mode")
-        if self.use_webcam:
-            self.resolutions = self.WEBCAM_RESOLUTIONS
-            print("Using webcam resolutions")
-        else:
-            self.resolutions = self.ESP32_RESOLUTIONS
-            print("Using ESP32 camera resolutions")
 
         # Create main screen
         screen = lv.obj()
@@ -207,21 +232,13 @@ class CameraSettingsActivity(Activity):
         textarea.align(lv.ALIGN.TOP_RIGHT, 0, 0)
 
         # Initialize keyboard (hidden initially)
+        from mpos.ui.keyboard import MposKeyboard
         keyboard = MposKeyboard(parent)
         keyboard.align(lv.ALIGN.BOTTOM_MID, 0, 0)
         keyboard.add_flag(lv.obj.FLAG.HIDDEN)
         keyboard.set_textarea(textarea)
-        keyboard.add_event_cb(lambda e, kbd=keyboard: self.hide_keyboard(kbd), lv.EVENT.READY, None)
-        keyboard.add_event_cb(lambda e, kbd=keyboard: self.hide_keyboard(kbd), lv.EVENT.CANCEL, None)
-        textarea.add_event_cb(lambda e, kbd=keyboard: self.show_keyboard(kbd), lv.EVENT.CLICKED, None)
 
         return textarea, cont
-
-    def show_keyboard(self, kbd):
-        mpos.ui.anim.smooth_show(kbd)
-
-    def hide_keyboard(self, kbd):
-        mpos.ui.anim.smooth_hide(kbd)
 
     def add_buttons(self, parent):
         # Save/Cancel buttons at bottom
@@ -269,49 +286,49 @@ class CameraSettingsActivity(Activity):
         tab.set_style_pad_all(1, 0)
 
         # Color Mode
-        colormode = prefs.get_bool("colormode", False if self.scanqr_mode else True)
+        colormode = prefs.get_bool("colormode")
         checkbox, cont = self.create_checkbox(tab, "Color Mode (slower)", colormode, "colormode")
         self.ui_controls["colormode"] = checkbox
 
         # Resolution dropdown
         print(f"self.scanqr_mode: {self.scanqr_mode}")
-        current_resolution_width = prefs.get_string("resolution_width", self.DEFAULT_SCANQR_WIDTH if self.scanqr_mode else self.DEFAULT_WIDTH)
-        current_resolution_height = prefs.get_string("resolution_height", self.DEFAULT_SCANQR_HEIGHT if self.scanqr_mode else self.DEFAULT_HEIGHT)
+        current_resolution_width = prefs.get_int("resolution_width")
+        current_resolution_height = prefs.get_int("resolution_height")
         dropdown_value = f"{current_resolution_width}x{current_resolution_height}"
         print(f"looking for {dropdown_value}")
         resolution_idx = 0
-        for idx, (_, value) in enumerate(self.resolutions):
+        for idx, (_, value) in enumerate(self.RESOLUTIONS):
             print(f"got {value}")
             if value == dropdown_value:
                 resolution_idx = idx
                 print(f"found it! {idx}")
                 break
 
-        dropdown, cont = self.create_dropdown(tab, "Resolution:", self.resolutions, resolution_idx, "resolution")
+        dropdown, cont = self.create_dropdown(tab, "Resolution:", self.RESOLUTIONS, resolution_idx, "resolution")
         self.ui_controls["resolution"] = dropdown
 
         # Brightness
-        brightness = prefs.get_int("brightness", 0)
+        brightness = prefs.get_int("brightness")
         slider, label, cont = self.create_slider(tab, "Brightness", -2, 2, brightness, "brightness")
         self.ui_controls["brightness"] = slider
 
         # Contrast
-        contrast = prefs.get_int("contrast", 0)
+        contrast = prefs.get_int("contrast")
         slider, label, cont = self.create_slider(tab, "Contrast", -2, 2, contrast, "contrast")
         self.ui_controls["contrast"] = slider
 
         # Saturation
-        saturation = prefs.get_int("saturation", 0)
+        saturation = prefs.get_int("saturation")
         slider, label, cont = self.create_slider(tab, "Saturation", -2, 2, saturation, "saturation")
         self.ui_controls["saturation"] = slider
 
         # Horizontal Mirror
-        hmirror = prefs.get_bool("hmirror", False)
+        hmirror = prefs.get_bool("hmirror")
         checkbox, cont = self.create_checkbox(tab, "Horizontal Mirror", hmirror, "hmirror")
         self.ui_controls["hmirror"] = checkbox
 
         # Vertical Flip
-        vflip = prefs.get_bool("vflip", True)
+        vflip = prefs.get_bool("vflip")
         checkbox, cont = self.create_checkbox(tab, "Vertical Flip", vflip, "vflip")
         self.ui_controls["vflip"] = checkbox
 
@@ -323,17 +340,17 @@ class CameraSettingsActivity(Activity):
         tab.set_style_pad_all(1, 0)
 
         # Auto Exposure Control (master switch)
-        exposure_ctrl = prefs.get_bool("exposure_ctrl", True)
+        exposure_ctrl = prefs.get_bool("exposure_ctrl")
         aec_checkbox, cont = self.create_checkbox(tab, "Auto Exposure", exposure_ctrl, "exposure_ctrl")
         self.ui_controls["exposure_ctrl"] = aec_checkbox
 
         # Manual Exposure Value (dependent)
-        aec_value = prefs.get_int("aec_value", 300)
+        aec_value = prefs.get_int("aec_value")
         me_slider, label, me_cont = self.create_slider(tab, "Manual Exposure", 0, 1200, aec_value, "aec_value")
         self.ui_controls["aec_value"] = me_slider
 
         # Auto Exposure Level (dependent)
-        ae_level = prefs.get_int("ae_level", 0)
+        ae_level = prefs.get_int("ae_level")
         ae_slider, label, ae_cont = self.create_slider(tab, "Auto Exposure Level", -2, 2, ae_level, "ae_level")
         self.ui_controls["ae_level"] = ae_slider
 
@@ -351,17 +368,17 @@ class CameraSettingsActivity(Activity):
         exposure_ctrl_changed()
 
         # Night Mode (AEC2)
-        aec2 = prefs.get_bool("aec2", False)
+        aec2 = prefs.get_bool("aec2")
         checkbox, cont = self.create_checkbox(tab, "Night Mode (AEC2)", aec2, "aec2")
         self.ui_controls["aec2"] = checkbox
 
         # Auto Gain Control (master switch)
-        gain_ctrl = prefs.get_bool("gain_ctrl", True)
+        gain_ctrl = prefs.get_bool("gain_ctrl")
         agc_checkbox, cont = self.create_checkbox(tab, "Auto Gain", gain_ctrl, "gain_ctrl")
         self.ui_controls["gain_ctrl"] = agc_checkbox
 
         # Manual Gain Value (dependent)
-        agc_gain = prefs.get_int("agc_gain", 0)
+        agc_gain = prefs.get_int("agc_gain")
         slider, label, agc_cont = self.create_slider(tab, "Manual Gain", 0, 30, agc_gain, "agc_gain")
         self.ui_controls["agc_gain"] = slider
 
@@ -381,12 +398,12 @@ class CameraSettingsActivity(Activity):
             ("2X", 0), ("4X", 1), ("8X", 2), ("16X", 3),
             ("32X", 4), ("64X", 5), ("128X", 6)
         ]
-        gainceiling = prefs.get_int("gainceiling", 0)
+        gainceiling = prefs.get_int("gainceiling")
         dropdown, cont = self.create_dropdown(tab, "Gain Ceiling:", gainceiling_options, gainceiling, "gainceiling")
         self.ui_controls["gainceiling"] = dropdown
 
         # Auto White Balance (master switch)
-        whitebal = prefs.get_bool("whitebal", True)
+        whitebal = prefs.get_bool("whitebal")
         wbcheckbox, cont = self.create_checkbox(tab, "Auto White Balance", whitebal, "whitebal")
         self.ui_controls["whitebal"] = wbcheckbox
 
@@ -394,7 +411,7 @@ class CameraSettingsActivity(Activity):
         wb_mode_options = [
             ("Auto", 0), ("Sunny", 1), ("Cloudy", 2), ("Office", 3), ("Home", 4)
         ]
-        wb_mode = prefs.get_int("wb_mode", 0)
+        wb_mode = prefs.get_int("wb_mode")
         wb_dropdown, wb_cont = self.create_dropdown(tab, "WB Mode:", wb_mode_options, wb_mode, "wb_mode")
         self.ui_controls["wb_mode"] = wb_dropdown
 
@@ -408,7 +425,7 @@ class CameraSettingsActivity(Activity):
         whitebal_changed()
 
         # AWB Gain
-        awb_gain = prefs.get_bool("awb_gain", True)
+        awb_gain = prefs.get_bool("awb_gain")
         checkbox, cont = self.create_checkbox(tab, "AWB Gain", awb_gain, "awb_gain")
         self.ui_controls["awb_gain"] = checkbox
 
@@ -419,7 +436,7 @@ class CameraSettingsActivity(Activity):
             ("None", 0), ("Negative", 1), ("Grayscale", 2),
             ("Reddish", 3), ("Greenish", 4), ("Blue", 5), ("Retro", 6)
         ]
-        special_effect = prefs.get_int("special_effect", 0)
+        special_effect = prefs.get_int("special_effect")
         dropdown, cont = self.create_dropdown(tab, "Special Effect:", special_effect_options,
                                               special_effect, "special_effect")
         self.ui_controls["special_effect"] = dropdown
@@ -431,12 +448,12 @@ class CameraSettingsActivity(Activity):
         tab.set_style_pad_all(1, 0)
 
         # Sharpness
-        sharpness = prefs.get_int("sharpness", 0)
+        sharpness = prefs.get_int("sharpness")
         slider, label, cont = self.create_slider(tab, "Sharpness", -3, 3, sharpness, "sharpness")
         self.ui_controls["sharpness"] = slider
 
         # Denoise
-        denoise = prefs.get_int("denoise", 0)
+        denoise = prefs.get_int("denoise")
         slider, label, cont = self.create_slider(tab, "Denoise", 0, 8, denoise, "denoise")
         self.ui_controls["denoise"] = slider
 
@@ -447,32 +464,32 @@ class CameraSettingsActivity(Activity):
         #self.ui_controls["quality"] = slider
 
         # Color Bar
-        colorbar = prefs.get_bool("colorbar", False)
+        colorbar = prefs.get_bool("colorbar")
         checkbox, cont = self.create_checkbox(tab, "Color Bar Test", colorbar, "colorbar")
         self.ui_controls["colorbar"] = checkbox
 
         # DCW Mode
-        dcw = prefs.get_bool("dcw", True)
+        dcw = prefs.get_bool("dcw")
         checkbox, cont = self.create_checkbox(tab, "Downsize Crop Window", dcw, "dcw")
         self.ui_controls["dcw"] = checkbox
 
         # Black Point Compensation
-        bpc = prefs.get_bool("bpc", False)
+        bpc = prefs.get_bool("bpc")
         checkbox, cont = self.create_checkbox(tab, "Black Point Compensation", bpc, "bpc")
         self.ui_controls["bpc"] = checkbox
 
         # White Point Compensation
-        wpc = prefs.get_bool("wpc", True)
+        wpc = prefs.get_bool("wpc")
         checkbox, cont = self.create_checkbox(tab, "White Point Compensation", wpc, "wpc")
         self.ui_controls["wpc"] = checkbox
 
         # Raw Gamma Mode
-        raw_gma = prefs.get_bool("raw_gma", True)
+        raw_gma = prefs.get_bool("raw_gma")
         checkbox, cont = self.create_checkbox(tab, "Raw Gamma Mode", raw_gma, "raw_gma")
         self.ui_controls["raw_gma"] = checkbox
 
         # Lens Correction
-        lenc = prefs.get_bool("lenc", True)
+        lenc = prefs.get_bool("lenc")
         checkbox, cont = self.create_checkbox(tab, "Lens Correction", lenc, "lenc")
         self.ui_controls["lenc"] = checkbox
 
