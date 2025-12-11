@@ -1,3 +1,7 @@
+0.1.3
+=====
+- Simplify code by using MicroPythonOS's new TaskManager API
+
 0.1.2
 =====
 - Huge overhaul of camera and QR scanning capabilities
