@@ -1,4 +1,3 @@
-import asyncio
 import _thread
 import requests
 import json
@@ -13,8 +12,7 @@ from nostr.key import PrivateKey
 
 from websocket import WebSocketApp
 
-import mpos.apps
-import mpos.time
+from mpos import TaskManager
 import mpos.util
 
 # keeps a list of items
@@ -182,18 +180,7 @@ class Wallet:
         self.payments_updated_cb = payments_updated_cb
         self.static_receive_code_updated_cb = static_receive_code_updated_cb
         self.error_cb = error_cb
-        _thread.stack_size(mpos.apps.good_stack_size())
-        _thread.start_new_thread(self.wallet_manager_thread, ())
-
-    # Currently, there's no mechanism for this thread to signal fatal errors, like typos in the URLs.
-    def wallet_manager_thread(self):
-        try:
-            asyncio.run(self.async_wallet_manager_task())
-        except Exception as e:
-            print(f"[FATAL] Wallet manager crashed: {e}")
-            import sys
-            sys.print_exception(e)  # Full traceback on MicroPython
-            self.handle_error(e)
+        TaskManager.create_task(self.async_wallet_manager_task())
 
     def stop(self):
         self.keep_running = False
@@ -280,12 +267,12 @@ class LNBitsWallet(Wallet):
                         wsurl,
                         on_message=self.on_message,
                     ) # maybe add other callbacks to reconnect when disconnected etc.
-                    asyncio.create_task(self.ws.run_forever(),)
+                    TaskManager.create_task(self.ws.run_forever(),)
                 except Exception as e:
                     print(f"Got exception while creating task for LNBitsWallet websocket: {e}")
             print("Sleeping a while before re-fetching balance...")
             for _ in range(self.PERIODIC_FETCH_BALANCE_SECONDS*10):
-                await asyncio.sleep(0.1)
+                await TaskManager.sleep(0.1)
                 if not self.keep_running:
                     break
         print("LNBitsWallet main() stopping...")
@@ -441,7 +428,7 @@ class NWCWallet(Wallet):
         nrconnected = 0
         for _ in range(100):
             #print("Waiting for relay connections...")
-            await asyncio.sleep(0.1)
+            await TaskManager.sleep(0.1)
             nrconnected = self.relay_manager.connected_relays()
             #print(f"nrconnected: {nrconnected}")
             if nrconnected == len(self.relays) or not self.keep_running:
@@ -476,7 +463,7 @@ class NWCWallet(Wallet):
         last_fetch_balance = time.time() - self.PERIODIC_FETCH_BALANCE_SECONDS
         while True: # handle incoming events and do periodic fetch_balance
             #print(f"checking for incoming events...")
-            await asyncio.sleep(0.1)
+            await TaskManager.sleep(0.1)
             if not self.keep_running:
                 print("NWCWallet: not keep_running, closing connections...")
                 await self.relay_manager.close_connections()
