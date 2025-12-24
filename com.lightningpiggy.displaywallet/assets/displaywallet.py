@@ -515,7 +515,6 @@ class SettingActivity(Activity):
                 self.textarea.set_placeholder_text(placeholder)
             # Initialize keyboard (hidden initially)
             self.keyboard = MposKeyboard(settings_screen_detail)
-            self.keyboard.align(lv.ALIGN.BOTTOM_MID, 0, 0)
             self.keyboard.set_textarea(self.textarea)
             self.keyboard.add_flag(lv.obj.FLAG.HIDDEN)
 
