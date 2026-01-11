@@ -12,7 +12,7 @@ class SettingsActivity(Activity):
         super().__init__()
         self.prefs = None
         self.settings = [
-            {"title": "Wallet Type", "key": "wallet_type", "value_label": None, "cont": None},
+            {"title": "Wallet Type", "key": "wallet_type", "value_label": None, "cont": None, "ui": "radiobuttons", "ui_options": [("LNBits", "lnbits"), ("Nostr Wallet Connect", "nwc")]},
 #            {"title": "Payments To Show", "key": "payments_to_show", "value_label": None, "cont": None, "placeholder": "6"},
             {"title": "LNBits URL", "key": "lnbits_url", "value_label": None, "cont": None, "placeholder": "https://demo.lnpiggy.com"},
             {"title": "LNBits Read Key", "key": "lnbits_readkey", "value_label": None, "cont": None, "placeholder": "fd92e3f8168ba314dc22e54182784045"},
