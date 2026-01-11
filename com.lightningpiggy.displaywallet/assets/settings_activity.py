@@ -3,8 +3,7 @@ import lvgl as lv
 from mpos.apps import Activity, Intent
 import mpos.config
 import mpos.ui
-
-from setting_activity import SettingActivity
+from mpos.ui import SettingActivity
 
 # Used to list and edit all settings:
 class SettingsActivity(Activity):
@@ -14,10 +13,10 @@ class SettingsActivity(Activity):
         self.settings = [
             {"title": "Wallet Type", "key": "wallet_type", "value_label": None, "cont": None, "ui": "radiobuttons", "ui_options": [("LNBits", "lnbits"), ("Nostr Wallet Connect", "nwc")]},
 #            {"title": "Payments To Show", "key": "payments_to_show", "value_label": None, "cont": None, "placeholder": "6"},
-            {"title": "LNBits URL", "key": "lnbits_url", "value_label": None, "cont": None, "placeholder": "https://demo.lnpiggy.com"},
-            {"title": "LNBits Read Key", "key": "lnbits_readkey", "value_label": None, "cont": None, "placeholder": "fd92e3f8168ba314dc22e54182784045"},
-            {"title": "Optional LN Address", "key": "lnbits_static_receive_code", "value_label": None, "cont": None, "placeholder": "Will be fetched if empty."},
-            {"title": "Nost Wallet Connect", "key": "nwc_url", "value_label": None, "cont": None, "placeholder": "nostr+walletconnect://69effe7b..."},
+            {"title": "LNBits URL", "key": "lnbits_url", "value_label": None, "cont": None, "placeholder": "https://demo.lnpiggy.com", "enable_qr": True},
+            {"title": "LNBits Read Key", "key": "lnbits_readkey", "value_label": None, "cont": None, "placeholder": "fd92e3f8168ba314dc22e54182784045", "enable_qr": True},
+            {"title": "Optional LN Address", "key": "lnbits_static_receive_code", "value_label": None, "cont": None, "placeholder": "Will be fetched if empty.", "enable_qr": True},
+            {"title": "Nost Wallet Connect", "key": "nwc_url", "value_label": None, "cont": None, "placeholder": "nostr+walletconnect://69effe7b...", "enable_qr": True},
             {"title": "Optional LN Address", "key": "nwc_static_receive_code", "value_label": None, "cont": None, "placeholder": "Optional if present in NWC URL."},
         ]
 
@@ -87,5 +86,6 @@ class SettingsActivity(Activity):
 
     def startSettingActivity(self, setting):
         intent = Intent(activity_class=SettingActivity)
+        intent.putExtra("prefs", self.prefs)
         intent.putExtra("setting", setting)
         self.startActivity(intent)

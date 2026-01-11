@@ -10,8 +10,8 @@ import mpos.ui
 import mpos.ui.theme
 
 from wallet import LNBitsWallet, NWCWallet
-from camera_app import CameraApp
-from setting_activity import SettingActivity
+#from camera_app import CameraApp
+#from setting_activity import SettingActivity
 from settings_activity import SettingsActivity
 
 class DisplayWallet(Activity):
