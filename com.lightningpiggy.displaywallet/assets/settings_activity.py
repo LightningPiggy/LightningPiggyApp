@@ -11,13 +11,12 @@ class SettingsActivity(Activity):
         super().__init__()
         self.prefs = None
         self.settings = [
-            {"title": "Wallet Type", "key": "wallet_type", "value_label": None, "cont": None, "ui": "radiobuttons", "ui_options": [("LNBits", "lnbits"), ("Nostr Wallet Connect", "nwc")]},
-#            {"title": "Payments To Show", "key": "payments_to_show", "value_label": None, "cont": None, "placeholder": "6"},
-            {"title": "LNBits URL", "key": "lnbits_url", "value_label": None, "cont": None, "placeholder": "https://demo.lnpiggy.com", "enable_qr": True},
-            {"title": "LNBits Read Key", "key": "lnbits_readkey", "value_label": None, "cont": None, "placeholder": "fd92e3f8168ba314dc22e54182784045", "enable_qr": True},
-            {"title": "Optional LN Address", "key": "lnbits_static_receive_code", "value_label": None, "cont": None, "placeholder": "Will be fetched if empty.", "enable_qr": True},
-            {"title": "Nost Wallet Connect", "key": "nwc_url", "value_label": None, "cont": None, "placeholder": "nostr+walletconnect://69effe7b...", "enable_qr": True},
-            {"title": "Optional LN Address", "key": "nwc_static_receive_code", "value_label": None, "cont": None, "placeholder": "Optional if present in NWC URL."},
+            {"title": "Wallet Type", "key": "wallet_type", "ui": "radiobuttons", "ui_options": [("LNBits", "lnbits"), ("Nostr Wallet Connect", "nwc")]},
+            {"title": "LNBits URL", "key": "lnbits_url", "placeholder": "https://demo.lnpiggy.com"},
+            {"title": "LNBits Read Key", "key": "lnbits_readkey", "placeholder": "fd92e3f8168ba314dc22e54182784045"},
+            {"title": "Optional LN Address", "key": "lnbits_static_receive_code", "placeholder": "Will be fetched if empty."},
+            {"title": "Nost Wallet Connect", "key": "nwc_url", "placeholder": "nostr+walletconnect://69effe7b..."},
+            {"title": "Optional LN Address", "key": "nwc_static_receive_code", "placeholder": "Optional if present in NWC URL."},
         ]
 
     def onCreate(self):
