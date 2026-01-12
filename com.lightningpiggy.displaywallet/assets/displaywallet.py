@@ -10,7 +10,7 @@ import mpos.ui
 import mpos.ui.theme
 
 from wallet import LNBitsWallet, NWCWallet
-from settings_activity import SettingsActivity
+from mpos.ui import SettingsActivity
 
 class DisplayWallet(Activity):
 
