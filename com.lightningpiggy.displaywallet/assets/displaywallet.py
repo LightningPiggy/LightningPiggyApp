@@ -20,7 +20,6 @@ class DisplayWallet(Activity):
     balance_mode_btc = False # show BTC or sats?
     payments_label_current_font = 2
     payments_label_fonts = [ lv.font_montserrat_10, lv.font_unscii_8, lv.font_montserrat_16, lv.font_montserrat_24, lv.font_unscii_16, lv.font_montserrat_28_compressed, lv.font_montserrat_40]
-    prefs = None
 
     # screens:
     main_screen = None
@@ -39,8 +38,7 @@ class DisplayWallet(Activity):
     GRAVITY = 100  # pixels/sec²
 
     def onCreate(self):
-        if not self.prefs:
-            self.prefs = mpos.config.SharedPreferences("com.lightningpiggy.displaywallet")
+        self.prefs = mpos.config.SharedPreferences("com.lightningpiggy.displaywallet")
         self.main_screen = lv.obj()
         self.main_screen.set_style_pad_all(10, 0)
         # This line needs to be drawn first, otherwise it's over the balance label and steals all the clicks!
