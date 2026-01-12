@@ -20,6 +20,7 @@ class DisplayWallet(Activity):
     balance_mode_btc = False # show BTC or sats?
     payments_label_current_font = 2
     payments_label_fonts = [ lv.font_montserrat_10, lv.font_unscii_8, lv.font_montserrat_16, lv.font_montserrat_24, lv.font_unscii_16, lv.font_montserrat_28_compressed, lv.font_montserrat_40]
+    prefs = None
 
     # screens:
     main_screen = None
@@ -38,6 +39,8 @@ class DisplayWallet(Activity):
     GRAVITY = 100  # pixels/sec²
 
     def onCreate(self):
+        if not self.prefs:
+            self.prefs = mpos.config.SharedPreferences("com.lightningpiggy.displaywallet")
         self.main_screen = lv.obj()
         self.main_screen.set_style_pad_all(10, 0)
         # This line needs to be drawn first, otherwise it's over the balance label and steals all the clicks!
@@ -140,21 +143,20 @@ class DisplayWallet(Activity):
         if self.wallet and self.wallet.is_running():
             print("wallet is already running, nothing to do") # might have come from the QR activity
             return
-        config = mpos.config.SharedPreferences("com.lightningpiggy.displaywallet")
-        wallet_type = config.get_string("wallet_type")
+        wallet_type = self.prefs.get_string("wallet_type")
         if not wallet_type:
             self.payments_label.set_text(f"Please go into the settings to set a Wallet Type.")
             return # nothing is configured, nothing to do
         if wallet_type == "lnbits":
             try:
-                self.wallet = LNBitsWallet(config.get_string("lnbits_url"), config.get_string("lnbits_readkey"))
+                self.wallet = LNBitsWallet(self.prefs.get_string("lnbits_url"), self.prefs.get_string("lnbits_readkey"))
             except Exception as e:
                 self.error_cb(f"Couldn't initialize LNBits wallet because: {e}")
                 return
         elif wallet_type == "nwc":
             try:
-                self.wallet = NWCWallet(config.get_string("nwc_url"))
-                self.wallet.static_receive_code = config.get_string("nwc_static_receive_code")
+                self.wallet = NWCWallet(self.prefs.get_string("nwc_url"))
+                self.wallet.static_receive_code = self.prefs.get_string("nwc_static_receive_code")
                 self.redraw_static_receive_code_cb()
             except Exception as e:
                 self.error_cb(f"Couldn't initialize NWC Wallet because: {e}")
@@ -338,8 +340,26 @@ class DisplayWallet(Activity):
         self.confetti_pieces.append(piece)
         self.used_img_indices.add(idx)
 
+    def should_show_setting(self, setting):
+        wallet_type = self.prefs.get_string("wallet_type")
+        if wallet_type != "lnbits" and setting["key"].startswith("lnbits_"):
+            return False
+        if wallet_type != "nwc" and setting["key"].startswith("nwc_"):
+            return False
+        return True
+
     def settings_button_tap(self, event):
-        self.startActivity(Intent(activity_class=SettingsActivity))
+        intent = Intent(activity_class=SettingsActivity)
+        intent.putExtra("prefs", self.prefs)
+        intent.putExtra("settings", [
+            {"title": "Wallet Type", "key": "wallet_type", "ui": "radiobuttons", "ui_options": [("LNBits", "lnbits"), ("Nostr Wallet Connect", "nwc")]},
+            {"title": "LNBits URL", "key": "lnbits_url", "placeholder": "https://demo.lnpiggy.com", "should_show": self.should_show_setting},
+            {"title": "LNBits Read Key", "key": "lnbits_readkey", "placeholder": "fd92e3f8168ba314dc22e54182784045", "should_show": self.should_show_setting},
+            {"title": "Optional LN Address", "key": "lnbits_static_receive_code", "placeholder": "Will be fetched if empty.", "should_show": self.should_show_setting},
+            {"title": "Nost Wallet Connect", "key": "nwc_url", "placeholder": "nostr+walletconnect://69effe7b...", "should_show": self.should_show_setting},
+            {"title": "Optional LN Address", "key": "nwc_static_receive_code", "placeholder": "Optional if present in NWC URL.", "should_show": self.should_show_setting},
+        ])
+        self.startActivity(intent)
 
     def main_ui_set_defaults(self):
         self.balance_label.set_text("Welcome!")

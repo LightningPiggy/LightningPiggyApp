@@ -7,19 +7,15 @@ from mpos.ui import SettingActivity
 
 # Used to list and edit all settings:
 class SettingsActivity(Activity):
-    def __init__(self):
-        super().__init__()
-        self.prefs = None
-        self.settings = [
-            {"title": "Wallet Type", "key": "wallet_type", "ui": "radiobuttons", "ui_options": [("LNBits", "lnbits"), ("Nostr Wallet Connect", "nwc")]},
-            {"title": "LNBits URL", "key": "lnbits_url", "placeholder": "https://demo.lnpiggy.com"},
-            {"title": "LNBits Read Key", "key": "lnbits_readkey", "placeholder": "fd92e3f8168ba314dc22e54182784045"},
-            {"title": "Optional LN Address", "key": "lnbits_static_receive_code", "placeholder": "Will be fetched if empty."},
-            {"title": "Nost Wallet Connect", "key": "nwc_url", "placeholder": "nostr+walletconnect://69effe7b..."},
-            {"title": "Optional LN Address", "key": "nwc_static_receive_code", "placeholder": "Optional if present in NWC URL."},
-        ]
+
+    # Taken the Intent:
+    prefs = None
+    settings = None
 
     def onCreate(self):
+        self.prefs = self.getIntent().extras.get("prefs")
+        self.settings = self.getIntent().extras.get("settings")
+
         screen = lv.obj()
         print("creating SettingsActivity ui...")
         screen.set_style_pad_all(mpos.ui.pct_of_display_width(2), 0)
@@ -28,8 +24,6 @@ class SettingsActivity(Activity):
         self.setContentView(screen)
 
     def onResume(self, screen):
-        # reload settings because the SettingsActivity might have changed them - could be optimized to only load if it did:
-        self.prefs = mpos.config.SharedPreferences("com.lightningpiggy.displaywallet")
         wallet_type = self.prefs.get_string("wallet_type")
 
         # Create settings entries
@@ -40,10 +34,12 @@ class SettingsActivity(Activity):
             print("WARNING: could not get default focusgroup")
 
         for setting in self.settings:
-            if wallet_type != "lnbits" and setting["key"].startswith("lnbits_"):
-                continue
-            if wallet_type != "nwc" and setting["key"].startswith("nwc_"):
-                continue
+            # Check if it should be shown:
+            should_show_function = setting.get("should_show")
+            if should_show_function:
+                should_show = should_show_function(setting)
+                if should_show is False:
+                    continue
             # Container for each setting
             setting_cont = lv.obj(screen)
             setting_cont.set_width(lv.pct(100))
