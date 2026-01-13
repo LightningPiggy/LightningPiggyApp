@@ -2,11 +2,8 @@ import time
 import random
 import lvgl as lv
 
-from mpos.ui.keyboard import MposKeyboard
-from mpos.apps import Activity, Intent
-from mpos import ConnectivityManager
+from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, pct_of_display_width, pct_of_display_height
 import mpos.config
-import mpos.ui
 import mpos.ui.theme
 
 from wallet import LNBitsWallet, NWCWallet
@@ -51,10 +48,10 @@ class DisplayWallet(Activity):
         self.balance_label.align(lv.ALIGN.TOP_LEFT, 0, 0)
         self.balance_label.set_style_text_font(lv.font_montserrat_24, 0)
         self.balance_label.add_flag(lv.obj.FLAG.CLICKABLE)
-        self.balance_label.set_width(mpos.ui.pct_of_display_width(75)) # 100 - receive_qr
+        self.balance_label.set_width(pct_of_display_width(75)) # 100 - receive_qr
         self.balance_label.add_event_cb(self.balance_label_clicked_cb,lv.EVENT.CLICKED,None)
         self.receive_qr = lv.qrcode(self.main_screen)
-        self.receive_qr.set_size(mpos.ui.pct_of_display_width(20)) # bigger QR results in simpler code (less error correction?)
+        self.receive_qr.set_size(pct_of_display_width(20)) # bigger QR results in simpler code (less error correction?)
         self.receive_qr.set_dark_color(lv.color_black())
         self.receive_qr.set_light_color(lv.color_white())
         self.receive_qr.align(lv.ALIGN.TOP_RIGHT,0,0)
@@ -80,7 +77,7 @@ class DisplayWallet(Activity):
         if False: # send button disabled for now, not implemented
             send_button = lv.button(self.main_screen)
             send_button.set_size(lv.pct(20), lv.pct(25))
-            send_button.align_to(settings_button, lv.ALIGN.OUT_TOP_MID, 0, -mpos.ui.pct_of_display_height(2))
+            send_button.align_to(settings_button, lv.ALIGN.OUT_TOP_MID, 0, -pct_of_display_height(2))
             send_button.add_event_cb(self.send_button_tap,lv.EVENT.CLICKED,None)
             send_label = lv.label(send_button)
             send_label.set_text(lv.SYMBOL.UPLOAD)
