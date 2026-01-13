@@ -70,6 +70,11 @@ class Payment:
         sattext = "sats"
         if self.amount_sats == 1:
             sattext = "sat"
+        if not self.comment:
+            verb = "spent"
+            if self.amount_sats > 0:
+                verb = "received!"
+            return f"{self.amount_sats} {sattext} {verb}"
         #return f"{self.amount_sats} {sattext} @ {self.epoch_time}: {self.comment}"
         return f"{self.amount_sats} {sattext}: {self.comment}"
 
@@ -402,6 +407,8 @@ class NWCWallet(Wallet):
         comment = ""
         try:
             comment = transaction["description"]
+            if comment is None:
+                return comment
             json_comment = json.loads(comment)
             for field in json_comment:
                 if field[0] == "text/plain":
@@ -410,7 +417,7 @@ class NWCWallet(Wallet):
             else:
                 print("text/plain field is missing from JSON description")
         except Exception as e:
-            print(f"Info: could not parse comment as JSON, this is fine, using as-is ({e})")
+            print(f"Info: comment {comment} is not JSON, this is fine, using as-is ({e})")
         return comment
 
     async def async_wallet_manager_task(self):
