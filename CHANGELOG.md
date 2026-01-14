@@ -1,3 +1,8 @@
+0.2.0
+=====
+- Animate balance updates, incrementing while the confetti animation is also running
+- Improve text if payment doesn't include comment
+
 0.1.3
 =====
 - Simplify code by using MicroPythonOS's new TaskManager API

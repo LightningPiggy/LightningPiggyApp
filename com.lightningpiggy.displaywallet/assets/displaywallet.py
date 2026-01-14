@@ -1,6 +1,6 @@
 import lvgl as lv
 
-from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, pct_of_display_width, pct_of_display_height, SharedPreferences, SettingsActivity
+from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, pct_of_display_width, pct_of_display_height, min_resolution, SharedPreferences, SettingsActivity
 from mpos.ui.anim import WidgetAnimator
 
 from wallet import LNBitsWallet, NWCWallet
@@ -249,7 +249,7 @@ class FullscreenQR(Activity):
         qr_screen.set_scroll_dir(lv.DIR.NONE)
         qr_screen.add_event_cb(lambda e: self.finish(),lv.EVENT.CLICKED,None)
         big_receive_qr = lv.qrcode(qr_screen)
-        big_receive_qr.set_size(mpos.ui.min_resolution())
+        big_receive_qr.set_size(min_resolution())
         big_receive_qr.set_dark_color(lv.color_black())
         big_receive_qr.set_light_color(lv.color_white())
         big_receive_qr.center()
