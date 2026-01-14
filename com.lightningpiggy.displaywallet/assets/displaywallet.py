@@ -95,7 +95,6 @@ class DisplayWallet(Activity):
     def onPause(self, main_screen):
         if self.wallet and self.destination != FullscreenQR:
             self.wallet.stop() # don't stop the wallet for the fullscreen QR activity
-            self.stop_receive_animation()
         self.destination = None
         cm = ConnectivityManager.get()
         cm.unregister_callback(self.network_changed)
@@ -143,7 +142,6 @@ class DisplayWallet(Activity):
     def went_offline(self):
         if self.wallet:
             self.wallet.stop() # don't stop the wallet for the fullscreen QR activity
-        self.stop_receive_animation()
         self.payments_label.set_text(f"WiFi is not connected, can't talk to wallet...")
 
     def update_payments_label_font(self):
@@ -162,7 +160,7 @@ class DisplayWallet(Activity):
     def redraw_balance_cb(self, sats_added=0):
         print(f"Redrawing balance for sats_added {sats_added}")
         if sats_added > 0:
-            self.start_receive_animation()
+            self.confetti.start()
         balance = self.wallet.last_known_balance
         if balance is not None and balance != -1:
             if self.balance_mode_btc:
@@ -197,14 +195,7 @@ class DisplayWallet(Activity):
 
     def send_button_tap(self, event):
         print("send_button clicked")
-        if not self.confetti.is_running:
-            self.start_receive_animation() # for testing the receive animation
-
-    def start_receive_animation(self, event=None):
-        self.confetti.start()
-
-    def stop_receive_animation(self, timer=None):
-        self.confetti.stop()
+        self.confetti.start() # for testing the receive animation
 
     def should_show_setting(self, setting):
         wallet_type = self.prefs.get_string("wallet_type")
