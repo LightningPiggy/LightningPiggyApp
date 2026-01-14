@@ -11,7 +11,7 @@ class DisplayWallet(Activity):
     wallet = None
     receive_qr_data = None
     destination = None
-    balance_mode_btc = False # show BTC or sats?
+    balance_mode = 0  # 0=sats, 1=bits, 2=μBTC, 3=mBTC, 4=BTC
     payments_label_current_font = 2
     payments_label_fonts = [ lv.font_montserrat_10, lv.font_unscii_8, lv.font_montserrat_16, lv.font_montserrat_24, lv.font_unscii_16, lv.font_montserrat_28_compressed, lv.font_montserrat_40]
 
@@ -158,18 +158,29 @@ class DisplayWallet(Activity):
         return s.rstrip("0").rstrip(".")
 
     def display_balance(self, balance):
-        #print(f"displaying balance {balance}")
-        if self.balance_mode_btc:
-            balance = balance / 100000000
-            #balance_text = "₿ " + str(balance) # font doesnt support it - although it should https://fonts.google.com/specimen/Montserrat
-            balance_text = self.float_to_string(balance) + " BTC"
-        else:
-            #balance_text = "丰 " + str(balance) # font doesnt support it
-            balance_text = str(balance) + " sat"
-            if balance > 1:
-                balance_text += "s"
-        self.balance_label.set_text(balance_text)
-        #print("done displaying balance")
+         #print(f"displaying balance {balance}")
+         if self.balance_mode == 0:  # sats
+             #balance_text = "丰 " + str(balance) # font doesnt support it
+             balance_text = str(balance) + " sat"
+             if balance > 1:
+                 balance_text += "s"
+         elif self.balance_mode == 1:  # bits (1 bit = 100 sats)
+             balance_bits = balance / 100
+             balance_text = self.float_to_string(balance_bits) + " bit"
+             if balance_bits != 1:
+                 balance_text += "s"
+         elif self.balance_mode == 2:  # micro-BTC (1 μBTC = 100 sats)
+             balance_ubtc = balance / 100
+             balance_text = self.float_to_string(balance_ubtc) + " micro-BTC"
+         elif self.balance_mode == 3:  # milli-BTC (1 mBTC = 100000 sats)
+             balance_mbtc = balance / 100000
+             balance_text = self.float_to_string(balance_mbtc) + " milli-BTC"
+         elif self.balance_mode == 4:  # BTC (1 BTC = 100000000 sats)
+             balance_btc = balance / 100000000
+             #balance_text = "₿ " + str(balance) # font doesnt support it - although it should https://fonts.google.com/specimen/Montserrat
+             balance_text = self.float_to_string(balance_btc) + " BTC"
+         self.balance_label.set_text(balance_text)
+         #print("done displaying balance")
 
     def balance_updated_cb(self, sats_added=0):
         print(f"balance_updated_cb(sats_added={sats_added})")
@@ -228,9 +239,9 @@ class DisplayWallet(Activity):
         self.payments_label.set_text(lv.SYMBOL.REFRESH)
 
     def balance_label_clicked_cb(self, event):
-        print("Balance clicked")
-        self.balance_mode_btc = not self.balance_mode_btc
-        self.display_balance(self.wallet.last_known_balance)
+         print("Balance clicked")
+         self.balance_mode = (self.balance_mode + 1) % 5
+         self.display_balance(self.wallet.last_known_balance)
 
     def qr_clicked_cb(self, event):
         print("QR clicked")
