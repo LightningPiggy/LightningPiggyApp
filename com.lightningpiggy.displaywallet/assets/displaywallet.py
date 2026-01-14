@@ -1,10 +1,8 @@
 import lvgl as lv
 
-from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, pct_of_display_width, pct_of_display_height, SharedPreferences
-import mpos.ui.theme
+from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, pct_of_display_width, pct_of_display_height, SharedPreferences, SettingsActivity
 
 from wallet import LNBitsWallet, NWCWallet
-from mpos import SettingsActivity
 from confetti import Confetti
 
 class DisplayWallet(Activity):
@@ -58,7 +56,7 @@ class DisplayWallet(Activity):
         self.payments_label.set_text("")
         self.payments_label.align_to(balance_line,lv.ALIGN.OUT_BOTTOM_LEFT,0,10)
         self.update_payments_label_font()
-        self.payments_label.set_width(mpos.ui.pct_of_display_width(75)) # 100 - receive_qr
+        self.payments_label.set_width(pct_of_display_width(75)) # 100 - receive_qr
         self.payments_label.add_flag(lv.obj.FLAG.CLICKABLE)
         self.payments_label.add_event_cb(self.payments_label_clicked,lv.EVENT.CLICKED,None)
         settings_button = lv.button(self.main_screen)
