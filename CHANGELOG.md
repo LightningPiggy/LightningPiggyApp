@@ -2,6 +2,7 @@
 =====
 - Animate balance updates, incrementing while the confetti animation is also running
 - Improve text if payment doesn't include comment
+- Increase balance unit modes from 2 to 5: add bits, micro-BTC and milli-BTC in addition to sats and BTC
 
 0.1.3
 =====
