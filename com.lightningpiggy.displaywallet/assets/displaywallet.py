@@ -1,6 +1,7 @@
 import lvgl as lv
 
 from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, pct_of_display_width, pct_of_display_height, SharedPreferences, SettingsActivity
+from mpos.ui.anim import WidgetAnimator
 
 from wallet import LNBitsWallet, NWCWallet
 from confetti import Confetti
@@ -24,6 +25,7 @@ class DisplayWallet(Activity):
 
     # confetti:
     confetti = None
+    confetti_duration = 15000
     ASSET_PATH = "M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/"
     ICON_PATH = "M:apps/com.lightningpiggy.displaywallet/res/mipmap-mdpi/"
 
@@ -82,7 +84,7 @@ class DisplayWallet(Activity):
         self.main_ui_set_defaults()
 
         # Initialize Confetti
-        self.confetti = Confetti(main_screen, self.ICON_PATH, self.ASSET_PATH)
+        self.confetti = Confetti(main_screen, self.ICON_PATH, self.ASSET_PATH, self.confetti_duration)
 
     def onResume(self, main_screen):
         super().onResume(main_screen)
@@ -135,7 +137,7 @@ class DisplayWallet(Activity):
         self.balance_label.set_text(lv.SYMBOL.REFRESH)
         self.payments_label.set_text(f"\nConnecting to {wallet_type} backend.\n\nIf this takes too long, it might be down or something's wrong with the settings.")
         # by now, self.wallet can be assumed
-        self.wallet.start(self.redraw_balance_cb, self.redraw_payments_cb, self.redraw_static_receive_code_cb, self.error_cb)
+        self.wallet.start(self.balance_updated_cb, self.redraw_payments_cb, self.redraw_static_receive_code_cb, self.error_cb)
 
     def went_offline(self):
         if self.wallet:
@@ -155,25 +157,30 @@ class DisplayWallet(Activity):
         # Remove trailing zeros and decimal point if no decimals remain
         return s.rstrip("0").rstrip(".")
 
-    def redraw_balance_cb(self, sats_added=0):
-        print(f"Redrawing balance for sats_added {sats_added}")
+    def display_balance(self, balance):
+        #print(f"displaying balance {balance}")
+        if self.balance_mode_btc:
+            balance = balance / 100000000
+            #balance_text = "₿ " + str(balance) # font doesnt support it - although it should https://fonts.google.com/specimen/Montserrat
+            balance_text = self.float_to_string(balance) + " BTC"
+        else:
+            #balance_text = "丰 " + str(balance) # font doesnt support it
+            balance_text = str(balance) + " sat"
+            if balance > 1:
+                balance_text += "s"
+        self.balance_label.set_text(balance_text)
+        #print("done displaying balance")
+
+    def balance_updated_cb(self, sats_added=0):
+        print(f"balance_updated_cb(sats_added={sats_added})")
         if sats_added > 0:
             self.confetti.start()
         balance = self.wallet.last_known_balance
-        if balance is not None and balance != -1:
-            if self.balance_mode_btc:
-                balance = balance / 100000000
-                #balance_text = "₿ " + str(balance) # font doesnt support it - although it should https://fonts.google.com/specimen/Montserrat
-                balance_text = self.float_to_string(balance) + " BTC"
-            else:
-                #balance_text = "丰 " + str(balance) # font doesnt support it
-                balance_text = str(balance) + " sat"
-                if balance > 1:
-                    balance_text += "s"
-            # this gets called from another thread (the wallet) so make sure it happens in the LVGL thread using lv.async_call():
-            self.update_ui_threadsafe_if_foreground(self.balance_label.set_text, balance_text)
+        print(f"balance: {balance}")
+        if balance is not None:
+            WidgetAnimator.change_widget(self.balance_label, anim_type="interpolate", duration=self.confetti_duration, delay=0, begin_value=balance-sats_added, end_value=balance, display_change=self.display_balance)
         else:
-            print("Not drawing balance because it's None or -1")
+            print("Not drawing balance because it's None")
     
     def redraw_payments_cb(self):
         # this gets called from another thread (the wallet) so make sure it happens in the LVGL thread using lv.async_call():
@@ -223,7 +230,7 @@ class DisplayWallet(Activity):
     def balance_label_clicked_cb(self, event):
         print("Balance clicked")
         self.balance_mode_btc = not self.balance_mode_btc
-        self.redraw_balance_cb()
+        self.display_balance(self.wallet.last_known_balance)
 
     def qr_clicked_cb(self, event):
         print("QR clicked")

@@ -7,7 +7,7 @@ import mpos.ui
 class Confetti:
     """Manages confetti animation with physics simulation."""
     
-    def __init__(self, screen, icon_path, asset_path, max_confetti=21):
+    def __init__(self, screen, icon_path, asset_path, duration=10000):
         """
         Initialize the Confetti system.
         
@@ -20,7 +20,8 @@ class Confetti:
         self.screen = screen
         self.icon_path = icon_path
         self.asset_path = asset_path
-        self.max_confetti = max_confetti
+        self.duration = duration
+        self.max_confetti = 21
         
         # Physics constants
         self.GRAVITY = 100  # pixels/sec²
@@ -40,6 +41,7 @@ class Confetti:
         self.spawn_timer = 0
         self.spawn_interval = 0.15  # seconds
         self.animation_start = 0
+
         
         # Pre-create LVGL image objects
         self._init_images()
@@ -80,7 +82,7 @@ class Confetti:
         mpos.ui.task_handler.add_event_cb(self._update_frame, 1)
         
         # Stop spawning after 15 seconds
-        lv.timer_create(self.stop, 15000, None).set_repeat_count(1)
+        lv.timer_create(self.stop, self.duration, None).set_repeat_count(1)
     
     def stop(self, timer=None):
         """Stop the confetti animation."""

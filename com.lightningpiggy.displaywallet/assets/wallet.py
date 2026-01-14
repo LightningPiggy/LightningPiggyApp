@@ -107,7 +107,7 @@ class Wallet:
 
     # Public variables
     # These values could be loading from a cache.json file at __init__
-    last_known_balance = -1
+    last_known_balance = 0
     payment_list = None
     static_receive_code = None
 
@@ -256,6 +256,8 @@ class LNBitsWallet(Wallet):
                 new_balance = self.fetch_balance()
             except Exception as e:
                 print(f"WARNING: wallet_manager_thread got exception: {e}")
+                import sys
+                sys.print_exception(e)
                 self.handle_error(e)
             if not self.static_receive_code:
                 static_receive_code = self.fetch_static_receive_code()
