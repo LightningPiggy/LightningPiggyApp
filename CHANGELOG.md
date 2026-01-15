@@ -1,3 +1,7 @@
+0.2.1
+=====
+- Close FullscreenQR when balance changes so the rolling balance animation and payments are visible
+
 0.2.0
 =====
 - Animate balance updates, incrementing while the confetti animation is also running

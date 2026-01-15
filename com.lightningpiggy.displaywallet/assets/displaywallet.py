@@ -5,6 +5,7 @@ from mpos.ui.anim import WidgetAnimator
 
 from wallet import LNBitsWallet, NWCWallet
 from confetti import Confetti
+from fullscreen_qr import FullscreenQR
 
 class DisplayWallet(Activity):
 
@@ -28,6 +29,9 @@ class DisplayWallet(Activity):
     confetti_duration = 15000
     ASSET_PATH = "M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/"
     ICON_PATH = "M:apps/com.lightningpiggy.displaywallet/res/mipmap-mdpi/"
+
+    # activities
+    fullscreenqr = FullscreenQR() # need a reference to be able to finish() it
 
     def onCreate(self):
         self.prefs = SharedPreferences("com.lightningpiggy.displaywallet")
@@ -184,6 +188,8 @@ class DisplayWallet(Activity):
 
     def balance_updated_cb(self, sats_added=0):
         print(f"balance_updated_cb(sats_added={sats_added})")
+        if self.fullscreenqr.has_foreground():
+            self.fullscreenqr.finish()
         if sats_added > 0:
             self.confetti.start()
         balance = self.wallet.last_known_balance
@@ -248,23 +254,4 @@ class DisplayWallet(Activity):
         if not self.receive_qr_data:
             return
         self.destination = FullscreenQR
-        self.startActivity(Intent(activity_class=FullscreenQR).putExtra("receive_qr_data", self.receive_qr_data))
-
-class FullscreenQR(Activity):
-    # No __init__() so super.__init__() will be called automatically
-
-    def onCreate(self):
-        receive_qr_data = self.getIntent().extras.get("receive_qr_data")
-        qr_screen = lv.obj()
-        qr_screen.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
-        qr_screen.set_scroll_dir(lv.DIR.NONE)
-        qr_screen.add_event_cb(lambda e: self.finish(),lv.EVENT.CLICKED,None)
-        big_receive_qr = lv.qrcode(qr_screen)
-        big_receive_qr.set_size(min_resolution())
-        big_receive_qr.set_dark_color(lv.color_black())
-        big_receive_qr.set_light_color(lv.color_white())
-        big_receive_qr.center()
-        big_receive_qr.set_style_border_color(lv.color_white(), 0)
-        big_receive_qr.set_style_border_width(0, 0);
-        big_receive_qr.update(receive_qr_data, len(receive_qr_data))
-        self.setContentView(qr_screen)
+        self.startActivity(Intent(activity_class=self.fullscreenqr).putExtra("receive_qr_data", self.receive_qr_data))
