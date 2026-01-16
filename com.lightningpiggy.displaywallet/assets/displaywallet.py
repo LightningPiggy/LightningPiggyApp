@@ -201,19 +201,19 @@ class DisplayWallet(Activity):
     
     def redraw_payments_cb(self):
         # this gets called from another thread (the wallet) so make sure it happens in the LVGL thread using lv.async_call():
-        self.update_ui_threadsafe_if_foreground(self.payments_label.set_text, str(self.wallet.payment_list))
+        self.payments_label.set_text(str(self.wallet.payment_list))
 
     def redraw_static_receive_code_cb(self):
         # this gets called from another thread (the wallet) so make sure it happens in the LVGL thread using lv.async_call():
         self.receive_qr_data = self.wallet.static_receive_code
         if self.receive_qr_data:
-            self.update_ui_threadsafe_if_foreground(self.receive_qr.update, self.receive_qr_data, len(self.receive_qr_data))
+            self.receive_qr.update(self.receive_qr_data, len(self.receive_qr_data))
         else:
             print("Warning: redraw_static_receive_code_cb() was called while self.wallet.static_receive_code is None...")
 
     def error_cb(self, error):
         if self.wallet and self.wallet.is_running():
-            self.update_ui_threadsafe_if_foreground(self.payments_label.set_text, str(error))
+            self.payments_label.set_text(str(error))
 
     def send_button_tap(self, event):
         print("send_button clicked")
