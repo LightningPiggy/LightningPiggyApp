@@ -1,6 +1,8 @@
 0.2.1
 =====
 - Close FullscreenQR when balance changes so the rolling balance animation and payments are visible
+- Add support for Nostr zaps, properly decoding the zap content to show the text
+- Speed up connection in case of bad Nostr Wallet Connect relays
 
 0.2.0
 =====

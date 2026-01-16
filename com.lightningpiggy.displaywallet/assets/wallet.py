@@ -448,10 +448,9 @@ class NWCWallet(Wallet):
         self.connected = False
         nrconnected = 0
         for _ in range(100):
-            #print("Waiting for relay connections...")
             await TaskManager.sleep(0.1)
-            nrconnected = self.relay_manager.connected_relays()
-            #print(f"nrconnected: {nrconnected}")
+            nrconnected = self.relay_manager.connected_or_errored_relays()
+            print(f"Waiting for relay connections, currently: {nrconnected}/{len(self.relays)}")
             if nrconnected == len(self.relays) or not self.keep_running:
                 break
         if nrconnected == 0:
