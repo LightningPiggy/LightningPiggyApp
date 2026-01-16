@@ -194,7 +194,17 @@ class Wallet:
     def is_running(self):
         return self.keep_running
 
-
+    # Decode something like:
+    # {"id": "d410....6e9", "content": "zap zap emoji", "pubkey":"e9f...f50", "created_at": 1767713767, "kind": 9734, "tags":[["p","06ff...4f42"], ["amount", "21000"], ["e", "c1c9...0e92"], ["relays", "wss://relay.nostr.band"]], "sig": "48a...4fd"}
+    def try_parse_as_zap(self, comment):
+        try:
+            json_comment = json.loads(comment)
+            content = json_comment.get("content")
+            if content:
+                return "zapped - " + content
+        except Exception as e:
+            print(f"Info: try_parse_as_zap of comment '{comment}' got exception while trying to decode as JSON. This is probably fine, using as-is ({e})")
+        return comment
 
 
 
@@ -226,9 +236,10 @@ class LNBitsWallet(Wallet):
             if extra:
                 comment = extra.get("comment")
                 first_from_list = comment.get(0) # some LNBits 0.x versions return a list instead of a string here...
-                comment = first_from_list
+                comment = first_from_list # if the above threw exception, it will catch below
         except Exception as e:
             pass
+        comment = super().try_parse_as_zap(comment)
         return Payment(epoch_time, amount, comment)
 
     # Example data: {"wallet_balance": 4936, "payment": {"checking_id": "037c14...56b3", "pending": false, "amount": 1000000, "fee": 0, "memo": "zap2oink", "time": 1711226003, "bolt11": "lnbc10u1pjl70y....qq9renr", "preimage": "0000...000", "payment_hash": "037c1438b20ef4729b1d3dc252c2809dc2a2a2e641c7fb99fe4324e182f356b3", "expiry": 1711226603.0, "extra": {"tag": "lnurlp", "link": "TkjgaB", "extra": "1000000", "comment": ["yes"], "lnaddress": "oink@demo.lnpiggy.com"}, "wallet_id": "c9168...8de4", "webhook": null, "webhook_status": null}}
@@ -420,6 +431,7 @@ class NWCWallet(Wallet):
                 print("text/plain field is missing from JSON description")
         except Exception as e:
             print(f"Info: comment {comment} is not JSON, this is fine, using as-is ({e})")
+        comment = super().try_parse_as_zap(comment)
         return comment
 
     async def async_wallet_manager_task(self):
