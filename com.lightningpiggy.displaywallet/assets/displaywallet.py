@@ -3,7 +3,6 @@ import lvgl as lv
 from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, pct_of_display_width, pct_of_display_height, SharedPreferences, SettingsActivity
 from mpos.ui.anim import WidgetAnimator
 
-from wallet import LNBitsWallet, NWCWallet
 from confetti import Confetti
 from fullscreen_qr import FullscreenQR
 
@@ -123,12 +122,14 @@ class DisplayWallet(Activity):
             return # nothing is configured, nothing to do
         if wallet_type == "lnbits":
             try:
+                from lnbits_wallet import LNBitsWallet
                 self.wallet = LNBitsWallet(self.prefs.get_string("lnbits_url"), self.prefs.get_string("lnbits_readkey"))
             except Exception as e:
                 self.error_cb(f"Couldn't initialize LNBits wallet because: {e}")
                 return
         elif wallet_type == "nwc":
             try:
+                from nwc_wallet import NWCWallet
                 self.wallet = NWCWallet(self.prefs.get_string("nwc_url"))
                 self.wallet.static_receive_code = self.prefs.get_string("nwc_static_receive_code")
                 self.redraw_static_receive_code_cb()
