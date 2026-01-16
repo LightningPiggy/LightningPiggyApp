@@ -1,6 +1,6 @@
 import lvgl as lv
 
-from mpos import Activity
+from mpos import Activity, min_resolution
 
 class FullscreenQR(Activity):
     # No __init__() so super.__init__() will be called automatically

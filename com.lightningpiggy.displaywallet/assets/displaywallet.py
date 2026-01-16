@@ -1,6 +1,6 @@
 import lvgl as lv
 
-from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, pct_of_display_width, pct_of_display_height, min_resolution, SharedPreferences, SettingsActivity
+from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, pct_of_display_width, pct_of_display_height, SharedPreferences, SettingsActivity
 from mpos.ui.anim import WidgetAnimator
 
 from wallet import LNBitsWallet, NWCWallet
