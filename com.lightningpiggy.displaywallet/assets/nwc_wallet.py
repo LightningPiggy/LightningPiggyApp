@@ -116,7 +116,7 @@ class NWCWallet(Wallet):
             if time.time() - last_fetch_balance >= self.PERIODIC_FETCH_BALANCE_SECONDS:
                 last_fetch_balance = time.time()
                 try:
-                    await self.fetch_balance()
+                    self.fetch_balance()
                 except Exception as e:
                     print(f"fetch_balance got exception {e}") # fetch_balance got exception 'NoneType' object isn't iterable?!
 
