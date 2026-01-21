@@ -1,9 +1,8 @@
 import json
-import requests
 
 from websocket import WebSocketApp
 
-from mpos import TaskManager
+from mpos import TaskManager, DownloadManager
 
 from wallet import Wallet
 from payment import Payment
@@ -64,14 +63,14 @@ class LNBitsWallet(Wallet):
         websocket_running = False
         while self.keep_running:
             try:
-                new_balance = self.fetch_balance()
+                new_balance = await self.fetch_balance()
             except Exception as e:
                 print(f"WARNING: wallet_manager_thread got exception: {e}")
                 import sys
                 sys.print_exception(e)
                 self.handle_error(e)
             if not self.static_receive_code:
-                static_receive_code = self.fetch_static_receive_code()
+                static_receive_code = await self.fetch_static_receive_code()
                 if static_receive_code:
                     self.handle_new_static_receive_code(static_receive_code)
             if not websocket_running and self.keep_running: # after the other things, listen for incoming payments
@@ -98,20 +97,19 @@ class LNBitsWallet(Wallet):
             print("LNBitsWallet main() closing websocket connection...")
             await self.ws.close()
 
-    def fetch_balance(self):
+    async def fetch_balance(self):
         walleturl = self.lnbits_url + "/api/v1/wallet"
         headers = {
             "X-Api-Key": self.lnbits_readkey,
         }
         try:
             print(f"Fetching balance with GET to {walleturl}")
-            response = requests.get(walleturl, timeout=10, headers=headers)
+            response_bytes = await DownloadManager.download_url(walleturl, headers=headers)
         except Exception as e:
             raise RuntimeError(f"fetch_balance: GET request to {walleturl} with header 'X-Api-Key: {self.lnbits_readkey} failed: {e}")
-        if response and self.keep_running:
-            response_text = response.text
+        if response_bytes and self.keep_running:
+            response_text = response_bytes.decode('utf-8')
             print(f"Got response text: {response_text}")
-            response.close()
             try:
                 balance_reply = json.loads(response_text)
             except Exception as e:
@@ -129,20 +127,19 @@ class LNBitsWallet(Wallet):
                 if error:
                     raise RuntimeError(f"LNBits backend replied: {error}")
 
-    def fetch_payments(self):
+    async def fetch_payments(self):
         paymentsurl = self.lnbits_url + "/api/v1/payments?limit=" + str(self.PAYMENTS_TO_SHOW)
         headers = {
             "X-Api-Key": self.lnbits_readkey,
         }
         try:
             print(f"Fetching payments with GET to {paymentsurl}")
-            response = requests.get(paymentsurl, timeout=10, headers=headers)
+            response_bytes = await DownloadManager.download_url(paymentsurl, headers=headers)
         except Exception as e:
             raise RuntimeError(f"fetch_payments: GET request to {paymentsurl} with header 'X-Api-Key: {self.lnbits_readkey} failed: {e}")
-        if response and response.status_code == 200 and self.keep_running:
-            response_text = response.text
+        if response_bytes and self.keep_running:
+            response_text = response_bytes.decode('utf-8')
             #print(f"Got response text: {response_text}")
-            response.close()
             try:
                 payments_reply = json.loads(response_text)
             except Exception as e:
@@ -158,20 +155,19 @@ class LNBitsWallet(Wallet):
                     new_payment_list.add(paymentObj)
                 self.handle_new_payments(new_payment_list)
 
-    def fetch_static_receive_code(self):
+    async def fetch_static_receive_code(self):
         url = self.lnbits_url + "/lnurlp/api/v1/links?all_wallets=false"
         headers = {
             "X-Api-Key": self.lnbits_readkey,
         }
         try:
             print(f"Fetching static_receive_code with GET to {url}")
-            response = requests.get(url, timeout=10, headers=headers)
+            response_bytes = await DownloadManager.download_url(url, headers=headers)
         except Exception as e:
             raise RuntimeError(f"fetch_static_receive_code: GET request to {url} with header 'X-Api-Key: {self.lnbits_readkey} failed: {e}")
-        if response and response.status_code == 200 and self.keep_running:
-            response_text = response.text
+        if response_bytes and self.keep_running:
+            response_text = response_bytes.decode('utf-8')
             print(f"Got response text: {response_text}")
-            response.close()
             try:
                 reply_object = json.loads(response_text)
             except Exception as e:
@@ -181,5 +177,5 @@ class LNBitsWallet(Wallet):
                 print(f"Got link: {link}")
                 return link.get("lnurl")
         else:
-            print(f"Fetching static receive code got no response or response.status_code {response.status_code} != 200 or not self.keep_running")
+            print(f"Fetching static receive code got no response or not self.keep_running")
             self.handle_error("No static receive code found on server")
