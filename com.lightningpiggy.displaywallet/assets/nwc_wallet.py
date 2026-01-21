@@ -116,7 +116,7 @@ class NWCWallet(Wallet):
             if time.time() - last_fetch_balance >= self.PERIODIC_FETCH_BALANCE_SECONDS:
                 last_fetch_balance = time.time()
                 try:
-                    self.fetch_balance()
+                    await self.fetch_balance()
                 except Exception as e:
                     print(f"fetch_balance got exception {e}") # fetch_balance got exception 'NoneType' object isn't iterable?!
 
@@ -182,7 +182,7 @@ class NWCWallet(Wallet):
                 #print(f"pool has no events after {time.ticks_ms()-start_time}ms") # completes in 0-1ms
                 pass
 
-    def fetch_balance(self):
+    async def fetch_balance(self):
         try:
             if not self.keep_running:
                 return
@@ -205,7 +205,7 @@ class NWCWallet(Wallet):
         except Exception as e:
             print(f"inside fetch_balance exception: {e}")
 
-    def fetch_payments(self):
+    async def fetch_payments(self):
         if not self.keep_running:
             return
         # Create get_balance request
