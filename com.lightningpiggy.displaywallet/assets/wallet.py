@@ -39,7 +39,7 @@ class Wallet:
             self.balance_updated_cb(sats_added)
             if fetchPaymentsIfChanged: # Fetching *all* payments isn't necessary if balance was changed by a payment notification
                 print("Refreshing payments...")
-                self.fetch_payments() # if the balance changed, then re-list transactions
+                TaskManager.create_task(self.fetch_payments()) # if the balance changed, then re-list transactions
 
     def handle_new_payment(self, new_payment):
         if not self.keep_running:
