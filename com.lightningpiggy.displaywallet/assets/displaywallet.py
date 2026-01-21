@@ -124,6 +124,8 @@ class DisplayWallet(Activity):
             try:
                 from lnbits_wallet import LNBitsWallet
                 self.wallet = LNBitsWallet(self.prefs.get_string("lnbits_url"), self.prefs.get_string("lnbits_readkey"))
+                self.wallet.static_receive_code = self.prefs.get_string("lnbits_static_receive_code")
+                self.redraw_static_receive_code_cb()
             except Exception as e:
                 self.error_cb(f"Couldn't initialize LNBits wallet because: {e}")
                 return
@@ -205,12 +207,19 @@ class DisplayWallet(Activity):
         self.payments_label.set_text(str(self.wallet.payment_list))
 
     def redraw_static_receive_code_cb(self):
-        # this gets called from another thread (the wallet) so make sure it happens in the LVGL thread using lv.async_call():
-        self.receive_qr_data = self.wallet.static_receive_code
-        if self.receive_qr_data:
-            self.receive_qr.update(self.receive_qr_data, len(self.receive_qr_data))
-        else:
-            print("Warning: redraw_static_receive_code_cb() was called while self.wallet.static_receive_code is None...")
+        # static receive code from settings takes priority:
+        wallet_type = self.prefs.get_string("wallet_type")
+        if wallet_type == "nwc":
+            self.receive_qr_data = self.prefs.get_string("nwc_static_receive_code")
+        elif wallet_type == "lnbits":
+            self.receive_qr_data = self.prefs.get_string("lnbits_static_receive_code")
+        # otherwise, see if the wallet has a static receive code:
+        if not self.receive_qr_data:
+            self.receive_qr_data = self.wallet.static_receive_code
+        if not self.receive_qr_data:
+            print("Warning: redraw_static_receive_code_cb() did not find one in the settings or the wallet, nothing to show")
+            return
+        self.receive_qr.update(self.receive_qr_data, len(self.receive_qr_data))
 
     def error_cb(self, error):
         if self.wallet and self.wallet.is_running():
@@ -221,6 +230,8 @@ class DisplayWallet(Activity):
         self.confetti.start() # for testing the receive animation
 
     def should_show_setting(self, setting):
+        if setting["key"] == "wallet_type":
+            return True
         wallet_type = self.prefs.get_string("wallet_type")
         if wallet_type != "lnbits" and setting["key"].startswith("lnbits_"):
             return False
