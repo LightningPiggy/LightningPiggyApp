@@ -6,6 +6,11 @@ from mpos.ui.anim import WidgetAnimator
 from confetti import Confetti
 from fullscreen_qr import FullscreenQR
 
+# Import wallet modules at the top so they're available when sys.path is restored
+# This prevents ImportError when switching wallet types after the app has started
+from lnbits_wallet import LNBitsWallet
+from nwc_wallet import NWCWallet
+
 class DisplayWallet(Activity):
 
     wallet = None
@@ -123,7 +128,6 @@ class DisplayWallet(Activity):
             return # nothing is configured, nothing to do
         if wallet_type == "lnbits":
             try:
-                from lnbits_wallet import LNBitsWallet
                 self.wallet = LNBitsWallet(self.prefs.get_string("lnbits_url"), self.prefs.get_string("lnbits_readkey"))
                 self.wallet.static_receive_code = self.prefs.get_string("lnbits_static_receive_code")
                 self.redraw_static_receive_code_cb()
@@ -132,7 +136,6 @@ class DisplayWallet(Activity):
                 return
         elif wallet_type == "nwc":
             try:
-                from nwc_wallet import NWCWallet
                 self.wallet = NWCWallet(self.prefs.get_string("nwc_url"))
                 self.wallet.static_receive_code = self.prefs.get_string("nwc_static_receive_code")
                 self.redraw_static_receive_code_cb()
