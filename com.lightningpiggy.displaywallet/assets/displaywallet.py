@@ -11,6 +11,7 @@ class DisplayWallet(Activity):
     wallet = None
     receive_qr_data = None
     destination = None
+    receive_qr_pct_of_display = 30 # could be a setting
     balance_mode = 0  # 0=sats, 1=bits, 2=μBTC, 3=mBTC, 4=BTC
     payments_label_current_font = 2
     payments_label_fonts = [ lv.font_montserrat_10, lv.font_unscii_8, lv.font_montserrat_16, lv.font_montserrat_24, lv.font_unscii_16, lv.font_montserrat_28_compressed, lv.font_montserrat_40]
@@ -35,33 +36,33 @@ class DisplayWallet(Activity):
     def onCreate(self):
         self.prefs = SharedPreferences("com.lightningpiggy.displaywallet")
         self.main_screen = lv.obj()
-        self.main_screen.set_style_pad_all(10, 0)
+        self.main_screen.set_style_pad_all(0, lv.PART.MAIN)
         # This line needs to be drawn first, otherwise it's over the balance label and steals all the clicks!
         balance_line = lv.line(self.main_screen)
-        balance_line.set_points([{'x':0,'y':35},{'x':200,'y':35}],2)
+        balance_line.set_points([{'x':0,'y':35},{'x':pct_of_display_width(100-self.receive_qr_pct_of_display*1.2),'y':35}],2)
         balance_line.add_flag(lv.obj.FLAG.CLICKABLE)
         balance_line.add_event_cb(self.send_button_tap,lv.EVENT.CLICKED,None)
         self.balance_label = lv.label(self.main_screen)
         self.balance_label.set_text("")
         self.balance_label.align(lv.ALIGN.TOP_LEFT, 0, 0)
-        self.balance_label.set_style_text_font(lv.font_montserrat_24, 0)
+        self.balance_label.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
         self.balance_label.add_flag(lv.obj.FLAG.CLICKABLE)
-        self.balance_label.set_width(pct_of_display_width(75)) # 100 - receive_qr
+        self.balance_label.set_width(pct_of_display_width(100-self.receive_qr_pct_of_display)) # 100 - receive_qr
         self.balance_label.add_event_cb(self.balance_label_clicked_cb,lv.EVENT.CLICKED,None)
         self.receive_qr = lv.qrcode(self.main_screen)
-        self.receive_qr.set_size(pct_of_display_width(20)) # bigger QR results in simpler code (less error correction?)
+        self.receive_qr.set_size(pct_of_display_width(self.receive_qr_pct_of_display)) # bigger QR results in simpler code (less error correction?)
         self.receive_qr.set_dark_color(lv.color_black())
         self.receive_qr.set_light_color(lv.color_white())
         self.receive_qr.align(lv.ALIGN.TOP_RIGHT,0,0)
-        self.receive_qr.set_style_border_color(lv.color_white(), 0)
-        self.receive_qr.set_style_border_width(1, 0);
+        self.receive_qr.set_style_border_color(lv.color_white(), lv.PART.MAIN)
+        self.receive_qr.set_style_border_width(8, lv.PART.MAIN);
         self.receive_qr.add_flag(lv.obj.FLAG.CLICKABLE)
         self.receive_qr.add_event_cb(self.qr_clicked_cb,lv.EVENT.CLICKED,None)
         self.payments_label = lv.label(self.main_screen)
         self.payments_label.set_text("")
-        self.payments_label.align_to(balance_line,lv.ALIGN.OUT_BOTTOM_LEFT,0,10)
+        self.payments_label.align_to(balance_line,lv.ALIGN.OUT_BOTTOM_LEFT, 0, 10)
         self.update_payments_label_font()
-        self.payments_label.set_width(pct_of_display_width(75)) # 100 - receive_qr
+        self.payments_label.set_width(pct_of_display_width(100-self.receive_qr_pct_of_display)) # 100 - receive_qr
         self.payments_label.add_flag(lv.obj.FLAG.CLICKABLE)
         self.payments_label.add_event_cb(self.payments_label_clicked,lv.EVENT.CLICKED,None)
         settings_button = lv.button(self.main_screen)

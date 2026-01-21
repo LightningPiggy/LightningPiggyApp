@@ -12,11 +12,11 @@ class FullscreenQR(Activity):
         qr_screen.set_scroll_dir(lv.DIR.NONE)
         qr_screen.add_event_cb(lambda e: self.finish(),lv.EVENT.CLICKED,None)
         big_receive_qr = lv.qrcode(qr_screen)
-        big_receive_qr.set_size(min_resolution())
+        big_receive_qr.set_size(round(min_resolution()*0.9))
         big_receive_qr.set_dark_color(lv.color_black())
         big_receive_qr.set_light_color(lv.color_white())
         big_receive_qr.center()
-        big_receive_qr.set_style_border_color(lv.color_white(), 0)
-        big_receive_qr.set_style_border_width(0, 0);
+        big_receive_qr.set_style_border_color(lv.color_white(), lv.PART.MAIN)
+        big_receive_qr.set_style_border_width(round(min_resolution()*0.1), lv.PART.MAIN);
         big_receive_qr.update(receive_qr_data, len(receive_qr_data))
         self.setContentView(qr_screen)

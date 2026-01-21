@@ -4,8 +4,10 @@
 - Add support for Nostr zaps, properly decoding the zap content to show the text
 - Speed up connection in case of bad Nostr Wallet Connect relays
 - Fix "wallet_type" setting not showing up after having been selected
+- Properly round balance to avoid too many decimals
 - Give preference to "static receive code" (Lightning Address or LNURL) from settings before fetching from backend or from NWC URL
 - Replace requests library with DownloadManager for HTTP requests in LNBitsWallet
+- Increase quiet size around QR codes and increase QR code size
 
 0.2.0
 =====
