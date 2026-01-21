@@ -158,9 +158,9 @@ class DisplayWallet(Activity):
         self.payments_label_current_font = (self.payments_label_current_font + 1) % len(self.payments_label_fonts)
         self.update_payments_label_font()
 
-    def float_to_string(self, value):
-        # Format float to string with fixed-point notation, up to 6 decimal places
-        s = "{:.8f}".format(value)
+    def float_to_string(self, value, decimals):
+        # Format float to string with fixed-point notation and specified decimal places
+        s = "{:.{}f}".format(value, decimals)
         # Remove trailing zeros and decimal point if no decimals remain
         return s.rstrip("0").rstrip(".")
 
@@ -168,24 +168,24 @@ class DisplayWallet(Activity):
          #print(f"displaying balance {balance}")
          if self.balance_mode == 0:  # sats
              #balance_text = "丰 " + str(balance) # font doesnt support it
-             balance_text = str(balance) + " sat"
+             balance_text = str(int(round(balance))) + " sat"
              if balance > 1:
                  balance_text += "s"
          elif self.balance_mode == 1:  # bits (1 bit = 100 sats)
-             balance_bits = balance / 100
-             balance_text = self.float_to_string(balance_bits) + " bit"
+             balance_bits = round(balance / 100, 2)
+             balance_text = self.float_to_string(balance_bits, 2) + " bit"
              if balance_bits != 1:
                  balance_text += "s"
          elif self.balance_mode == 2:  # micro-BTC (1 μBTC = 100 sats)
-             balance_ubtc = balance / 100
-             balance_text = self.float_to_string(balance_ubtc) + " micro-BTC"
+             balance_ubtc = round(balance / 100, 2)
+             balance_text = self.float_to_string(balance_ubtc, 2) + " micro-BTC"
          elif self.balance_mode == 3:  # milli-BTC (1 mBTC = 100000 sats)
-             balance_mbtc = balance / 100000
-             balance_text = self.float_to_string(balance_mbtc) + " milli-BTC"
+             balance_mbtc = round(balance / 100000, 5)
+             balance_text = self.float_to_string(balance_mbtc, 5) + " milli-BTC"
          elif self.balance_mode == 4:  # BTC (1 BTC = 100000000 sats)
-             balance_btc = balance / 100000000
+             balance_btc = round(balance / 100000000, 8)
              #balance_text = "₿ " + str(balance) # font doesnt support it - although it should https://fonts.google.com/specimen/Montserrat
-             balance_text = self.float_to_string(balance_btc) + " BTC"
+             balance_text = self.float_to_string(balance_btc, 8) + " BTC"
          self.balance_label.set_text(balance_text)
          #print("done displaying balance")
 
