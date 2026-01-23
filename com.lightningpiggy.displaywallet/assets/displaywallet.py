@@ -1,6 +1,6 @@
 import lvgl as lv
 
-from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, pct_of_display_width, pct_of_display_height, SharedPreferences, SettingsActivity
+from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, DisplayMetrics, SharedPreferences, SettingsActivity
 from mpos.ui.anim import WidgetAnimator
 
 from confetti import Confetti
@@ -44,7 +44,7 @@ class DisplayWallet(Activity):
         self.main_screen.set_style_pad_all(0, lv.PART.MAIN)
         # This line needs to be drawn first, otherwise it's over the balance label and steals all the clicks!
         balance_line = lv.line(self.main_screen)
-        balance_line.set_points([{'x':0,'y':35},{'x':pct_of_display_width(100-self.receive_qr_pct_of_display*1.2),'y':35}],2)
+        balance_line.set_points([{'x':0,'y':35},{'x':DisplayMetrics.pct_of_width(100-self.receive_qr_pct_of_display*1.2),'y':35}],2)
         balance_line.add_flag(lv.obj.FLAG.CLICKABLE)
         balance_line.add_event_cb(self.send_button_tap,lv.EVENT.CLICKED,None)
         self.balance_label = lv.label(self.main_screen)
@@ -52,10 +52,10 @@ class DisplayWallet(Activity):
         self.balance_label.align(lv.ALIGN.TOP_LEFT, 0, 0)
         self.balance_label.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
         self.balance_label.add_flag(lv.obj.FLAG.CLICKABLE)
-        self.balance_label.set_width(pct_of_display_width(100-self.receive_qr_pct_of_display)) # 100 - receive_qr
+        self.balance_label.set_width(DisplayMetrics.pct_of_width(100-self.receive_qr_pct_of_display)) # 100 - receive_qr
         self.balance_label.add_event_cb(self.balance_label_clicked_cb,lv.EVENT.CLICKED,None)
         self.receive_qr = lv.qrcode(self.main_screen)
-        self.receive_qr.set_size(pct_of_display_width(self.receive_qr_pct_of_display)) # bigger QR results in simpler code (less error correction?)
+        self.receive_qr.set_size(DisplayMetrics.pct_of_width(self.receive_qr_pct_of_display)) # bigger QR results in simpler code (less error correction?)
         self.receive_qr.set_dark_color(lv.color_black())
         self.receive_qr.set_light_color(lv.color_white())
         self.receive_qr.align(lv.ALIGN.TOP_RIGHT,0,0)
@@ -67,7 +67,7 @@ class DisplayWallet(Activity):
         self.payments_label.set_text("")
         self.payments_label.align_to(balance_line,lv.ALIGN.OUT_BOTTOM_LEFT, 0, 10)
         self.update_payments_label_font()
-        self.payments_label.set_width(pct_of_display_width(100-self.receive_qr_pct_of_display)) # 100 - receive_qr
+        self.payments_label.set_width(DisplayMetrics.pct_of_width(100-self.receive_qr_pct_of_display)) # 100 - receive_qr
         self.payments_label.add_flag(lv.obj.FLAG.CLICKABLE)
         self.payments_label.add_event_cb(self.payments_label_clicked,lv.EVENT.CLICKED,None)
         settings_button = lv.button(self.main_screen)
