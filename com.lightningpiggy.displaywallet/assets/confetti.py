@@ -2,6 +2,7 @@ import time
 import random
 import lvgl as lv
 
+from mpos import DisplayMetrics
 
 class Confetti:
     """Manages confetti animation with physics simulation."""
@@ -26,8 +27,8 @@ class Confetti:
         self.GRAVITY = 100  # pixels/sec²
         
         # Screen dimensions
-        self.screen_width = screen.get_display().get_horizontal_resolution()
-        self.screen_height = screen.get_display().get_vertical_resolution()
+        self.screen_width = DisplayMetrics.width()
+        self.screen_height = DisplayMetrics.height()
         
         # State
         self.is_running = False
@@ -78,8 +79,7 @@ class Confetti:
         for _ in range(10):
             self._spawn_one()
         
-        # Create a timer that calls _update_frame every frame (1ms period)
-        self.update_timer = lv.timer_create(self._update_frame, 1, None)
+        self.update_timer = lv.timer_create(self._update_frame, 16, None) # max 60 fps = 16ms/frame
         
         # Stop spawning after duration
         lv.timer_create(self.stop, self.duration, None).set_repeat_count(1)
