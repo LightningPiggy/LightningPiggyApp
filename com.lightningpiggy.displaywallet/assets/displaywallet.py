@@ -1,7 +1,6 @@
 import lvgl as lv
 
-from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, DisplayMetrics, SharedPreferences, SettingsActivity
-from mpos.ui.anim import WidgetAnimator
+from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, DisplayMetrics, SharedPreferences, SettingsActivity, WidgetAnimator
 
 from confetti import Confetti
 from fullscreen_qr import FullscreenQR

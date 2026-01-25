@@ -1,7 +1,6 @@
 import time
 import random
 import lvgl as lv
-import mpos.ui
 
 
 class Confetti:
@@ -36,6 +35,7 @@ class Confetti:
         self.confetti_pieces = []
         self.confetti_images = []
         self.used_img_indices = set()
+        self.update_timer = None  # Reference to LVGL timer for frame updates
         
         # Spawn control
         self.spawn_timer = 0
@@ -78,10 +78,10 @@ class Confetti:
         for _ in range(10):
             self._spawn_one()
         
-        # Register update callback
-        mpos.ui.task_handler.add_event_cb(self._update_frame, 1)
+        # Create a timer that calls _update_frame every frame (1ms period)
+        self.update_timer = lv.timer_create(self._update_frame, 1, None)
         
-        # Stop spawning after 15 seconds
+        # Stop spawning after duration
         lv.timer_create(self.stop, self.duration, None).set_repeat_count(1)
     
     def stop(self, timer=None):
@@ -95,8 +95,8 @@ class Confetti:
         self.confetti_pieces = []
         self.used_img_indices.clear()
     
-    def _update_frame(self, a, b):
-        """Update frame for confetti animation. Called by task handler."""
+    def _update_frame(self, timer):
+        """Update frame for confetti animation. Called by LVGL timer."""
         current_time = time.ticks_ms()
         delta_time = time.ticks_diff(current_time, self.last_time) / 1000.0
         self.last_time = current_time
@@ -152,7 +152,9 @@ class Confetti:
         # Full stop when empty and paused
         if not self.confetti_pieces and not self.is_running:
             print("Confetti finished")
-            mpos.ui.task_handler.remove_event_cb(self._update_frame)
+            if self.update_timer:
+                self.update_timer.delete()
+                self.update_timer = None
     
     def _spawn_one(self):
         """Spawn a single confetti piece."""
