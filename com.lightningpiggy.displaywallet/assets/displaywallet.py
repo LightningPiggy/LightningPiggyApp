@@ -75,7 +75,7 @@ class DisplayWallet(Activity):
         settings_button.add_event_cb(self.settings_button_tap,lv.EVENT.CLICKED,None)
         settings_label = lv.label(settings_button)
         settings_label.set_text(lv.SYMBOL.SETTINGS)
-        settings_label.set_style_text_font(lv.font_montserrat_24, 0)
+        settings_label.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
         settings_label.center()
         if False: # send button disabled for now, not implemented
             send_button = lv.button(self.main_screen)
@@ -84,7 +84,7 @@ class DisplayWallet(Activity):
             send_button.add_event_cb(self.send_button_tap,lv.EVENT.CLICKED,None)
             send_label = lv.label(send_button)
             send_label.set_text(lv.SYMBOL.UPLOAD)
-            send_label.set_style_text_font(lv.font_montserrat_24, 0)
+            send_label.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
             send_label.center()
         self.setContentView(self.main_screen)
 
@@ -155,7 +155,7 @@ class DisplayWallet(Activity):
         self.payments_label.set_text(f"WiFi is not connected, can't talk to wallet...")
 
     def update_payments_label_font(self):
-        self.payments_label.set_style_text_font(self.payments_label_fonts[self.payments_label_current_font], 0)
+        self.payments_label.set_style_text_font(self.payments_label_fonts[self.payments_label_current_font], lv.PART.MAIN)
 
     def payments_label_clicked(self, event):
         self.payments_label_current_font = (self.payments_label_current_font + 1) % len(self.payments_label_fonts)
