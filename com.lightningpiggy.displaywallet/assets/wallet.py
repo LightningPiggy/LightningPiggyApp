@@ -6,7 +6,7 @@ class Wallet:
 
     # Public variables
     # These values could be loading from a cache.json file at __init__
-    last_known_balance = 0
+    last_known_balance = None
     payment_list = None
     static_receive_code = None
 
@@ -20,6 +20,7 @@ class Wallet:
     error_cb = None
 
     def __init__(self):
+        self.last_known_balance = None
         self.payment_list = UniqueSortedList()
 
     def __str__(self):
@@ -31,15 +32,29 @@ class Wallet:
     def handle_new_balance(self, new_balance, fetchPaymentsIfChanged=True):
         if not self.keep_running or new_balance is None:
             return
+
+        # First balance we ever got: update UI even if it's 0
+        if self.last_known_balance is None:
+            self.last_known_balance = new_balance
+            print("First balance received")
+            if self.balance_updated_cb:
+                self.balance_updated_cb(0)
+            # optional: fetch payments once on initial connect
+            if fetchPaymentsIfChanged:
+                TaskManager.create_task(self.fetch_payments())
+            return
+
         sats_added = new_balance - self.last_known_balance
         if new_balance != self.last_known_balance:
             print("Balance changed!")
             self.last_known_balance = new_balance
             print("Calling balance_updated_cb")
-            self.balance_updated_cb(sats_added)
-            if fetchPaymentsIfChanged: # Fetching *all* payments isn't necessary if balance was changed by a payment notification
+            if self.balance_updated_cb:
+                self.balance_updated_cb(sats_added)
+            if fetchPaymentsIfChanged:
                 print("Refreshing payments...")
-                TaskManager.create_task(self.fetch_payments()) # if the balance changed, then re-list transactions
+                TaskManager.create_task(self.fetch_payments())
+
 
     def handle_new_payment(self, new_payment):
         if not self.keep_running:

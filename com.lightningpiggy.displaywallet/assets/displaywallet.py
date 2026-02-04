@@ -194,16 +194,38 @@ class DisplayWallet(Activity):
 
     def balance_updated_cb(self, sats_added=0):
         print(f"balance_updated_cb(sats_added={sats_added})")
+
         if self.fullscreenqr.has_foreground():
             self.fullscreenqr.finish()
+
         if sats_added > 0:
             self.confetti.start()
+
         balance = self.wallet.last_known_balance
         print(f"balance: {balance}")
-        if balance is not None:
-            WidgetAnimator.change_widget(self.balance_label, anim_type="interpolate", duration=self.confetti_duration, delay=0, begin_value=balance-sats_added, end_value=balance, display_change=self.display_balance)
-        else:
+
+        if balance is None:
             print("Not drawing balance because it's None")
+            return
+
+        # Mark as connected even if balance == 0
+        if getattr(self.wallet, "payment_list", None) is not None:
+            if len(self.wallet.payment_list) == 0:
+                self.payments_label.set_text("Connected.\nNo payments yet.")
+            else:
+                self.payments_label.set_text(str(self.wallet.payment_list))
+        else:
+            self.payments_label.set_text("Connected.")
+
+        WidgetAnimator.change_widget(
+            self.balance_label,
+            anim_type="interpolate",
+            duration=self.confetti_duration,
+            delay=0,
+            begin_value=balance - sats_added,
+            end_value=balance,
+            display_change=self.display_balance
+        )
     
     def redraw_payments_cb(self):
         # this gets called from another thread (the wallet) so make sure it happens in the LVGL thread using lv.async_call():
