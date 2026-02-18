@@ -28,6 +28,10 @@ class DisplayWallet(Activity):
     receive_qr = None
     payments_label = None
 
+    # welcome screen
+    welcome_container = None
+    wallet_container_widgets = []
+
     # confetti:
     confetti = None
     confetti_duration = 15000
@@ -86,6 +90,70 @@ class DisplayWallet(Activity):
             send_label.set_text(lv.SYMBOL.UPLOAD)
             send_label.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
             send_label.center()
+
+        # Track wallet-mode widgets so they can be hidden/shown as a group
+        self.wallet_container_widgets = [balance_line, self.balance_label, self.receive_qr, self.payments_label, settings_button]
+
+        # === Welcome Screen (shown when wallet is not configured) ===
+        self.welcome_container = lv.obj(self.main_screen)
+        self.welcome_container.set_size(lv.pct(100), lv.pct(100))
+        self.welcome_container.set_style_border_width(0, lv.PART.MAIN)
+        self.welcome_container.set_style_pad_all(DisplayMetrics.pct_of_width(5), lv.PART.MAIN)
+        self.welcome_container.set_flex_flow(lv.FLEX_FLOW.COLUMN)
+        self.welcome_container.set_flex_align(lv.FLEX_ALIGN.CENTER, lv.FLEX_ALIGN.CENTER, lv.FLEX_ALIGN.CENTER)
+        self.welcome_container.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
+        self.welcome_container.add_flag(lv.obj.FLAG.HIDDEN)
+
+        welcome_title = lv.label(self.welcome_container)
+        welcome_title.set_text("Lightning Piggy")
+        welcome_title.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
+        welcome_title.set_style_margin_top(DisplayMetrics.pct_of_height(2), lv.PART.MAIN)
+
+        welcome_subtitle = lv.label(self.welcome_container)
+        welcome_subtitle.set_text("An electronic piggy bank that accepts\nBitcoin sent over lightning")
+        welcome_subtitle.set_style_text_font(lv.font_montserrat_12, lv.PART.MAIN)
+        welcome_subtitle.set_style_text_color(lv.color_hex(0x888888), lv.PART.MAIN)
+        welcome_subtitle.set_long_mode(lv.label.LONG_MODE.WRAP)
+        welcome_subtitle.set_width(lv.pct(90))
+        welcome_subtitle.set_style_text_align(lv.TEXT_ALIGN.CENTER, lv.PART.MAIN)
+
+        welcome_instructions = lv.label(self.welcome_container)
+        welcome_instructions.set_text(
+            "To get started you will first need to setup a "
+            "bitcoin enabled wallet, and then connect to it "
+            "in this app. Visit lightningpiggy.com/build/ "
+            "for instructions."
+        )
+        welcome_instructions.set_style_text_font(lv.font_montserrat_12, lv.PART.MAIN)
+        welcome_instructions.set_long_mode(lv.label.LONG_MODE.WRAP)
+        welcome_instructions.set_width(lv.pct(90))
+        welcome_instructions.set_style_text_align(lv.TEXT_ALIGN.CENTER, lv.PART.MAIN)
+        welcome_instructions.set_style_margin_top(DisplayMetrics.pct_of_height(2), lv.PART.MAIN)
+
+        welcome_qr_label = lv.label(self.welcome_container)
+        welcome_qr_label.set_text("Scan for more info:")
+        welcome_qr_label.set_style_text_font(lv.font_montserrat_10, lv.PART.MAIN)
+        welcome_qr_label.set_style_text_color(lv.color_hex(0x888888), lv.PART.MAIN)
+        welcome_qr_label.set_style_margin_top(DisplayMetrics.pct_of_height(2), lv.PART.MAIN)
+
+        welcome_qr = lv.qrcode(self.welcome_container)
+        welcome_qr.set_size(round(DisplayMetrics.min_dimension() * 0.25))
+        welcome_qr.set_dark_color(lv.color_black())
+        welcome_qr.set_light_color(lv.color_white())
+        welcome_qr.set_style_border_color(lv.color_white(), lv.PART.MAIN)
+        welcome_qr.set_style_border_width(4, lv.PART.MAIN)
+        welcome_url = "https://lightningpiggy.com/build"
+        welcome_qr.update(welcome_url, len(welcome_url))
+
+        welcome_setup_btn = lv.button(self.welcome_container)
+        welcome_setup_btn.set_size(lv.pct(60), lv.SIZE_CONTENT)
+        welcome_setup_btn.set_style_margin_top(DisplayMetrics.pct_of_height(2), lv.PART.MAIN)
+        welcome_setup_btn.add_event_cb(self.settings_button_tap, lv.EVENT.CLICKED, None)
+        welcome_setup_label = lv.label(welcome_setup_btn)
+        welcome_setup_label.set_text(lv.SYMBOL.SETTINGS + " Setup")
+        welcome_setup_label.set_style_text_font(lv.font_montserrat_16, lv.PART.MAIN)
+        welcome_setup_label.center()
+
         self.setContentView(self.main_screen)
 
     def onStart(self, main_screen):
@@ -123,8 +191,9 @@ class DisplayWallet(Activity):
             return
         wallet_type = self.prefs.get_string("wallet_type")
         if not wallet_type:
-            self.payments_label.set_text(f"Please go into the settings to set a Wallet Type.")
+            self.show_welcome_screen()
             return # nothing is configured, nothing to do
+        self.show_wallet_screen()
         if wallet_type == "lnbits":
             try:
                 self.wallet = LNBitsWallet(self.prefs.get_string("lnbits_url"), self.prefs.get_string("lnbits_readkey"))
@@ -150,9 +219,25 @@ class DisplayWallet(Activity):
         self.wallet.start(self.balance_updated_cb, self.redraw_payments_cb, self.redraw_static_receive_code_cb, self.error_cb)
 
     def went_offline(self):
+        if not self.prefs.get_string("wallet_type"):
+            self.show_welcome_screen()
+            return
         if self.wallet:
             self.wallet.stop() # don't stop the wallet for the fullscreen QR activity
         self.payments_label.set_text(f"WiFi is not connected, can't talk to wallet...")
+
+    def show_welcome_screen(self):
+        """Hide wallet widgets, show welcome container."""
+        for w in self.wallet_container_widgets:
+            w.add_flag(lv.obj.FLAG.HIDDEN)
+        self.welcome_container.remove_flag(lv.obj.FLAG.HIDDEN)
+        WidgetAnimator.show_widget(self.welcome_container)
+
+    def show_wallet_screen(self):
+        """Hide welcome container, show wallet widgets."""
+        self.welcome_container.add_flag(lv.obj.FLAG.HIDDEN)
+        for w in self.wallet_container_widgets:
+            w.remove_flag(lv.obj.FLAG.HIDDEN)
 
     def update_payments_label_font(self):
         self.payments_label.set_style_text_font(self.payments_label_fonts[self.payments_label_current_font], lv.PART.MAIN)
