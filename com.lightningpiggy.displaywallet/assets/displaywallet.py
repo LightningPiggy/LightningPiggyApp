@@ -28,6 +28,10 @@ class DisplayWallet(Activity):
     receive_qr = None
     payments_label = None
 
+    # splash screen
+    splash_container = None
+    splash_shown = False
+
     # confetti:
     confetti = None
     confetti_duration = 15000
@@ -86,6 +90,26 @@ class DisplayWallet(Activity):
             send_label.set_text(lv.SYMBOL.UPLOAD)
             send_label.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
             send_label.center()
+
+        # === Splash Screen (logo shown for 2 seconds on first launch) ===
+        self.splash_container = lv.obj(self.main_screen)
+        self.splash_container.set_size(lv.pct(100), lv.pct(100))
+        self.splash_container.set_style_border_width(0, lv.PART.MAIN)
+        self.splash_container.set_style_bg_color(lv.color_white(), lv.PART.MAIN)
+        self.splash_container.set_style_bg_opa(lv.OPA.COVER, lv.PART.MAIN)
+        self.splash_container.set_flex_flow(lv.FLEX_FLOW.COLUMN)
+        self.splash_container.set_flex_align(lv.FLEX_ALIGN.CENTER, lv.FLEX_ALIGN.CENTER, lv.FLEX_ALIGN.CENTER)
+        self.splash_container.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
+        self.splash_container.add_flag(lv.obj.FLAG.HIDDEN)
+
+        splash_logo = lv.image(self.splash_container)
+        splash_logo.set_src(f"{self.ICON_PATH}lightningpiggy-logo.png")
+        # Scale logo to 80% of screen width (original is 467x190)
+        splash_target_width = DisplayMetrics.pct_of_width(80)
+        splash_scale = splash_target_width / 467
+        splash_logo.set_scale(round(splash_scale * 256))
+        splash_logo.set_size(round(467 * splash_scale), round(190 * splash_scale))
+
         self.setContentView(self.main_screen)
 
     def onStart(self, main_screen):
@@ -98,7 +122,14 @@ class DisplayWallet(Activity):
         super().onResume(main_screen)
         cm = ConnectivityManager.get()
         cm.register_callback(self.network_changed)
-        self.network_changed(cm.is_online())
+        if not self.splash_shown:
+            # First launch: show splash for 2 seconds, then proceed
+            self.splash_shown = True
+            self.splash_container.remove_flag(lv.obj.FLAG.HIDDEN)
+            lv.timer_create(self._splash_done, 2000, None).set_repeat_count(1)
+        else:
+            # Returning from settings or other activity: go straight to content
+            self.network_changed(cm.is_online())
 
     def onPause(self, main_screen):
         if self.wallet and self.destination != FullscreenQR:
@@ -153,6 +184,12 @@ class DisplayWallet(Activity):
         if self.wallet:
             self.wallet.stop() # don't stop the wallet for the fullscreen QR activity
         self.payments_label.set_text(f"WiFi is not connected, can't talk to wallet...")
+
+    def _splash_done(self, timer):
+        """Called after splash duration. Fade out splash and show appropriate screen."""
+        WidgetAnimator.hide_widget(self.splash_container, duration=500)
+        cm = ConnectivityManager.get()
+        self.network_changed(cm.is_online())
 
     def update_payments_label_font(self):
         self.payments_label.set_style_text_font(self.payments_label_fonts[self.payments_label_current_font], lv.PART.MAIN)
