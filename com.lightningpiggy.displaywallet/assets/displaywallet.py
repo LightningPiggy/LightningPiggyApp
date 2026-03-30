@@ -6,6 +6,11 @@ try:
     _has_number_format = True
 except ImportError:
     _has_number_format = False
+try:
+    from mpos import AppearanceManager
+    _has_appearance = True
+except ImportError:
+    _has_appearance = False
 
 from confetti import Confetti
 from fullscreen_qr import FullscreenQR
@@ -68,10 +73,11 @@ class DisplayWallet(Activity):
         self.balance_label.add_event_cb(self.balance_label_clicked_cb,lv.EVENT.CLICKED,None)
         self.receive_qr = lv.qrcode(self.main_screen)
         self.receive_qr.set_size(DisplayMetrics.pct_of_width(self.receive_qr_pct_of_display)) # bigger QR results in simpler code (less error correction?)
-        self.receive_qr.set_dark_color(lv.color_black())
-        self.receive_qr.set_light_color(lv.color_white())
+        dark, light = self._qr_colors()
+        self.receive_qr.set_dark_color(dark)
+        self.receive_qr.set_light_color(light)
         self.receive_qr.align(lv.ALIGN.TOP_RIGHT,0,0)
-        self.receive_qr.set_style_border_color(lv.color_white(), lv.PART.MAIN)
+        self.receive_qr.set_style_border_color(light, lv.PART.MAIN)
         self.receive_qr.set_style_border_width(8, lv.PART.MAIN);
         self.receive_qr.add_flag(lv.obj.FLAG.CLICKABLE)
         self.receive_qr.add_event_cb(self.qr_clicked_cb,lv.EVENT.CLICKED,None)
@@ -151,9 +157,10 @@ class DisplayWallet(Activity):
 
         welcome_qr = lv.qrcode(self.welcome_container)
         welcome_qr.set_size(round(DisplayMetrics.min_dimension() * 0.25))
-        welcome_qr.set_dark_color(lv.color_black())
-        welcome_qr.set_light_color(lv.color_white())
-        welcome_qr.set_style_border_color(lv.color_white(), lv.PART.MAIN)
+        dark, light = self._qr_colors()
+        welcome_qr.set_dark_color(dark)
+        welcome_qr.set_light_color(light)
+        welcome_qr.set_style_border_color(light, lv.PART.MAIN)
         welcome_qr.set_style_border_width(4, lv.PART.MAIN)
         welcome_url = "https://lightningpiggy.com/build"
         welcome_qr.update(welcome_url, len(welcome_url))
@@ -205,7 +212,8 @@ class DisplayWallet(Activity):
             self.splash_container.remove_flag(lv.obj.FLAG.HIDDEN)
             lv.timer_create(self._splash_done, 2000, None).set_repeat_count(1)
         else:
-            # Returning from settings or other activity: go straight to content
+            # Returning from settings or other activity: update theme-dependent colors and show content
+            self._apply_qr_theme()
             self.network_changed(cm.is_online())
 
     def onPause(self, main_screen):
@@ -284,6 +292,21 @@ class DisplayWallet(Activity):
         WidgetAnimator.hide_widget(self.splash_container, duration=500)
         cm = ConnectivityManager.get()
         self.network_changed(cm.is_online())
+
+    def _qr_colors(self):
+        """Return (dark_color, light_color) tuple based on current theme."""
+        if _has_appearance and not AppearanceManager.is_light_mode():
+            return (lv.color_white(), lv.color_hex(0x1e1e1e))
+        return (lv.color_black(), lv.color_white())
+
+    def _apply_qr_theme(self):
+        """Reapply QR code colors after a theme change."""
+        dark, light = self._qr_colors()
+        self.receive_qr.set_dark_color(dark)
+        self.receive_qr.set_light_color(light)
+        self.receive_qr.set_style_border_color(light, lv.PART.MAIN)
+        if self.receive_qr_data:
+            self.receive_qr.update(self.receive_qr_data, len(self.receive_qr_data))
 
     def update_payments_label_font(self):
         self.payments_label.set_style_text_font(self.payments_label_fonts[self.payments_label_current_font], lv.PART.MAIN)
