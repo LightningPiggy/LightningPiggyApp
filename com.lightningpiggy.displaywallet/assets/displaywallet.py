@@ -100,7 +100,7 @@ class DisplayWallet(Activity):
         self.welcome_container.set_style_border_width(0, lv.PART.MAIN)
         self.welcome_container.set_style_pad_all(DisplayMetrics.pct_of_width(5), lv.PART.MAIN)
         self.welcome_container.set_flex_flow(lv.FLEX_FLOW.COLUMN)
-        self.welcome_container.set_flex_align(lv.FLEX_ALIGN.CENTER, lv.FLEX_ALIGN.CENTER, lv.FLEX_ALIGN.CENTER)
+        self.welcome_container.set_flex_align(lv.FLEX_ALIGN.START, lv.FLEX_ALIGN.CENTER, lv.FLEX_ALIGN.CENTER)
         self.welcome_container.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
         self.welcome_container.add_flag(lv.obj.FLAG.HIDDEN)
 
@@ -108,6 +108,7 @@ class DisplayWallet(Activity):
         welcome_title.set_text("Lightning Piggy")
         welcome_title.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
         welcome_title.set_style_margin_top(DisplayMetrics.pct_of_height(2), lv.PART.MAIN)
+        welcome_title.add_flag(lv.obj.FLAG.CLICKABLE)
 
         welcome_subtitle = lv.label(self.welcome_container)
         welcome_subtitle.set_text("An electronic piggy bank that accepts\nBitcoin sent over lightning")
@@ -116,6 +117,7 @@ class DisplayWallet(Activity):
         welcome_subtitle.set_long_mode(lv.label.LONG_MODE.WRAP)
         welcome_subtitle.set_width(lv.pct(90))
         welcome_subtitle.set_style_text_align(lv.TEXT_ALIGN.CENTER, lv.PART.MAIN)
+        welcome_subtitle.add_flag(lv.obj.FLAG.CLICKABLE)
 
         welcome_instructions = lv.label(self.welcome_container)
         welcome_instructions.set_text(
@@ -129,12 +131,14 @@ class DisplayWallet(Activity):
         welcome_instructions.set_width(lv.pct(90))
         welcome_instructions.set_style_text_align(lv.TEXT_ALIGN.CENTER, lv.PART.MAIN)
         welcome_instructions.set_style_margin_top(DisplayMetrics.pct_of_height(2), lv.PART.MAIN)
+        welcome_instructions.add_flag(lv.obj.FLAG.CLICKABLE)
 
         welcome_qr_label = lv.label(self.welcome_container)
         welcome_qr_label.set_text("Scan for more info:")
         welcome_qr_label.set_style_text_font(lv.font_montserrat_10, lv.PART.MAIN)
         welcome_qr_label.set_style_text_color(lv.color_hex(0x888888), lv.PART.MAIN)
         welcome_qr_label.set_style_margin_top(DisplayMetrics.pct_of_height(2), lv.PART.MAIN)
+        welcome_qr_label.add_flag(lv.obj.FLAG.CLICKABLE)
 
         welcome_qr = lv.qrcode(self.welcome_container)
         welcome_qr.set_size(round(DisplayMetrics.min_dimension() * 0.25))
@@ -144,6 +148,7 @@ class DisplayWallet(Activity):
         welcome_qr.set_style_border_width(4, lv.PART.MAIN)
         welcome_url = "https://lightningpiggy.com/build"
         welcome_qr.update(welcome_url, len(welcome_url))
+        welcome_qr.add_flag(lv.obj.FLAG.CLICKABLE)
 
         welcome_setup_btn = lv.button(self.welcome_container)
         welcome_setup_btn.set_size(lv.pct(60), lv.SIZE_CONTENT)
