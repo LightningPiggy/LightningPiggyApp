@@ -296,7 +296,7 @@ class DisplayWallet(Activity):
     def _qr_colors(self):
         """Return (dark_color, light_color) tuple based on current theme."""
         if _has_appearance and not AppearanceManager.is_light_mode():
-            return (lv.color_white(), lv.color_hex(0x1e1e1e))
+            return (lv.color_white(), lv.color_hex(0x15171A))
         return (lv.color_black(), lv.color_white())
 
     def _apply_qr_theme(self):

@@ -20,8 +20,8 @@ class FullscreenQR(Activity):
         big_receive_qr.set_size(round(DisplayMetrics.min_dimension()*0.9))
         if _has_appearance and not AppearanceManager.is_light_mode():
             big_receive_qr.set_dark_color(lv.color_white())
-            big_receive_qr.set_light_color(lv.color_hex(0x1e1e1e))
-            border_color = lv.color_hex(0x1e1e1e)
+            big_receive_qr.set_light_color(lv.color_hex(0x15171A))
+            border_color = lv.color_hex(0x15171A)
         else:
             big_receive_qr.set_dark_color(lv.color_black())
             big_receive_qr.set_light_color(lv.color_white())
