@@ -1,6 +1,11 @@
 import lvgl as lv
 
 from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, DisplayMetrics, SharedPreferences, SettingsActivity, WidgetAnimator
+try:
+    from mpos import NumberFormat
+    _has_number_format = True
+except ImportError:
+    _has_number_format = False
 
 from confetti import Confetti
 from fullscreen_qr import FullscreenQR
@@ -288,16 +293,18 @@ class DisplayWallet(Activity):
         self.update_payments_label_font()
 
     def float_to_string(self, value, decimals):
-        # Format float to string with fixed-point notation and specified decimal places
+        if _has_number_format:
+            return NumberFormat.format_number(value, decimals)
+        # Fallback for firmware without NumberFormat
         s = "{:.{}f}".format(value, decimals)
-        # Remove trailing zeros and decimal point if no decimals remain
         return s.rstrip("0").rstrip(".")
 
     def display_balance(self, balance):
          #print(f"displaying balance {balance}")
          if self.balance_mode == 0:  # sats
              #balance_text = "丰 " + str(balance) # font doesnt support it
-             balance_text = str(int(round(balance))) + " sat"
+             sats = int(round(balance))
+             balance_text = (NumberFormat.format_number(sats) if _has_number_format else str(sats)) + " sat"
              if balance > 1:
                  balance_text += "s"
          elif self.balance_mode == 1:  # bits (1 bit = 100 sats)
