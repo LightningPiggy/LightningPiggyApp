@@ -9,6 +9,7 @@ except ImportError:
 
 from confetti import Confetti
 from fullscreen_qr import FullscreenQR
+import wallet_cache
 
 # Import wallet modules at the top so they're available when sys.path is restored
 # This prevents ImportError when switching wallet types after the app has started
@@ -282,8 +283,29 @@ class DisplayWallet(Activity):
     def _splash_done(self, timer):
         """Called after splash duration. Fade out splash and show appropriate screen."""
         WidgetAnimator.hide_widget(self.splash_container, duration=500)
+        # Show cached data immediately while waiting for network
+        self._load_and_display_cache()
         cm = ConnectivityManager.get()
         self.network_changed(cm.is_online())
+
+    def _load_and_display_cache(self):
+        """Load cached wallet data and display it immediately."""
+        if not self.prefs.get_string("wallet_type"):
+            return  # no wallet configured, nothing to show
+        self.show_wallet_screen()
+        cached_balance = wallet_cache.load_cached_balance()
+        if cached_balance is not None:
+            print(f"Cache: displaying cached balance {cached_balance}")
+            self.display_balance(cached_balance)
+        cached_payments = wallet_cache.load_cached_payments()
+        if cached_payments is not None and len(cached_payments) > 0:
+            print(f"Cache: displaying {len(cached_payments)} cached payments")
+            self.payments_label.set_text(str(cached_payments))
+        cached_receive_code = wallet_cache.load_cached_static_receive_code()
+        if cached_receive_code:
+            print(f"Cache: displaying cached QR code")
+            self.receive_qr_data = cached_receive_code
+            self.receive_qr.update(cached_receive_code, len(cached_receive_code))
 
     def update_payments_label_font(self):
         self.payments_label.set_style_text_font(self.payments_label_fonts[self.payments_label_current_font], lv.PART.MAIN)
