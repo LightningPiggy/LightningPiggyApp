@@ -53,6 +53,7 @@ class DisplayWallet(Activity):
     def onCreate(self):
         self.prefs = SharedPreferences("com.lightningpiggy.displaywallet")
         self.main_screen = lv.obj()
+        self.main_screen.set_style_bg_color(lv.color_white(), lv.PART.MAIN)
         self.main_screen.set_style_pad_all(0, lv.PART.MAIN)
         # This line needs to be drawn first, otherwise it's over the balance label and steals all the clicks!
         balance_line = lv.line(self.main_screen)
