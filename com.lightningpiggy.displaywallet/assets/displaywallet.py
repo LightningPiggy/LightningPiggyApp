@@ -482,8 +482,9 @@ class DisplayWallet(Activity):
         else:
             self.error_cb(f"No or unsupported wallet type configured: '{wallet_type}'")
             return
-        self.balance_label.set_text(lv.SYMBOL.REFRESH)
-        self.payments_label.set_text(f"\nConnecting to {wallet_type} backend.\n\nIf this takes too long, it might be down or something's wrong with the settings.")
+        if not (hasattr(self, '_last_balance') and self._last_balance):
+            self.balance_label.set_text(lv.SYMBOL.REFRESH)
+            self.payments_label.set_text(f"\nConnecting to {wallet_type} backend.\n\nIf this takes too long, it might be down or something's wrong with the settings.")
         # by now, self.wallet can be assumed
         self.wallet.start(self.balance_updated_cb, self.redraw_payments_cb, self.redraw_static_receive_code_cb, self.error_cb)
 
@@ -676,7 +677,11 @@ class DisplayWallet(Activity):
 
     def error_cb(self, error):
         if self.wallet and self.wallet.is_running():
-            self.payments_label.set_text(str(error))
+            # Don't overwrite cached payments with error if we have cached data
+            if hasattr(self, '_last_balance') and self._last_balance:
+                print(f"WARNING: {error} (keeping cached data on screen)")
+            else:
+                self.payments_label.set_text(str(error))
 
     def send_button_tap(self, event):
         print("send_button clicked")
