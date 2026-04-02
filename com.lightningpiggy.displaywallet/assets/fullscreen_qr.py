@@ -1,11 +1,6 @@
 import lvgl as lv
 
-from mpos import Activity, DisplayMetrics
-try:
-    from mpos import AppearanceManager
-    _has_appearance = True
-except ImportError:
-    _has_appearance = False
+from mpos import Activity, DisplayMetrics, AppearanceManager
 
 class FullscreenQR(Activity):
     # No __init__() so super.__init__() will be called automatically
@@ -18,7 +13,7 @@ class FullscreenQR(Activity):
         qr_screen.add_event_cb(lambda e: self.finish(),lv.EVENT.CLICKED,None)
         big_receive_qr = lv.qrcode(qr_screen)
         big_receive_qr.set_size(round(DisplayMetrics.min_dimension()*0.9))
-        if _has_appearance and not AppearanceManager.is_light_mode():
+        if not AppearanceManager.is_light_mode():
             big_receive_qr.set_dark_color(lv.color_white())
             big_receive_qr.set_light_color(lv.color_hex(0x15171A))
             border_color = lv.color_hex(0x15171A)

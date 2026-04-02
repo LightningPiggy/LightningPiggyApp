@@ -6,11 +6,7 @@ try:
     _has_number_format = True
 except ImportError:
     _has_number_format = False
-try:
-    from mpos import AppearanceManager
-    _has_appearance = True
-except ImportError:
-    _has_appearance = False
+from mpos import AppearanceManager
 
 from confetti import Confetti
 from fullscreen_qr import FullscreenQR
@@ -143,7 +139,7 @@ class DenominationSettingsActivity(Activity):
             cb.add_event_cb(lambda e, idx=i: self._radio_clicked(idx), lv.EVENT.VALUE_CHANGED, None)
             if value == "symbol":
                 # Add ₿ image next to the checkbox text
-                if _has_appearance and not AppearanceManager.is_light_mode():
+                if not AppearanceManager.is_light_mode():
                     symbol_path = "M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/bitcoin_symbol_white_small.png"
                 else:
                     symbol_path = "M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/bitcoin_symbol_black_small.png"
@@ -251,7 +247,7 @@ class DisplayWallet(Activity):
     def onCreate(self):
         self.prefs = SharedPreferences("com.lightningpiggy.displaywallet")
         self.main_screen = lv.obj()
-        if _has_appearance and not AppearanceManager.is_light_mode():
+        if not AppearanceManager.is_light_mode():
             self.main_screen.set_style_bg_color(lv.color_hex(0x15171A), lv.PART.MAIN)
         else:
             self.main_screen.set_style_bg_color(lv.color_white(), lv.PART.MAIN)
@@ -538,19 +534,19 @@ class DisplayWallet(Activity):
 
     def _icon_color(self):
         """Return icon color based on current theme."""
-        if _has_appearance and not AppearanceManager.is_light_mode():
+        if not AppearanceManager.is_light_mode():
             return lv.color_white()
         return lv.color_black()
 
     def _bitcoin_symbol_path(self):
         """Return path to theme-appropriate Bitcoin symbol image."""
-        if _has_appearance and not AppearanceManager.is_light_mode():
+        if not AppearanceManager.is_light_mode():
             return f"{self.ASSET_PATH}bitcoin_symbol_white.png"
         return f"{self.ASSET_PATH}bitcoin_symbol_black.png"
 
     def _qr_colors(self):
         """Return (dark_color, light_color) tuple based on current theme."""
-        if _has_appearance and not AppearanceManager.is_light_mode():
+        if not AppearanceManager.is_light_mode():
             return (lv.color_white(), lv.color_hex(0x15171A))
         return (lv.color_black(), lv.color_white())
 
