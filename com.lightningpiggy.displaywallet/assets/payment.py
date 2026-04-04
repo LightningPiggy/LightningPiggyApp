@@ -1,21 +1,30 @@
 # Payment class remains unchanged
 class Payment:
+    use_symbol = False  # When True, omit "sats" text (₿ image shown separately)
+
     def __init__(self, epoch_time, amount_sats, comment):
         self.epoch_time = epoch_time
         self.amount_sats = amount_sats
         self.comment = comment
 
     def __str__(self):
-        sattext = "sats"
-        if self.amount_sats == 1:
-            sattext = "sat"
-        if not self.comment:
-            verb = "spent"
-            if self.amount_sats > 0:
-                verb = "received!"
-            return f"{self.amount_sats} {sattext} {verb}"
-        #return f"{self.amount_sats} {sattext} @ {self.epoch_time}: {self.comment}"
-        return f"{self.amount_sats} {sattext}: {self.comment}"
+        if Payment.use_symbol:
+            if not self.comment:
+                verb = "spent"
+                if self.amount_sats > 0:
+                    verb = "received!"
+                return f"{self.amount_sats} {verb}"
+            return f"{self.amount_sats}: {self.comment}"
+        else:
+            sattext = "sats"
+            if self.amount_sats == 1:
+                sattext = "sat"
+            if not self.comment:
+                verb = "spent"
+                if self.amount_sats > 0:
+                    verb = "received!"
+                return f"{self.amount_sats} {sattext} {verb}"
+            return f"{self.amount_sats} {sattext}: {self.comment}"
 
     def __eq__(self, other):
         if not isinstance(other, Payment):
