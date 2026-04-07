@@ -636,7 +636,12 @@ class DisplayWallet(Activity):
         # Mark as connected even if balance == 0
         if getattr(self.wallet, "payment_list", None) is not None:
             if len(self.wallet.payment_list) == 0:
-                self.payments_label.set_text("Connected.\nNo payments yet.")
+                # Don't overwrite cached payments with "no payments" message
+                cached = wallet_cache.load_cached_payments()
+                if cached and len(cached) > 0:
+                    self.payments_label.set_text(str(cached))
+                else:
+                    self.payments_label.set_text("Connected.\nNo payments yet.")
             else:
                 self.payments_label.set_text(str(self.wallet.payment_list))
         else:
