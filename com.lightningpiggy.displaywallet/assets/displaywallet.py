@@ -565,11 +565,7 @@ class DisplayWallet(Activity):
         self.update_payments_label_font()
 
     def float_to_string(self, value, decimals):
-        if _has_number_format:
-            return NumberFormat.format_number(value, decimals)
-        # Fallback for firmware without NumberFormat
-        s = "{:.{}f}".format(value, decimals)
-        return s.rstrip("0").rstrip(".")
+        return NumberFormat.format_number(value, decimals)
 
     def display_balance(self, balance):
          self._last_balance = balance
@@ -577,7 +573,7 @@ class DisplayWallet(Activity):
          Payment.use_symbol = (denom == "symbol")
          if denom in ("sats", "symbol"):
              sats = int(round(balance))
-             formatted = NumberFormat.format_number(sats) if _has_number_format else str(sats)
+             formatted = NumberFormat.format_number(sats)
              if denom == "symbol":
                  balance_text = formatted
                  self.bitcoin_symbol.set_src(self._bitcoin_symbol_path())
