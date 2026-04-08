@@ -1,3 +1,14 @@
+0.2.3
+=====
+- Use NumberFormat framework for decimal and thousands separators
+- Restructure settings, add balance denomination picker, theme-aware UI, wallet cache
+- Fix light mode background to match QR code white
+
+0.2.2
+=====
+- Welcome screen by @bitcoin3us
+- Fix call balance callback on initial 0 balance (NWC) by @floydianslips
+
 0.2.1
 =====
 - Close FullscreenQR when balance changes so the rolling balance animation and payments are visible

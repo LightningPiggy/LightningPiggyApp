@@ -1,6 +1,6 @@
 import json
 
-from websocket import WebSocketApp
+from uaiowebsocket import WebSocketApp
 
 from mpos import TaskManager, DownloadManager
 

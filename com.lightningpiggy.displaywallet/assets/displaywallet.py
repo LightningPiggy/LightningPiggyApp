@@ -1,12 +1,6 @@
 import lvgl as lv
 
-from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, DisplayMetrics, SharedPreferences, SettingsActivity, WidgetAnimator
-try:
-    from mpos import NumberFormat
-    _has_number_format = True
-except ImportError:
-    _has_number_format = False
-from mpos import AppearanceManager
+from mpos import Activity, AppearanceManager, Intent, ConnectivityManager, MposKeyboard, NumberFormat, DisplayMetrics, SharedPreferences, SettingsActivity, WidgetAnimator
 
 from confetti import Confetti
 from fullscreen_qr import FullscreenQR
