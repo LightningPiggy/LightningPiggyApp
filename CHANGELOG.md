@@ -1,3 +1,7 @@
+0.2.4
+=====
+- Preserve cached payments on screen when WiFi goes offline
+
 0.2.3
 =====
 - Use NumberFormat framework for decimal and thousands separators
