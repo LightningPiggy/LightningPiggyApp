@@ -483,8 +483,10 @@ class DisplayWallet(Activity):
             self.show_welcome_screen()
             return
         if self.wallet:
-            self.wallet.stop() # don't stop the wallet for the fullscreen QR activity
-        self.payments_label.set_text(f"WiFi is not connected, can't talk to wallet...")
+            self.wallet.stop()
+        # Don't overwrite cached data with offline message
+        if not (hasattr(self, '_last_balance') and self._last_balance):
+            self.payments_label.set_text(f"WiFi is not connected, can't talk to wallet...")
 
     def show_welcome_screen(self):
         """Hide wallet widgets, show welcome container."""
