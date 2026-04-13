@@ -1,9 +1,12 @@
+0.2.4
+=====
+- Fix crash on boot: remove undefined _has_number_format references
+
 0.2.3
 =====
 - Use NumberFormat framework for decimal and thousands separators
 - Restructure settings, add balance denomination picker, theme-aware UI, wallet cache
 - Fix light mode background to match QR code white
-- Fix crash on boot: remove undefined _has_number_format references
 
 0.2.2
 =====
