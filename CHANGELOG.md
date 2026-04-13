@@ -1,6 +1,7 @@
 0.2.4
 =====
 - Fix crash on boot: remove undefined _has_number_format references
+- Preserve cached payments on screen when WiFi goes offline
 
 0.2.3
 =====
