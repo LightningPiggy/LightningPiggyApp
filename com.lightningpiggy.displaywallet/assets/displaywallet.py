@@ -1,6 +1,12 @@
 import lvgl as lv
 
-from mpos import Activity, AppearanceManager, Intent, ConnectivityManager, MposKeyboard, NumberFormat, DisplayMetrics, SharedPreferences, SettingsActivity, WidgetAnimator
+from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, DisplayMetrics, SharedPreferences, SettingsActivity, WidgetAnimator
+try:
+    from mpos import NumberFormat
+    _has_number_format = True
+except ImportError:
+    _has_number_format = False
+from mpos import AppearanceManager
 
 from confetti import Confetti
 from fullscreen_qr import FullscreenQR
@@ -279,8 +285,11 @@ class DisplayWallet(Activity):
         self.payments_label.set_width(DisplayMetrics.pct_of_width(100-self.receive_qr_pct_of_display)) # 100 - receive_qr
         self.payments_label.add_flag(lv.obj.FLAG.CLICKABLE)
         self.payments_label.add_event_cb(self.payments_label_clicked,lv.EVENT.CLICKED,None)
+        # Hero image below QR code
+        self.hero_image = lv.image(self.main_screen)
+        self._update_hero_image()
         settings_button = lv.obj(self.main_screen)
-        settings_button.set_size(50, 50)
+        settings_button.set_size(40, 40)
         settings_button.align(lv.ALIGN.BOTTOM_RIGHT, 0, 0)
         settings_button.add_flag(lv.obj.FLAG.CLICKABLE)
         settings_button.set_style_bg_opa(lv.OPA.TRANSP, lv.PART.MAIN)
@@ -289,7 +298,7 @@ class DisplayWallet(Activity):
         settings_button.add_event_cb(self.settings_button_tap,lv.EVENT.CLICKED,None)
         settings_icon = lv.label(settings_button)
         settings_icon.set_text(lv.SYMBOL.SETTINGS)
-        settings_icon.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
+        settings_icon.set_style_text_font(lv.font_montserrat_18, lv.PART.MAIN)
         settings_icon.set_style_text_color(self._icon_color(), lv.PART.MAIN)
         settings_icon.center()
         focusgroup = lv.group_get_default()
@@ -306,7 +315,7 @@ class DisplayWallet(Activity):
             send_label.center()
 
         # Track wallet-mode widgets so they can be hidden/shown as a group
-        self.wallet_container_widgets = [balance_line, self.balance_label, self.receive_qr, self.payments_label, settings_button]
+        self.wallet_container_widgets = [balance_line, self.balance_label, self.receive_qr, self.payments_label, self.hero_image, settings_button]
 
         # === Welcome Screen (shown when wallet is not configured) ===
         self.welcome_container = lv.obj(self.main_screen)
@@ -416,6 +425,7 @@ class DisplayWallet(Activity):
             lv.timer_create(self._splash_done, 2000, None).set_repeat_count(1)
         else:
             # Returning from settings or other activity
+            self._update_hero_image()
             if self.wallet and self.wallet.is_running():
                 # Wallet already running — just redisplay, no re-fetch
                 if hasattr(self, '_last_balance'):
@@ -534,6 +544,31 @@ class DisplayWallet(Activity):
             return lv.color_white()
         return lv.color_black()
 
+    def _update_hero_image(self):
+        """Show or hide the hero image based on settings."""
+        hero = self.prefs.get_string("hero_image", "lightningpiggy")
+        if hero and hero != "none":
+            self.hero_image.set_src(f"{self.ASSET_PATH}hero_{hero}.png")
+            # Center horizontally with QR code, vertically between QR bottom and screen bottom
+            # First align below QR center to get horizontal alignment right
+            self.hero_image.align_to(self.receive_qr, lv.ALIGN.OUT_BOTTOM_MID, 0, 0)
+            # Now adjust vertical: find midpoint of remaining space
+            qr_size = DisplayMetrics.pct_of_width(self.receive_qr_pct_of_display)
+            qr_bottom_y = qr_size + 16  # QR size + border (8px each side)
+            screen_h = DisplayMetrics.height()
+            img_height = self.hero_image.get_self_height()
+            if img_height <= 0:
+                img_height = 100
+            gap = (screen_h - qr_bottom_y - img_height) // 2
+            self.hero_image.align_to(self.receive_qr, lv.ALIGN.OUT_BOTTOM_MID, 0, gap - 10)
+            self.hero_image.remove_flag(lv.obj.FLAG.HIDDEN)
+        else:
+            self.hero_image.add_flag(lv.obj.FLAG.HIDDEN)
+
+    def _on_hero_image_changed(self, new_value):
+        """Called when hero image setting changes."""
+        self._update_hero_image()
+
     def _bitcoin_symbol_path(self):
         """Return path to theme-appropriate Bitcoin symbol image."""
         if not AppearanceManager.is_light_mode():
@@ -567,7 +602,11 @@ class DisplayWallet(Activity):
         self.update_payments_label_font()
 
     def float_to_string(self, value, decimals):
-        return NumberFormat.format_number(value, decimals)
+        if _has_number_format:
+            return NumberFormat.format_number(value, decimals)
+        # Fallback for firmware without NumberFormat
+        s = "{:.{}f}".format(value, decimals)
+        return s.rstrip("0").rstrip(".")
 
     def display_balance(self, balance):
          self._last_balance = balance
@@ -575,7 +614,7 @@ class DisplayWallet(Activity):
          Payment.use_symbol = (denom == "symbol")
          if denom in ("sats", "symbol"):
              sats = int(round(balance))
-             formatted = NumberFormat.format_number(sats)
+             formatted = NumberFormat.format_number(sats) if _has_number_format else str(sats)
              if denom == "symbol":
                  balance_text = formatted
                  self.bitcoin_symbol.set_src(self._bitcoin_symbol_path())
@@ -692,6 +731,10 @@ class DisplayWallet(Activity):
              "activity_class": DenominationSettingsActivity,
              "placeholder": self.prefs.get_string("balance_denomination", "sats"),
              "changed_callback": self._on_denomination_changed},
+            {"title": "Hero Image", "key": "hero_image", "ui": "radiobuttons",
+             "ui_options": [("Lightning Piggy", "lightningpiggy"), ("Lightning Penguin", "lightningpenguin"), ("None", "none")],
+             "default_value": "lightningpiggy",
+             "changed_callback": self._on_hero_image_changed},
         ])
         self.startActivity(intent)
 

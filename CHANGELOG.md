@@ -1,3 +1,8 @@
+0.2.5
+=====
+- Add selectable hero image on main screen (Lightning Piggy, Lightning Penguin, or None)
+- Smaller settings cog icon
+
 0.2.4
 =====
 - Fix crash on boot: remove undefined _has_number_format references
