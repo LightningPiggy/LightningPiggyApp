@@ -1,3 +1,7 @@
+0.2.6
+=====
+- Use native ₿ font glyph for balance and transaction amounts (replaces PNG images)
+
 0.2.5
 =====
 - Add selectable hero image on main screen (Lightning Piggy, Lightning Penguin, or None)
