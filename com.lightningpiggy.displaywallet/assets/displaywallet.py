@@ -134,7 +134,7 @@ class DenominationSettingsActivity(Activity):
     """Custom denomination picker with 2-column radio button layout."""
     DENOMINATIONS = [
         ("sats", "sats"),
-        ("   sats", "symbol"),  # ₿ image added separately
+        ("\u20bf sats", "symbol"),
         ("bits", "bits"),
         ("micro-BTC", "ubtc"),
         ("milli-BTC", "mbtc"),
@@ -180,15 +180,6 @@ class DenominationSettingsActivity(Activity):
             style_radio_chk.set_bg_image_src(None)
             cb.add_style(style_radio_chk, lv.PART.INDICATOR | lv.STATE.CHECKED)
             cb.add_event_cb(lambda e, idx=i: self._radio_clicked(idx), lv.EVENT.VALUE_CHANGED, None)
-            if value == "symbol":
-                # Add ₿ image next to the checkbox text
-                if not AppearanceManager.is_light_mode():
-                    symbol_path = "M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/bitcoin_symbol_white_small.png"
-                else:
-                    symbol_path = "M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/bitcoin_symbol_black_small.png"
-                symbol_img = lv.image(cb)
-                symbol_img.set_src(symbol_path)
-                symbol_img.set_pos(22, 4)
             if current == value:
                 cb.add_state(lv.STATE.CHECKED)
                 self.active_index = i
@@ -305,10 +296,6 @@ class DisplayWallet(Activity):
         self.balance_label.add_flag(lv.obj.FLAG.CLICKABLE)
         self.balance_label.set_width(DisplayMetrics.pct_of_width(100-self.receive_qr_pct_of_display)) # 100 - receive_qr
         self.balance_label.add_event_cb(self.balance_label_clicked_cb, lv.EVENT.CLICKED, None)
-        self.bitcoin_symbol = lv.image(self.main_screen)
-        self.bitcoin_symbol.set_src(self._bitcoin_symbol_path())
-        self.bitcoin_symbol.align(lv.ALIGN.TOP_LEFT, 2, 4)
-        self.bitcoin_symbol.add_flag(lv.obj.FLAG.HIDDEN)
         self.receive_qr = lv.qrcode(self.main_screen)
         self.receive_qr.set_size(DisplayMetrics.pct_of_width(self.receive_qr_pct_of_display)) # bigger QR results in simpler code (less error correction?)
         dark, light = self._qr_colors()
@@ -615,12 +602,6 @@ class DisplayWallet(Activity):
         """Called when hero image setting changes."""
         self._update_hero_image()
 
-    def _bitcoin_symbol_path(self):
-        """Return path to theme-appropriate Bitcoin symbol image."""
-        if not AppearanceManager.is_light_mode():
-            return f"{self.ASSET_PATH}bitcoin_symbol_white.png"
-        return f"{self.ASSET_PATH}bitcoin_symbol_black.png"
-
     def _qr_colors(self):
         """Return (dark_color, light_color) tuple based on current theme."""
         if not AppearanceManager.is_light_mode():
@@ -635,8 +616,7 @@ class DisplayWallet(Activity):
         self.receive_qr.set_style_border_color(light, lv.PART.MAIN)
         if self.receive_qr_data:
             self.receive_qr.update(self.receive_qr_data, len(self.receive_qr_data))
-        # Refresh bitcoin symbol and re-render balance (setting or theme may have changed)
-        self.bitcoin_symbol.set_src(self._bitcoin_symbol_path())
+        # Re-render balance in case denomination setting changed
         if hasattr(self, '_last_balance'):
             self.display_balance(self._last_balance)
 
@@ -660,38 +640,26 @@ class DisplayWallet(Activity):
          self._last_balance = balance
          denom = self.prefs.get_string("balance_denomination", "sats")
          Payment.use_symbol = (denom == "symbol")
+         self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
          if denom in ("sats", "symbol"):
              sats = int(round(balance))
-             formatted = NumberFormat.format_number(sats) if _has_number_format else str(sats)
+             formatted = NumberFormat.format_number(sats)
              if denom == "symbol":
-                 balance_text = formatted
-                 self.bitcoin_symbol.set_src(self._bitcoin_symbol_path())
-                 self.bitcoin_symbol.remove_flag(lv.obj.FLAG.HIDDEN)
-                 self.balance_label.align(lv.ALIGN.TOP_LEFT, 24, 0)
+                 balance_text = "\u20bf" + formatted
              else:
                  balance_text = formatted + (" sat" if sats == 1 else " sats")
-                 self.bitcoin_symbol.add_flag(lv.obj.FLAG.HIDDEN)
-                 self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
          elif denom == "bits":
-             self.bitcoin_symbol.add_flag(lv.obj.FLAG.HIDDEN)
-             self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
              balance_bits = round(balance / 100, 2)
              balance_text = self.float_to_string(balance_bits, 2) + " bit"
              if balance_bits != 1:
                  balance_text += "s"
          elif denom == "ubtc":
-             self.bitcoin_symbol.add_flag(lv.obj.FLAG.HIDDEN)
-             self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
              balance_ubtc = round(balance / 100, 2)
              balance_text = self.float_to_string(balance_ubtc, 2) + " micro-BTC"
          elif denom == "mbtc":
-             self.bitcoin_symbol.add_flag(lv.obj.FLAG.HIDDEN)
-             self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
              balance_mbtc = round(balance / 100000, 5)
              balance_text = self.float_to_string(balance_mbtc, 5) + " milli-BTC"
          elif denom == "btc":
-             self.bitcoin_symbol.add_flag(lv.obj.FLAG.HIDDEN)
-             self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
              balance_btc = round(balance / 100000000, 8)
              balance_text = self.float_to_string(balance_btc, 8) + " BTC"
          self.balance_label.set_text(balance_text)
