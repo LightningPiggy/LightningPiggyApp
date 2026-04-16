@@ -788,11 +788,15 @@ class DisplayWallet(Activity):
         editor.commit()
         if hasattr(self, '_last_balance'):
             self.display_balance(self._last_balance)
+        if self.wallet and self.wallet.payment_list and len(self.wallet.payment_list) > 0:
+            self.payments_label.set_text(str(self.wallet.payment_list))
 
     def _on_denomination_changed(self, new_value):
         """Called when balance denomination setting changes."""
         if hasattr(self, '_last_balance'):
             self.display_balance(self._last_balance)
+        if self.wallet and self.wallet.payment_list and len(self.wallet.payment_list) > 0:
+            self.payments_label.set_text(str(self.wallet.payment_list))
 
     def main_ui_set_defaults(self):
         self.balance_label.set_text("Welcome!")
