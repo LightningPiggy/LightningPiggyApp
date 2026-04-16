@@ -1,3 +1,11 @@
+0.2.6
+=====
+- Restructure settings: Wallet, Customise (balance denomination + hero image), Screen Lock
+- Screen Lock toggle prevents tapping balance, transactions, QR code, and hero image
+- Tap balance to cycle through denominations (sats, ₿, bits, micro-BTC, milli-BTC, BTC)
+- Tap hero image to cycle through characters (Lightning Piggy, Lightning Penguin, None)
+- Screen Lock toggles inline on settings screen without opening a sub-screen
+
 0.2.5
 =====
 - Add selectable hero image on main screen (Lightning Piggy, Lightning Penguin, or None)

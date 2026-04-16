@@ -80,11 +80,54 @@ class WalletSettingsActivity(SettingsActivity):
         _add_floating_back_button(screen, self.finish)
 
 
+class CustomiseSettingsActivity(SettingsActivity):
+    """Sub-settings screen for display customisation."""
+    def onCreate(self):
+        extras = self.getIntent().extras or {}
+        self.prefs = extras.get("prefs")
+        # Callbacks are passed via the setting dict from the parent
+        setting = extras.get("setting") or {}
+        callbacks = setting.get("_callbacks") or {}
+        self.settings = [
+            {"title": "Balance Denomination", "key": "balance_denomination", "ui": "activity",
+             "activity_class": DenominationSettingsActivity,
+             "placeholder": self.prefs.get_string("balance_denomination", "sats"),
+             "changed_callback": callbacks.get("denomination")},
+            {"title": "Hero Image", "key": "hero_image", "ui": "radiobuttons",
+             "ui_options": [("Lightning Piggy", "lightningpiggy"), ("Lightning Penguin", "lightningpenguin"), ("None", "none")],
+             "default_value": "lightningpiggy",
+             "changed_callback": callbacks.get("hero_image")},
+        ]
+        screen = lv.obj()
+        screen.set_style_pad_all(DisplayMetrics.pct_of_width(2), lv.PART.MAIN)
+        screen.set_flex_flow(lv.FLEX_FLOW.COLUMN)
+        screen.set_style_border_width(0, lv.PART.MAIN)
+        self.setContentView(screen)
+
+    def onResume(self, screen):
+        super().onResume(screen)
+        _add_floating_back_button(screen, self.finish)
+
+
 class MainSettingsActivity(SettingsActivity):
     """Settings screen with a back-to-display button."""
     def onResume(self, screen):
         super().onResume(screen)
         _add_floating_back_button(screen, self.finish)
+
+    def startSettingActivity(self, setting):
+        """Override to handle screen lock toggle inline."""
+        if setting.get("key") == "screen_lock":
+            current = self.prefs.get_string("screen_lock", "off")
+            new_value = "on" if current == "off" else "off"
+            editor = self.prefs.edit()
+            editor.put_string("screen_lock", new_value)
+            editor.commit()
+            value_label = setting.get("value_label")
+            if value_label:
+                value_label.set_text("On - tapping disabled" if new_value == "on" else "Off - tapping changes display")
+        else:
+            super().startSettingActivity(setting)
 
 
 class DenominationSettingsActivity(Activity):
@@ -263,7 +306,7 @@ class DisplayWallet(Activity):
         self.balance_label.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
         self.balance_label.add_flag(lv.obj.FLAG.CLICKABLE)
         self.balance_label.set_width(DisplayMetrics.pct_of_width(100-self.receive_qr_pct_of_display)) # 100 - receive_qr
-        # Balance denomination is now set via settings, not by tapping
+        self.balance_label.add_event_cb(self.balance_label_clicked_cb, lv.EVENT.CLICKED, None)
         self.bitcoin_symbol = lv.image(self.main_screen)
         self.bitcoin_symbol.set_src(self._bitcoin_symbol_path())
         self.bitcoin_symbol.align(lv.ALIGN.TOP_LEFT, 2, 4)
@@ -286,7 +329,16 @@ class DisplayWallet(Activity):
         self.payments_label.add_flag(lv.obj.FLAG.CLICKABLE)
         self.payments_label.add_event_cb(self.payments_label_clicked,lv.EVENT.CLICKED,None)
         # Hero image below QR code
-        self.hero_image = lv.image(self.main_screen)
+        # Hero image area — container is always clickable, image inside may be hidden
+        self.hero_container = lv.obj(self.main_screen)
+        self.hero_container.set_size(80, 100)
+        self.hero_container.set_style_bg_opa(lv.OPA.TRANSP, lv.PART.MAIN)
+        self.hero_container.set_style_border_width(0, lv.PART.MAIN)
+        self.hero_container.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
+        self.hero_container.add_flag(lv.obj.FLAG.CLICKABLE)
+        self.hero_container.add_event_cb(self.hero_image_clicked_cb, lv.EVENT.CLICKED, None)
+        self.hero_image = lv.image(self.hero_container)
+        self.hero_image.center()
         self._update_hero_image()
         settings_button = lv.obj(self.main_screen)
         settings_button.set_size(40, 40)
@@ -315,7 +367,7 @@ class DisplayWallet(Activity):
             send_label.center()
 
         # Track wallet-mode widgets so they can be hidden/shown as a group
-        self.wallet_container_widgets = [balance_line, self.balance_label, self.receive_qr, self.payments_label, self.hero_image, settings_button]
+        self.wallet_container_widgets = [balance_line, self.balance_label, self.receive_qr, self.payments_label, self.hero_container, settings_button]
 
         # === Welcome Screen (shown when wallet is not configured) ===
         self.welcome_container = lv.obj(self.main_screen)
@@ -547,20 +599,16 @@ class DisplayWallet(Activity):
     def _update_hero_image(self):
         """Show or hide the hero image based on settings."""
         hero = self.prefs.get_string("hero_image", "lightningpiggy")
+        # Always position the container in the same spot
+        qr_size = DisplayMetrics.pct_of_width(self.receive_qr_pct_of_display)
+        qr_bottom_y = qr_size + 16
+        screen_h = DisplayMetrics.height()
+        container_h = 100
+        gap = (screen_h - qr_bottom_y - container_h) // 2
+        self.hero_container.align_to(self.receive_qr, lv.ALIGN.OUT_BOTTOM_MID, 0, gap - 10)
         if hero and hero != "none":
             self.hero_image.set_src(f"{self.ASSET_PATH}hero_{hero}.png")
-            # Center horizontally with QR code, vertically between QR bottom and screen bottom
-            # First align below QR center to get horizontal alignment right
-            self.hero_image.align_to(self.receive_qr, lv.ALIGN.OUT_BOTTOM_MID, 0, 0)
-            # Now adjust vertical: find midpoint of remaining space
-            qr_size = DisplayMetrics.pct_of_width(self.receive_qr_pct_of_display)
-            qr_bottom_y = qr_size + 16  # QR size + border (8px each side)
-            screen_h = DisplayMetrics.height()
-            img_height = self.hero_image.get_self_height()
-            if img_height <= 0:
-                img_height = 100
-            gap = (screen_h - qr_bottom_y - img_height) // 2
-            self.hero_image.align_to(self.receive_qr, lv.ALIGN.OUT_BOTTOM_MID, 0, gap - 10)
+            self.hero_image.center()
             self.hero_image.remove_flag(lv.obj.FLAG.HIDDEN)
         else:
             self.hero_image.add_flag(lv.obj.FLAG.HIDDEN)
@@ -598,6 +646,8 @@ class DisplayWallet(Activity):
         self.payments_label.set_style_text_font(self.payments_label_fonts[self.payments_label_current_font], lv.PART.MAIN)
 
     def payments_label_clicked(self, event):
+        if self._is_screen_locked():
+            return
         self.payments_label_current_font = (self.payments_label_current_font + 1) % len(self.payments_label_fonts)
         self.update_payments_label_font()
 
@@ -727,16 +777,51 @@ class DisplayWallet(Activity):
             {"title": "Wallet", "key": "wallet_type", "ui": "activity",
              "activity_class": WalletSettingsActivity,
              "placeholder": self.prefs.get_string("wallet_type", "not configured")},
-            {"title": "Balance Denomination", "key": "balance_denomination", "ui": "activity",
-             "activity_class": DenominationSettingsActivity,
-             "placeholder": self.prefs.get_string("balance_denomination", "sats"),
-             "changed_callback": self._on_denomination_changed},
-            {"title": "Hero Image", "key": "hero_image", "ui": "radiobuttons",
-             "ui_options": [("Lightning Piggy", "lightningpiggy"), ("Lightning Penguin", "lightningpenguin"), ("None", "none")],
-             "default_value": "lightningpiggy",
-             "changed_callback": self._on_hero_image_changed},
+            {"title": "Customise", "key": "customise", "ui": "activity",
+             "activity_class": CustomiseSettingsActivity,
+             "placeholder": "Balance denomination, hero image",
+             "_callbacks": {"denomination": self._on_denomination_changed, "hero_image": self._on_hero_image_changed}},
+            {"title": "Screen Lock", "key": "screen_lock",
+             "placeholder": "On - tapping disabled" if self.prefs.get_string("screen_lock", "off") == "on" else "Off - tapping changes display"},
         ])
         self.startActivity(intent)
+
+    HERO_CYCLE = ["lightningpiggy", "lightningpenguin", "none"]
+    DENOMINATION_CYCLE = ["sats", "symbol", "bits", "ubtc", "mbtc", "btc"]
+
+    def _is_screen_locked(self):
+        return self.prefs.get_string("screen_lock", "off") == "on"
+
+    def hero_image_clicked_cb(self, event):
+        """Cycle through hero images on tap."""
+        if self._is_screen_locked():
+            return
+        current = self.prefs.get_string("hero_image", "lightningpiggy")
+        try:
+            idx = self.HERO_CYCLE.index(current)
+        except ValueError:
+            idx = 0
+        next_hero = self.HERO_CYCLE[(idx + 1) % len(self.HERO_CYCLE)]
+        editor = self.prefs.edit()
+        editor.put_string("hero_image", next_hero)
+        editor.commit()
+        self._update_hero_image()
+
+    def balance_label_clicked_cb(self, event):
+        """Cycle through balance denominations on tap."""
+        if self._is_screen_locked():
+            return
+        current = self.prefs.get_string("balance_denomination", "sats")
+        try:
+            idx = self.DENOMINATION_CYCLE.index(current)
+        except ValueError:
+            idx = 0
+        next_denom = self.DENOMINATION_CYCLE[(idx + 1) % len(self.DENOMINATION_CYCLE)]
+        editor = self.prefs.edit()
+        editor.put_string("balance_denomination", next_denom)
+        editor.commit()
+        if hasattr(self, '_last_balance'):
+            self.display_balance(self._last_balance)
 
     def _on_denomination_changed(self, new_value):
         """Called when balance denomination setting changes."""
@@ -749,6 +834,8 @@ class DisplayWallet(Activity):
 
     def qr_clicked_cb(self, event):
         print("QR clicked")
+        if self._is_screen_locked():
+            return
         if not self.receive_qr_data:
             return
         self.destination = FullscreenQR
