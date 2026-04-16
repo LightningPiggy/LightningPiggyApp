@@ -298,8 +298,6 @@ class DisplayWallet(Activity):
         # This line needs to be drawn first, otherwise it's over the balance label and steals all the clicks!
         balance_line = lv.line(self.main_screen)
         balance_line.set_points([{'x':2,'y':35},{'x':DisplayMetrics.pct_of_width(100-self.receive_qr_pct_of_display*1.2),'y':35}],2)
-        balance_line.add_flag(lv.obj.FLAG.CLICKABLE)
-        balance_line.add_event_cb(self.send_button_tap,lv.EVENT.CLICKED,None)
         self.balance_label = lv.label(self.main_screen)
         self.balance_label.set_text("")
         self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
@@ -781,7 +779,7 @@ class DisplayWallet(Activity):
              "activity_class": CustomiseSettingsActivity,
              "placeholder": "Balance denomination, hero image",
              "_callbacks": {"denomination": self._on_denomination_changed, "hero_image": self._on_hero_image_changed}},
-            {"title": "Screen Lock", "key": "screen_lock",
+            {"title": "Screen Lock", "key": "screen_lock", "activity_class": True,
              "placeholder": "On - tapping disabled" if self.prefs.get_string("screen_lock", "off") == "on" else "Off - tapping changes display"},
         ])
         self.startActivity(intent)
