@@ -40,42 +40,95 @@ def _add_floating_back_button(screen, finish_callback):
         focusgroup.add_obj(back_btn)
 
 
+def _slot_suffix(slot):
+    """Suffix for per-slot pref keys: '' for slot 1, '_2' for slot 2."""
+    return "_2" if slot == 2 else ""
+
+
 def _should_show_wallet_setting(setting):
-    """Conditionally show wallet-specific settings based on selected wallet type."""
+    """Conditionally show wallet-specific settings based on this slot's wallet_type."""
+    slot = setting.get("_slot", 1)
+    suffix = _slot_suffix(slot)
     prefs = SharedPreferences("com.lightningpiggy.displaywallet")
-    wallet_type = prefs.get_string("wallet_type")
-    if wallet_type != "lnbits" and setting["key"].startswith("lnbits_"):
+    wallet_type = prefs.get_string("wallet_type" + suffix)
+    # Strip the slot suffix from the key for prefix matching against the wallet-type branches.
+    key = setting["key"]
+    if suffix and key.endswith(suffix):
+        key_base = key[:-len(suffix)]
+    else:
+        key_base = key
+    if wallet_type != "lnbits" and key_base.startswith("lnbits_"):
         return False
-    if wallet_type != "nwc" and setting["key"].startswith("nwc_"):
+    if wallet_type != "nwc" and key_base.startswith("nwc_"):
         return False
-    if wallet_type != "onchain" and setting["key"].startswith("onchain_"):
+    if wallet_type != "onchain" and key_base.startswith("onchain_"):
         return False
     return True
 
 
 class WalletSettingsActivity(SettingsActivity):
-    """Sub-settings screen for wallet configuration."""
+    """Sub-settings screen for wallet configuration. `_slot` in the parent's
+    setting dict selects slot 1 (default, unsuffixed keys) or slot 2 (_2 suffix).
+    """
     def onCreate(self):
         extras = self.getIntent().extras or {}
         self.prefs = extras.get("prefs")
+        parent_setting = extras.get("setting") or {}
+        self.slot = parent_setting.get("_slot", 1)
+        s = _slot_suffix(self.slot)
         self.settings = [
-            {"title": "Wallet Type", "key": "wallet_type", "ui": "radiobuttons",
-             "ui_options": [("LNBits", "lnbits"), ("Nostr Wallet Connect", "nwc"), ("On-chain (xpub)", "onchain")]},
-            {"title": "LNBits URL", "key": "lnbits_url",
-             "placeholder": "https://demo.lnpiggy.com", "should_show": _should_show_wallet_setting},
-            {"title": "LNBits Read Key", "key": "lnbits_readkey",
-             "placeholder": "fd92e3f8168ba314dc22e54182784045", "should_show": _should_show_wallet_setting},
-            {"title": "Optional LN Address", "key": "lnbits_static_receive_code",
-             "placeholder": "Will be fetched if empty.", "should_show": _should_show_wallet_setting},
-            {"title": "Nostr Wallet Connect", "key": "nwc_url",
-             "placeholder": "nostr+walletconnect://69effe7b...", "should_show": _should_show_wallet_setting},
-            {"title": "Optional LN Address", "key": "nwc_static_receive_code",
-             "placeholder": "Optional if present in NWC URL.", "should_show": _should_show_wallet_setting},
-            {"title": "xpub / ypub / zpub", "key": "onchain_xpub",
-             "placeholder": "zpub6rF...", "should_show": _should_show_wallet_setting},
-            {"title": "xpub endpoint", "key": "onchain_blockbook_url",
+            {"title": "Wallet Type", "key": "wallet_type" + s, "ui": "radiobuttons",
+             "ui_options": [("LNBits", "lnbits"), ("Nostr Wallet Connect", "nwc"), ("On-chain (xpub)", "onchain")],
+             "_slot": self.slot},
+            {"title": "LNBits URL", "key": "lnbits_url" + s,
+             "placeholder": "https://demo.lnpiggy.com", "should_show": _should_show_wallet_setting, "_slot": self.slot},
+            {"title": "LNBits Read Key", "key": "lnbits_readkey" + s,
+             "placeholder": "fd92e3f8168ba314dc22e54182784045", "should_show": _should_show_wallet_setting, "_slot": self.slot},
+            {"title": "Optional LN Address", "key": "lnbits_static_receive_code" + s,
+             "placeholder": "Will be fetched if empty.", "should_show": _should_show_wallet_setting, "_slot": self.slot},
+            {"title": "Nostr Wallet Connect", "key": "nwc_url" + s,
+             "placeholder": "nostr+walletconnect://69effe7b...", "should_show": _should_show_wallet_setting, "_slot": self.slot},
+            {"title": "Optional LN Address", "key": "nwc_static_receive_code" + s,
+             "placeholder": "Optional if present in NWC URL.", "should_show": _should_show_wallet_setting, "_slot": self.slot},
+            {"title": "xpub / ypub / zpub", "key": "onchain_xpub" + s,
+             "placeholder": "zpub6rF...", "should_show": _should_show_wallet_setting, "_slot": self.slot},
+            {"title": "xpub endpoint", "key": "onchain_blockbook_url" + s,
              "placeholder": "https://btc1.trezor.io", "default_value": "https://btc1.trezor.io",
-             "should_show": _should_show_wallet_setting},
+             "should_show": _should_show_wallet_setting, "_slot": self.slot},
+        ]
+        screen = lv.obj()
+        screen.set_style_pad_all(DisplayMetrics.pct_of_width(2), lv.PART.MAIN)
+        screen.set_flex_flow(lv.FLEX_FLOW.COLUMN)
+        screen.set_style_border_width(0, lv.PART.MAIN)
+        self.setContentView(screen)
+
+    def onResume(self, screen):
+        super().onResume(screen)
+        _add_floating_back_button(screen, self.finish)
+
+
+class CustomiseSettingsActivity(SettingsActivity):
+    """Sub-settings screen for display customisation."""
+    def onCreate(self):
+        extras = self.getIntent().extras or {}
+        self.prefs = extras.get("prefs")
+        # Callbacks are passed via the setting dict from the parent
+        setting = extras.get("setting") or {}
+        callbacks = setting.get("_callbacks") or {}
+        # Hero image and balance denomination are per-wallet-slot — keys follow the active slot
+        active_slot = self.prefs.get_string("active_wallet_slot", "1")
+        slot_suffix = "_2" if active_slot == "2" else ""
+        hero_key = "hero_image" + slot_suffix
+        denom_key = "balance_denomination" + slot_suffix
+        self.settings = [
+            {"title": "Balance Denomination", "key": denom_key, "ui": "activity",
+             "activity_class": DenominationSettingsActivity,
+             "placeholder": self.prefs.get_string(denom_key, "sats"),
+             "changed_callback": callbacks.get("denomination")},
+            {"title": "Hero Image", "key": hero_key, "ui": "radiobuttons",
+             "ui_options": [("Lightning Piggy", "lightningpiggy"), ("Lightning Penguin", "lightningpenguin"), ("None", "none")],
+             "default_value": "lightningpiggy",
+             "changed_callback": callbacks.get("hero_image")},
         ]
         screen = lv.obj()
         screen.set_style_pad_all(DisplayMetrics.pct_of_width(2), lv.PART.MAIN)
@@ -94,12 +147,35 @@ class MainSettingsActivity(SettingsActivity):
         super().onResume(screen)
         _add_floating_back_button(screen, self.finish)
 
+    def startSettingActivity(self, setting):
+        """Override to handle inline toggle settings (screen lock, switch-wallet)."""
+        key = setting.get("key")
+        if key == "screen_lock":
+            current = self.prefs.get_string("screen_lock", "off")
+            new_value = "on" if current == "off" else "off"
+            editor = self.prefs.edit()
+            editor.put_string("screen_lock", new_value)
+            editor.commit()
+            value_label = setting.get("value_label")
+            if value_label:
+                value_label.set_text("On - tapping disabled" if new_value == "on" else "Off - tapping changes display")
+        elif key == "__switch_active_wallet":
+            # Flip active slot and drop back to the main display so the user sees the switch happen.
+            current = self.prefs.get_string("active_wallet_slot", "1")
+            new_value = "2" if current == "1" else "1"
+            editor = self.prefs.edit()
+            editor.put_string("active_wallet_slot", new_value)
+            editor.commit()
+            self.finish()
+        else:
+            super().startSettingActivity(setting)
+
 
 class DenominationSettingsActivity(Activity):
     """Custom denomination picker with 2-column radio button layout."""
     DENOMINATIONS = [
         ("sats", "sats"),
-        ("   sats", "symbol"),  # ₿ image added separately
+        ("\u20bf sats", "symbol"),
         ("bits", "bits"),
         ("micro-BTC", "ubtc"),
         ("milli-BTC", "mbtc"),
@@ -109,8 +185,10 @@ class DenominationSettingsActivity(Activity):
     def onCreate(self):
         extras = self.getIntent().extras or {}
         self.prefs = extras.get("prefs")
-        self.setting = extras.get("setting")
-        current = self.prefs.get_string("balance_denomination", "sats")
+        self.setting = extras.get("setting") or {}
+        # Per-slot key — parent activity already selected the right one for the active slot
+        self.key = self.setting.get("key", "balance_denomination")
+        current = self.prefs.get_string(self.key, "sats")
 
         screen = lv.obj()
         screen.set_style_pad_all(DisplayMetrics.pct_of_width(2), lv.PART.MAIN)
@@ -145,15 +223,6 @@ class DenominationSettingsActivity(Activity):
             style_radio_chk.set_bg_image_src(None)
             cb.add_style(style_radio_chk, lv.PART.INDICATOR | lv.STATE.CHECKED)
             cb.add_event_cb(lambda e, idx=i: self._radio_clicked(idx), lv.EVENT.VALUE_CHANGED, None)
-            if value == "symbol":
-                # Add ₿ image next to the checkbox text
-                if not AppearanceManager.is_light_mode():
-                    symbol_path = "M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/bitcoin_symbol_white_small.png"
-                else:
-                    symbol_path = "M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/bitcoin_symbol_black_small.png"
-                symbol_img = lv.image(cb)
-                symbol_img.set_src(symbol_path)
-                symbol_img.set_pos(22, 4)
             if current == value:
                 cb.add_state(lv.STATE.CHECKED)
                 self.active_index = i
@@ -200,9 +269,9 @@ class DenominationSettingsActivity(Activity):
     def _save(self):
         if self.active_index >= 0:
             new_value = self.DENOMINATIONS[self.active_index][1]
-            old_value = self.prefs.get_string("balance_denomination")
+            old_value = self.prefs.get_string(self.key)
             editor = self.prefs.edit()
-            editor.put_string("balance_denomination", new_value)
+            editor.put_string(self.key, new_value)
             editor.commit()
             # Update the value label on the parent settings screen
             value_label = self.setting.get("value_label") if self.setting else None
@@ -256,9 +325,13 @@ class DisplayWallet(Activity):
         self.prefs = SharedPreferences("com.lightningpiggy.displaywallet")
         # Seed the on-chain xpub endpoint with the default so it shows in the
         # settings list and pre-populates the editor when the user taps it.
-        if not self.prefs.get_string("onchain_blockbook_url"):
-            editor = self.prefs.edit()
-            editor.put_string("onchain_blockbook_url", OnchainWallet.DEFAULT_BLOCKBOOK_URL)
+        editor = None
+        for slot_suffix in ("", "_2"):
+            key = "onchain_blockbook_url" + slot_suffix
+            if not self.prefs.get_string(key):
+                editor = editor or self.prefs.edit()
+                editor.put_string(key, OnchainWallet.DEFAULT_BLOCKBOOK_URL)
+        if editor:
             editor.commit()
         self.main_screen = lv.obj()
         if not AppearanceManager.is_light_mode():
@@ -269,19 +342,13 @@ class DisplayWallet(Activity):
         # This line needs to be drawn first, otherwise it's over the balance label and steals all the clicks!
         balance_line = lv.line(self.main_screen)
         balance_line.set_points([{'x':2,'y':35},{'x':DisplayMetrics.pct_of_width(100-self.receive_qr_pct_of_display*1.2),'y':35}],2)
-        balance_line.add_flag(lv.obj.FLAG.CLICKABLE)
-        balance_line.add_event_cb(self.send_button_tap,lv.EVENT.CLICKED,None)
         self.balance_label = lv.label(self.main_screen)
         self.balance_label.set_text("")
         self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
         self.balance_label.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
         self.balance_label.add_flag(lv.obj.FLAG.CLICKABLE)
         self.balance_label.set_width(DisplayMetrics.pct_of_width(100-self.receive_qr_pct_of_display)) # 100 - receive_qr
-        # Balance denomination is now set via settings, not by tapping
-        self.bitcoin_symbol = lv.image(self.main_screen)
-        self.bitcoin_symbol.set_src(self._bitcoin_symbol_path())
-        self.bitcoin_symbol.align(lv.ALIGN.TOP_LEFT, 2, 4)
-        self.bitcoin_symbol.add_flag(lv.obj.FLAG.HIDDEN)
+        self.balance_label.add_event_cb(self.balance_label_clicked_cb, lv.EVENT.CLICKED, None)
         self.receive_qr = lv.qrcode(self.main_screen)
         self.receive_qr.set_size(DisplayMetrics.pct_of_width(self.receive_qr_pct_of_display)) # bigger QR results in simpler code (less error correction?)
         dark, light = self._qr_colors()
@@ -292,6 +359,21 @@ class DisplayWallet(Activity):
         self.receive_qr.set_style_border_width(8, lv.PART.MAIN);
         self.receive_qr.add_flag(lv.obj.FLAG.CLICKABLE)
         self.receive_qr.add_event_cb(self.qr_clicked_cb,lv.EVENT.CLICKED,None)
+        # Wallet-type indicator on the right side of the balance area, rendered
+        # behind the balance text: yellow ⚡ for Lightning (LNBits, NWC),
+        # pink chain link for on-chain. Exactly one is visible at a time.
+        self.lightning_bolt = lv.label(self.main_screen)
+        self.lightning_bolt.set_text(lv.SYMBOL.CHARGE)
+        self.lightning_bolt.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
+        self.lightning_bolt.set_style_text_color(lv.color_hex(0xFFD700), lv.PART.MAIN)
+        self.lightning_bolt.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, -4, 4)
+        self.lightning_bolt.move_background()
+        self.lightning_bolt.add_flag(lv.obj.FLAG.HIDDEN)
+        self.chain_link = lv.image(self.main_screen)
+        self.chain_link.set_src(f"{self.ASSET_PATH}chain_link_pink.png")
+        self.chain_link.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, -4, 2)
+        self.chain_link.move_background()
+        self.chain_link.add_flag(lv.obj.FLAG.HIDDEN)
         self.payments_label = lv.label(self.main_screen)
         self.payments_label.set_text("")
         self.payments_label.align_to(balance_line,lv.ALIGN.OUT_BOTTOM_LEFT, 2, 10)
@@ -300,7 +382,16 @@ class DisplayWallet(Activity):
         self.payments_label.add_flag(lv.obj.FLAG.CLICKABLE)
         self.payments_label.add_event_cb(self.payments_label_clicked,lv.EVENT.CLICKED,None)
         # Hero image below QR code
-        self.hero_image = lv.image(self.main_screen)
+        # Hero image area — container is always clickable, image inside may be hidden
+        self.hero_container = lv.obj(self.main_screen)
+        self.hero_container.set_size(80, 100)
+        self.hero_container.set_style_bg_opa(lv.OPA.TRANSP, lv.PART.MAIN)
+        self.hero_container.set_style_border_width(0, lv.PART.MAIN)
+        self.hero_container.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
+        self.hero_container.add_flag(lv.obj.FLAG.CLICKABLE)
+        self.hero_container.add_event_cb(self.hero_image_clicked_cb, lv.EVENT.CLICKED, None)
+        self.hero_image = lv.image(self.hero_container)
+        self.hero_image.center()
         self._update_hero_image()
         settings_button = lv.obj(self.main_screen)
         settings_button.set_size(40, 40)
@@ -329,7 +420,7 @@ class DisplayWallet(Activity):
             send_label.center()
 
         # Track wallet-mode widgets so they can be hidden/shown as a group
-        self.wallet_container_widgets = [balance_line, self.balance_label, self.receive_qr, self.payments_label, self.hero_image, settings_button]
+        self.wallet_container_widgets = [balance_line, self.balance_label, self.receive_qr, self.lightning_bolt, self.chain_link, self.payments_label, self.hero_container, settings_button]
 
         # === Welcome Screen (shown when wallet is not configured) ===
         self.welcome_container = lv.obj(self.main_screen)
@@ -440,16 +531,19 @@ class DisplayWallet(Activity):
         else:
             # Returning from settings or other activity
             self._update_hero_image()
-            # If the user changed wallet_type in Settings, stop the old wallet
-            # and reconnect with the new one so we don't show stale data.
-            current_wallet_type = self.prefs.get_string("wallet_type")
+            # If the user changed wallet_type or the active slot in Settings, stop the old
+            # wallet and reconnect with the new one so we don't show stale data.
+            current_slot = self.prefs.get_string("active_wallet_slot", "1")
+            current_suffix = "_2" if current_slot == "2" else ""
+            current_wallet_type = self.prefs.get_string("wallet_type" + current_suffix)
+            current_key = (current_wallet_type, current_slot)
             if (self.wallet and self.wallet.is_running()
-                    and getattr(self, '_active_wallet_type', None) != current_wallet_type):
-                print("wallet_type changed from {} to {} — restarting wallet".format(
-                    getattr(self, '_active_wallet_type', None), current_wallet_type))
+                    and getattr(self, '_active_wallet_key', None) != current_key):
+                print("wallet changed from {} to {} — restarting wallet".format(
+                    getattr(self, '_active_wallet_key', None), current_key))
                 self.wallet.stop()
                 self.wallet = None
-                self._active_wallet_type = None
+                self._active_wallet_key = None
                 # Clear stale UI so the previous wallet's data doesn't linger
                 if hasattr(self, '_last_balance'):
                     del self._last_balance
@@ -484,39 +578,54 @@ class DisplayWallet(Activity):
         else:
             self.went_offline()
 
+    def _active_slot_and_suffix(self):
+        """Return (slot_str, suffix) for the currently active wallet slot.
+
+        Falls back to slot 1 if slot 2 is active but unconfigured.
+        """
+        slot = self.prefs.get_string("active_wallet_slot", "1")
+        if slot == "2" and not self.prefs.get_string("wallet_type_2"):
+            print("Active slot 2 not configured, falling back to slot 1")
+            editor = self.prefs.edit()
+            editor.put_string("active_wallet_slot", "1")
+            editor.commit()
+            slot = "1"
+        return slot, ("_2" if slot == "2" else "")
+
     def went_online(self):
         if self.wallet and self.wallet.is_running():
             print("wallet is already running, nothing to do") # might have come from the QR activity
             return
-        wallet_type = self.prefs.get_string("wallet_type")
+        slot, s = self._active_slot_and_suffix()
+        wallet_type = self.prefs.get_string("wallet_type" + s)
         if not wallet_type:
             self.show_welcome_screen()
             return # nothing is configured, nothing to do
         self.show_wallet_screen()
         if wallet_type == "lnbits":
             try:
-                self.wallet = LNBitsWallet(self.prefs.get_string("lnbits_url"), self.prefs.get_string("lnbits_readkey"))
-                self.wallet.static_receive_code = self.prefs.get_string("lnbits_static_receive_code")
+                self.wallet = LNBitsWallet(self.prefs.get_string("lnbits_url" + s), self.prefs.get_string("lnbits_readkey" + s))
+                self.wallet.static_receive_code = self.prefs.get_string("lnbits_static_receive_code" + s)
                 self.redraw_static_receive_code_cb()
             except Exception as e:
                 self.error_cb(f"Couldn't initialize LNBits wallet because: {e}")
                 return
         elif wallet_type == "nwc":
             try:
-                self.wallet = NWCWallet(self.prefs.get_string("nwc_url"))
-                self.wallet.static_receive_code = self.prefs.get_string("nwc_static_receive_code")
+                self.wallet = NWCWallet(self.prefs.get_string("nwc_url" + s))
+                self.wallet.static_receive_code = self.prefs.get_string("nwc_static_receive_code" + s)
                 self.redraw_static_receive_code_cb()
             except Exception as e:
                 self.error_cb(f"Couldn't initialize NWC Wallet because: {e}")
                 return
         elif wallet_type == "onchain":
             try:
-                blockbook_url = self.prefs.get_string("onchain_blockbook_url") or None
+                blockbook_url = self.prefs.get_string("onchain_blockbook_url" + s) or None
                 self.wallet = OnchainWallet(
-                    self.prefs.get_string("onchain_xpub"),
+                    self.prefs.get_string("onchain_xpub" + s),
                     blockbook_url=blockbook_url,
                 )
-                self.wallet.static_receive_code = self.prefs.get_string("onchain_static_receive_code")
+                self.wallet.static_receive_code = self.prefs.get_string("onchain_static_receive_code" + s)
                 self.redraw_static_receive_code_cb()
             except Exception as e:
                 self.error_cb(f"Couldn't initialize On-chain wallet because: {e}")
@@ -524,8 +633,8 @@ class DisplayWallet(Activity):
         else:
             self.error_cb(f"No or unsupported wallet type configured: '{wallet_type}'")
             return
-        # Remember which wallet_type we just activated so onResume can detect changes.
-        self._active_wallet_type = wallet_type
+        # Remember (wallet_type, slot) so onResume can detect either-dimension changes.
+        self._active_wallet_key = (wallet_type, slot)
         if not (hasattr(self, '_last_balance') and self._last_balance):
             self.balance_label.set_text(lv.SYMBOL.REFRESH)
             self.payments_label.set_text(f"\nConnecting to {wallet_type} backend.\n\nIf this takes too long, it might be down or something's wrong with the settings.")
@@ -554,6 +663,8 @@ class DisplayWallet(Activity):
         self.welcome_container.add_flag(lv.obj.FLAG.HIDDEN)
         for w in self.wallet_container_widgets:
             w.remove_flag(lv.obj.FLAG.HIDDEN)
+        # Re-apply conditional visibility (blanket un-hide above ignores wallet type)
+        self._update_lightning_indicator()
 
     def _splash_done(self, timer):
         """Called after splash duration. Fade out splash and show appropriate screen."""
@@ -588,23 +699,41 @@ class DisplayWallet(Activity):
             return lv.color_white()
         return lv.color_black()
 
+    def _hero_image_key(self):
+        """Hero image is per-wallet-slot: 'hero_image' for slot 1, 'hero_image_2' for slot 2."""
+        return "hero_image" + ("_2" if self.prefs.get_string("active_wallet_slot", "1") == "2" else "")
+
+    def _active_wallet_type(self):
+        slot = self.prefs.get_string("active_wallet_slot", "1")
+        return self.prefs.get_string("wallet_type" + ("_2" if slot == "2" else ""))
+
+    def _update_lightning_indicator(self):
+        """Show the wallet-type icon: yellow ⚡ for Lightning, pink chain-link for on-chain."""
+        wt = self._active_wallet_type()
+        if wt in ("lnbits", "nwc"):
+            self.lightning_bolt.remove_flag(lv.obj.FLAG.HIDDEN)
+            self.chain_link.add_flag(lv.obj.FLAG.HIDDEN)
+        elif wt == "onchain":
+            self.lightning_bolt.add_flag(lv.obj.FLAG.HIDDEN)
+            self.chain_link.remove_flag(lv.obj.FLAG.HIDDEN)
+        else:
+            self.lightning_bolt.add_flag(lv.obj.FLAG.HIDDEN)
+            self.chain_link.add_flag(lv.obj.FLAG.HIDDEN)
+
     def _update_hero_image(self):
-        """Show or hide the hero image based on settings."""
-        hero = self.prefs.get_string("hero_image", "lightningpiggy")
+        """Show or hide the hero image based on settings for the active slot."""
+        self._update_lightning_indicator()
+        hero = self.prefs.get_string(self._hero_image_key(), "lightningpiggy")
+        # Always position the container in the same spot
+        qr_size = DisplayMetrics.pct_of_width(self.receive_qr_pct_of_display)
+        qr_bottom_y = qr_size + 16
+        screen_h = DisplayMetrics.height()
+        container_h = 100
+        gap = (screen_h - qr_bottom_y - container_h) // 2
+        self.hero_container.align_to(self.receive_qr, lv.ALIGN.OUT_BOTTOM_MID, 0, gap - 10)
         if hero and hero != "none":
             self.hero_image.set_src(f"{self.ASSET_PATH}hero_{hero}.png")
-            # Center horizontally with QR code, vertically between QR bottom and screen bottom
-            # First align below QR center to get horizontal alignment right
-            self.hero_image.align_to(self.receive_qr, lv.ALIGN.OUT_BOTTOM_MID, 0, 0)
-            # Now adjust vertical: find midpoint of remaining space
-            qr_size = DisplayMetrics.pct_of_width(self.receive_qr_pct_of_display)
-            qr_bottom_y = qr_size + 16  # QR size + border (8px each side)
-            screen_h = DisplayMetrics.height()
-            img_height = self.hero_image.get_self_height()
-            if img_height <= 0:
-                img_height = 100
-            gap = (screen_h - qr_bottom_y - img_height) // 2
-            self.hero_image.align_to(self.receive_qr, lv.ALIGN.OUT_BOTTOM_MID, 0, gap - 10)
+            self.hero_image.center()
             self.hero_image.remove_flag(lv.obj.FLAG.HIDDEN)
         else:
             self.hero_image.add_flag(lv.obj.FLAG.HIDDEN)
@@ -612,12 +741,6 @@ class DisplayWallet(Activity):
     def _on_hero_image_changed(self, new_value):
         """Called when hero image setting changes."""
         self._update_hero_image()
-
-    def _bitcoin_symbol_path(self):
-        """Return path to theme-appropriate Bitcoin symbol image."""
-        if not AppearanceManager.is_light_mode():
-            return f"{self.ASSET_PATH}bitcoin_symbol_white.png"
-        return f"{self.ASSET_PATH}bitcoin_symbol_black.png"
 
     def _qr_colors(self):
         """Return (dark_color, light_color) tuple based on current theme."""
@@ -633,8 +756,7 @@ class DisplayWallet(Activity):
         self.receive_qr.set_style_border_color(light, lv.PART.MAIN)
         if self.receive_qr_data:
             self.receive_qr.update(self.receive_qr_data, len(self.receive_qr_data))
-        # Refresh bitcoin symbol and re-render balance (setting or theme may have changed)
-        self.bitcoin_symbol.set_src(self._bitcoin_symbol_path())
+        # Re-render balance in case denomination setting changed
         if hasattr(self, '_last_balance'):
             self.display_balance(self._last_balance)
 
@@ -642,6 +764,8 @@ class DisplayWallet(Activity):
         self.payments_label.set_style_text_font(self.payments_label_fonts[self.payments_label_current_font], lv.PART.MAIN)
 
     def payments_label_clicked(self, event):
+        if self._is_screen_locked():
+            return
         self.payments_label_current_font = (self.payments_label_current_font + 1) % len(self.payments_label_fonts)
         self.update_payments_label_font()
 
@@ -652,42 +776,34 @@ class DisplayWallet(Activity):
         s = "{:.{}f}".format(value, decimals)
         return s.rstrip("0").rstrip(".")
 
+    def _denom_key(self):
+        """Balance denomination is per-wallet-slot: 'balance_denomination' for slot 1, '_2' for slot 2."""
+        return "balance_denomination" + ("_2" if self.prefs.get_string("active_wallet_slot", "1") == "2" else "")
+
     def display_balance(self, balance):
          self._last_balance = balance
-         denom = self.prefs.get_string("balance_denomination", "sats")
+         denom = self.prefs.get_string(self._denom_key(), "sats")
          Payment.use_symbol = (denom == "symbol")
+         self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
          if denom in ("sats", "symbol"):
              sats = int(round(balance))
-             formatted = NumberFormat.format_number(sats) if _has_number_format else str(sats)
+             formatted = NumberFormat.format_number(sats)
              if denom == "symbol":
-                 balance_text = formatted
-                 self.bitcoin_symbol.set_src(self._bitcoin_symbol_path())
-                 self.bitcoin_symbol.remove_flag(lv.obj.FLAG.HIDDEN)
-                 self.balance_label.align(lv.ALIGN.TOP_LEFT, 24, 0)
+                 balance_text = "\u20bf" + formatted
              else:
                  balance_text = formatted + (" sat" if sats == 1 else " sats")
-                 self.bitcoin_symbol.add_flag(lv.obj.FLAG.HIDDEN)
-                 self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
          elif denom == "bits":
-             self.bitcoin_symbol.add_flag(lv.obj.FLAG.HIDDEN)
-             self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
              balance_bits = round(balance / 100, 2)
              balance_text = self.float_to_string(balance_bits, 2) + " bit"
              if balance_bits != 1:
                  balance_text += "s"
          elif denom == "ubtc":
-             self.bitcoin_symbol.add_flag(lv.obj.FLAG.HIDDEN)
-             self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
              balance_ubtc = round(balance / 100, 2)
              balance_text = self.float_to_string(balance_ubtc, 2) + " micro-BTC"
          elif denom == "mbtc":
-             self.bitcoin_symbol.add_flag(lv.obj.FLAG.HIDDEN)
-             self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
              balance_mbtc = round(balance / 100000, 5)
              balance_text = self.float_to_string(balance_mbtc, 5) + " milli-BTC"
          elif denom == "btc":
-             self.bitcoin_symbol.add_flag(lv.obj.FLAG.HIDDEN)
-             self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
              balance_btc = round(balance / 100000000, 8)
              balance_text = self.float_to_string(balance_btc, 8) + " BTC"
          self.balance_label.set_text(balance_text)
@@ -737,14 +853,16 @@ class DisplayWallet(Activity):
         self.payments_label.set_text(str(self.wallet.payment_list))
 
     def redraw_static_receive_code_cb(self):
-        # static receive code from settings takes priority:
-        wallet_type = self.prefs.get_string("wallet_type")
+        # static receive code from settings takes priority (for the active slot):
+        slot = self.prefs.get_string("active_wallet_slot", "1")
+        s = "_2" if slot == "2" else ""
+        wallet_type = self.prefs.get_string("wallet_type" + s)
         if wallet_type == "nwc":
-            self.receive_qr_data = self.prefs.get_string("nwc_static_receive_code")
+            self.receive_qr_data = self.prefs.get_string("nwc_static_receive_code" + s)
         elif wallet_type == "lnbits":
-            self.receive_qr_data = self.prefs.get_string("lnbits_static_receive_code")
+            self.receive_qr_data = self.prefs.get_string("lnbits_static_receive_code" + s)
         elif wallet_type == "onchain":
-            self.receive_qr_data = self.prefs.get_string("onchain_static_receive_code")
+            self.receive_qr_data = self.prefs.get_string("onchain_static_receive_code" + s)
         # otherwise, see if the wallet has a static receive code:
         if not self.receive_qr_data:
             self.receive_qr_data = self.wallet.static_receive_code
@@ -765,29 +883,108 @@ class DisplayWallet(Activity):
         print("send_button clicked")
         self.confetti.start() # for testing the receive animation
 
+    _WALLET_TYPE_PRETTY = {
+        "lnbits": "LNBits",
+        "nwc": "Nostr Wallet Connect",
+        "onchain": "On-chain",
+    }
+
     def settings_button_tap(self, event):
         self.destination = MainSettingsActivity  # prevent wallet.stop() in onPause
         intent = Intent(activity_class=MainSettingsActivity)
         intent.putExtra("prefs", self.prefs)
-        intent.putExtra("settings", [
-            {"title": "Wallet", "key": "wallet_type", "ui": "activity",
+
+        active_slot = self.prefs.get_string("active_wallet_slot", "1")
+        active_suffix = "_2" if active_slot == "2" else ""
+        active_type = self.prefs.get_string("wallet_type" + active_suffix)
+        # Slot 2 is "configured" if its wallet_type is set; slot 1 is always considered present.
+        has_slot2 = bool(self.prefs.get_string("wallet_type_2"))
+        # The "other" slot is whichever one isn't active
+        other_slot = "2" if active_slot == "1" else "1"
+        other_suffix = "_2" if other_slot == "2" else ""
+        other_type = self.prefs.get_string("wallet_type" + other_suffix)
+
+        wallet_settings = [
+            # Single Wallet entry — always edits the active slot
+            {"title": "Wallet", "key": "wallet_type" + active_suffix, "ui": "activity",
              "activity_class": WalletSettingsActivity,
-             "placeholder": self.prefs.get_string("wallet_type", "not configured")},
-            {"title": "Balance Denomination", "key": "balance_denomination", "ui": "activity",
-             "activity_class": DenominationSettingsActivity,
-             "placeholder": self.prefs.get_string("balance_denomination", "sats"),
-             "changed_callback": self._on_denomination_changed},
-            {"title": "Hero Image", "key": "hero_image", "ui": "radiobuttons",
-             "ui_options": [("Lightning Piggy", "lightningpiggy"), ("Lightning Penguin", "lightningpenguin"), ("None", "none")],
-             "default_value": "lightningpiggy",
-             "changed_callback": self._on_hero_image_changed},
-        ])
+             "_slot": int(active_slot),
+             "placeholder": active_type or "not configured"},
+            {"title": "Customise", "key": "customise", "ui": "activity",
+             "activity_class": CustomiseSettingsActivity,
+             "placeholder": "Balance denomination, hero image",
+             "_callbacks": {"denomination": self._on_denomination_changed, "hero_image": self._on_hero_image_changed}},
+            {"title": "Screen Lock", "key": "screen_lock", "activity_class": True,
+             "placeholder": "On - tapping disabled" if self.prefs.get_string("screen_lock", "off") == "on" else "Off - tapping changes display"},
+        ]
+
+        if has_slot2:
+            # Two wallets configured — bottom entry switches active slot
+            other_pretty = self._WALLET_TYPE_PRETTY.get(other_type, other_type or "other wallet")
+            wallet_settings.append({
+                "title": "Switch to " + other_pretty, "key": "__switch_active_wallet",
+                "activity_class": True,
+                "placeholder": "",
+            })
+        else:
+            # One wallet — bottom entry adds a second
+            wallet_settings.append({
+                "title": "Add wallet", "key": "wallet_type_2", "ui": "activity",
+                "activity_class": WalletSettingsActivity,
+                "_slot": 2,
+                "placeholder": "Configure a second wallet",
+            })
+
+        intent.putExtra("settings", wallet_settings)
         self.startActivity(intent)
+
+    HERO_CYCLE = ["lightningpiggy", "lightningpenguin", "none"]
+    DENOMINATION_CYCLE = ["sats", "symbol", "bits", "ubtc", "mbtc", "btc"]
+
+    def _is_screen_locked(self):
+        return self.prefs.get_string("screen_lock", "off") == "on"
+
+    def hero_image_clicked_cb(self, event):
+        """Cycle through hero images on tap (for the active wallet slot)."""
+        if self._is_screen_locked():
+            return
+        key = self._hero_image_key()
+        current = self.prefs.get_string(key, "lightningpiggy")
+        try:
+            idx = self.HERO_CYCLE.index(current)
+        except ValueError:
+            idx = 0
+        next_hero = self.HERO_CYCLE[(idx + 1) % len(self.HERO_CYCLE)]
+        editor = self.prefs.edit()
+        editor.put_string(key, next_hero)
+        editor.commit()
+        self._update_hero_image()
+
+    def balance_label_clicked_cb(self, event):
+        """Cycle through balance denominations on tap (for the active wallet slot)."""
+        if self._is_screen_locked():
+            return
+        key = self._denom_key()
+        current = self.prefs.get_string(key, "sats")
+        try:
+            idx = self.DENOMINATION_CYCLE.index(current)
+        except ValueError:
+            idx = 0
+        next_denom = self.DENOMINATION_CYCLE[(idx + 1) % len(self.DENOMINATION_CYCLE)]
+        editor = self.prefs.edit()
+        editor.put_string(key, next_denom)
+        editor.commit()
+        if hasattr(self, '_last_balance'):
+            self.display_balance(self._last_balance)
+        if self.wallet and self.wallet.payment_list and len(self.wallet.payment_list) > 0:
+            self.payments_label.set_text(str(self.wallet.payment_list))
 
     def _on_denomination_changed(self, new_value):
         """Called when balance denomination setting changes."""
         if hasattr(self, '_last_balance'):
             self.display_balance(self._last_balance)
+        if self.wallet and self.wallet.payment_list and len(self.wallet.payment_list) > 0:
+            self.payments_label.set_text(str(self.wallet.payment_list))
 
     def main_ui_set_defaults(self):
         self.balance_label.set_text("Welcome!")
@@ -795,6 +992,8 @@ class DisplayWallet(Activity):
 
     def qr_clicked_cb(self, event):
         print("QR clicked")
+        if self._is_screen_locked():
+            return
         if not self.receive_qr_data:
             return
         self.destination = FullscreenQR

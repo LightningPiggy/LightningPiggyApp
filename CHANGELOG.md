@@ -1,3 +1,9 @@
+0.2.8
+=====
+- Support two wallets side-by-side: settings includes an "Add wallet" button, with a "Switch to …" toggle once the second wallet is configured
+- Per-wallet hero image and balance denomination — each wallet remembers its own
+- Wallet-type indicator next to the balance: yellow ⚡ for LNBits/NWC, pink chain link for on-chain
+
 0.2.7
 =====
 - Add on-chain wallet type: track a Bitcoin xpub/ypub/zpub via Blockbook
