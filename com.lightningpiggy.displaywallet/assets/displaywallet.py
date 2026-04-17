@@ -73,8 +73,8 @@ class WalletSettingsActivity(SettingsActivity):
              "placeholder": "Optional if present in NWC URL.", "should_show": _should_show_wallet_setting},
             {"title": "xpub / ypub / zpub", "key": "onchain_xpub",
              "placeholder": "zpub6rF...", "should_show": _should_show_wallet_setting},
-            {"title": "Mempool URL", "key": "onchain_mempool_url",
-             "placeholder": "https://mempool.space", "should_show": _should_show_wallet_setting},
+            {"title": "Blockbook URL", "key": "onchain_blockbook_url",
+             "placeholder": "https://btc1.trezor.io", "should_show": _should_show_wallet_setting},
             {"title": "Optional Receive Address", "key": "onchain_static_receive_code",
              "placeholder": "Will be fetched if empty.", "should_show": _should_show_wallet_setting},
         ]
@@ -490,10 +490,10 @@ class DisplayWallet(Activity):
                 return
         elif wallet_type == "onchain":
             try:
-                mempool_url = self.prefs.get_string("onchain_mempool_url") or None
+                blockbook_url = self.prefs.get_string("onchain_blockbook_url") or None
                 self.wallet = OnchainWallet(
                     self.prefs.get_string("onchain_xpub"),
-                    mempool_url=mempool_url,
+                    blockbook_url=blockbook_url,
                 )
                 self.wallet.static_receive_code = self.prefs.get_string("onchain_static_receive_code")
                 self.redraw_static_receive_code_cb()

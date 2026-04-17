@@ -12,20 +12,34 @@ _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 
-class OnchainWallet(Wallet):
-    """On-chain Bitcoin wallet backed by mempool.space's xpub endpoint.
+def _try_int(v):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return 0
 
-    Derivation happens server-side — no BIP32/bech32 client code needed.
-    The xpub is sent to the mempool.space operator, so privacy-conscious
-    users should point at a self-hosted instance via onchain_mempool_url.
+
+class OnchainWallet(Wallet):
+    """On-chain Bitcoin wallet backed by a Blockbook instance.
+
+    Blockbook (https://github.com/trezor/blockbook) does server-side
+    derivation from the xpub/ypub/zpub and returns balance, transactions,
+    and derived addresses in a single call. The default points at Trezor's
+    hosted instance; privacy-conscious users can set a self-hosted Blockbook
+    URL (Umbrel, Start9, BTCPay Server, Sparrow Server, etc.) via the
+    onchain_blockbook_url setting.
     """
 
     PAYMENTS_TO_SHOW = 6
     PERIODIC_FETCH_SECONDS_UNCONFIRMED = 60   # while any tx is pending
     PERIODIC_FETCH_SECONDS_CONFIRMED = 300    # when everything's confirmed
-    DEFAULT_MEMPOOL_URL = "https://mempool.space"
+    DEFAULT_BLOCKBOOK_URL = "https://btc1.trezor.io"
+    # Trezor's hosted Blockbook is Cloudflare-proxied; a browser UA avoids 403.
+    _USER_AGENT = ("Mozilla/5.0 (X11; Linux x86_64) "
+                   "AppleWebKit/537.36 (KHTML, like Gecko) "
+                   "Chrome/122 Safari/537.36")
 
-    def __init__(self, xpub, mempool_url=None):
+    def __init__(self, xpub, blockbook_url=None):
         super().__init__()
         if not xpub:
             raise ValueError('xpub is not set.')
@@ -33,7 +47,7 @@ class OnchainWallet(Wallet):
         if xpub[:4] not in ("xpub", "ypub", "zpub", "tpub", "upub", "vpub"):
             raise ValueError('xpub must start with xpub/ypub/zpub (or testnet variants)')
         self.xpub = xpub
-        self.mempool_url = (mempool_url or self.DEFAULT_MEMPOOL_URL).rstrip('/')
+        self.blockbook_url = (blockbook_url or self.DEFAULT_BLOCKBOOK_URL).rstrip('/')
         self._any_unconfirmed = True  # first poll uses fast cadence
 
     def _format_date(self, epoch_time):
@@ -44,105 +58,113 @@ class OnchainWallet(Wallet):
         except Exception:
             return ""
 
-    def _parse_transactions(self, response):
-        """Parse mempool.space wallet response into a UniqueSortedList of Payments.
+    def _parse_transactions(self, transactions):
+        """Parse Blockbook transactions into a UniqueSortedList of Payments.
 
+        Blockbook marks inputs/outputs belonging to our xpub with
+        `isOwn: true`, so we don't need to track derived addresses ourselves.
         Returns (payments, any_unconfirmed).
         """
-        our_addresses = set(response.keys())
-        seen_txids = set()
         payments = UniqueSortedList()
         any_unconfirmed = False
 
-        for addr_data in response.values():
-            for tx in addr_data.get("transactions", []):
-                txid = tx.get("txid")
-                if not txid or txid in seen_txids:
-                    continue
-                seen_txids.add(txid)
+        for tx in transactions or []:
+            confirmations = tx.get("confirmations", 0) or 0
+            confirmed = confirmations > 0
+            if not confirmed:
+                any_unconfirmed = True
 
-                sent = 0
-                for vin in tx.get("vin", []):
-                    prevout = vin.get("prevout") or {}
-                    if prevout.get("scriptpubkey_address") in our_addresses:
-                        sent += prevout.get("value", 0)
-
-                received = 0
-                for vout in tx.get("vout", []):
-                    if vout.get("scriptpubkey_address") in our_addresses:
-                        received += vout.get("value", 0)
-
-                net = received - sent
-
-                status = tx.get("status") or {}
-                confirmed = bool(status.get("confirmed"))
-                if not confirmed:
-                    any_unconfirmed = True
-                epoch_time = status.get("block_time") or int(time.time())
-
-                date_str = self._format_date(epoch_time)
-                status_str = "confirmed" if confirmed else "pending"
-
-                if net == 0:
-                    # Self-transfer — show the fee as a negative amount
-                    fee = tx.get("fee", 0)
-                    comment = "{} self-transfer".format(date_str).strip()
-                    payments.add(Payment(epoch_time, -fee, comment))
+            sent = 0
+            all_inputs_ours = bool(tx.get("vin"))
+            for vin in tx.get("vin", []):
+                if vin.get("isOwn"):
+                    sent += _try_int(vin.get("value", "0"))
                 else:
-                    comment = "{} {}".format(date_str, status_str).strip()
-                    payments.add(Payment(epoch_time, net, comment))
+                    all_inputs_ours = False
+
+            received = 0
+            all_outputs_ours = bool(tx.get("vout"))
+            for vout in tx.get("vout", []):
+                if vout.get("isOwn"):
+                    received += _try_int(vout.get("value", "0"))
+                else:
+                    all_outputs_ours = False
+
+            net = received - sent
+            epoch_time = tx.get("blockTime") or int(time.time())
+            date_str = self._format_date(epoch_time)
+            status_str = "confirmed" if confirmed else "pending"
+
+            if all_inputs_ours and all_outputs_ours:
+                # All inputs + outputs ours — classic self-transfer, fee-only loss.
+                fee = _try_int(tx.get("fees", "0"))
+                comment = "{} self-transfer".format(date_str).strip()
+                payments.add(Payment(epoch_time, -fee, comment))
+            else:
+                comment = "{} {}".format(date_str, status_str).strip()
+                payments.add(Payment(epoch_time, net, comment))
 
         return payments, any_unconfirmed
 
-    def _pick_receive_address(self, response):
-        """Return an unused receive address as a BIP21 URI, or None."""
-        # Prefer bech32 (bc1.../tb1...) then legacy
-        best = None
-        for addr, addr_data in response.items():
-            cs = addr_data.get("chain_stats") or {}
-            ms = addr_data.get("mempool_stats") or {}
-            if cs.get("tx_count", 0) == 0 and ms.get("tx_count", 0) == 0:
-                if addr.startswith(("bc1", "tb1")):
-                    return "bitcoin:" + addr
-                if best is None:
-                    best = addr
-        if best:
-            return "bitcoin:" + best
+    def _pick_receive_address(self, tokens):
+        """Return an unused external receive address as a BIP21 URI, or None.
+
+        Blockbook tokens carry a `path` like `m/84'/0'/0'/0/3`. The
+        second-to-last segment is the chain (0 = external / receive,
+        1 = change). We pick the lowest-index unused external address.
+        """
+        best_idx = None
+        best_addr = None
+        for t in tokens or []:
+            path = t.get("path") or ""
+            parts = path.split("/")
+            if len(parts) < 2:
+                continue
+            if parts[-2] != "0":  # must be external (receive) chain
+                continue
+            if (t.get("transfers") or 0) != 0:
+                continue
+            try:
+                idx = int(parts[-1])
+            except ValueError:
+                continue
+            if best_idx is None or idx < best_idx:
+                best_idx = idx
+                best_addr = t.get("name")
+        if best_addr:
+            return "bitcoin:" + best_addr
         return None
 
     async def fetch_balance_and_payments(self):
-        """Single mempool.space call that populates balance, payments, and receive code."""
-        url = self.mempool_url + "/api/v1/wallet/" + self.xpub
+        """Single Blockbook call populates balance, payments, and receive code."""
+        url = "{}/api/v2/xpub/{}?details=txs&tokens=derived".format(
+            self.blockbook_url, self.xpub)
         print("OnchainWallet: fetching " + url)
         try:
-            response_bytes = await DownloadManager.download_url(url)
+            response_bytes = await DownloadManager.download_url(
+                url, headers={"User-Agent": self._USER_AGENT})
         except Exception as e:
             raise RuntimeError("fetch_balance: GET {} failed: {}".format(url, e))
 
         try:
             response = json.loads(response_bytes.decode("utf-8"))
         except Exception as e:
-            raise RuntimeError("Could not parse mempool.space response as JSON: {}".format(e))
+            raise RuntimeError("Could not parse Blockbook response as JSON: {}".format(e))
 
-        # Balance: sum across all derived addresses (confirmed + mempool)
-        balance = 0
-        for addr_data in response.values():
-            cs = addr_data.get("chain_stats") or {}
-            ms = addr_data.get("mempool_stats") or {}
-            balance += cs.get("funded_txo_sum", 0) - cs.get("spent_txo_sum", 0)
-            balance += ms.get("funded_txo_sum", 0) - ms.get("spent_txo_sum", 0)
-
+        # Balance: confirmed + mempool (Blockbook returns strings; unconfirmed may be negative)
+        balance = (_try_int(response.get("balance", "0"))
+                   + _try_int(response.get("unconfirmedBalance", "0")))
         self.handle_new_balance(balance, fetchPaymentsIfChanged=False)
 
         # Payments
-        payments, any_unconfirmed = self._parse_transactions(response)
-        self._any_unconfirmed = any_unconfirmed
+        payments, any_unconfirmed = self._parse_transactions(response.get("transactions"))
+        self._any_unconfirmed = any_unconfirmed or (response.get("unconfirmedTxs") or 0) > 0
         if len(payments) > 0:
             self.handle_new_payments(payments)
 
         # Receive address — only fetch if user hasn't set one in settings
         if not self.static_receive_code:
-            receive = self._pick_receive_address(response)
+            receive = self._pick_receive_address(response.get("tokens"))
             if receive:
                 self.handle_new_static_receive_code(receive)
 

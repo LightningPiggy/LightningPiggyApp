@@ -1,7 +1,7 @@
 0.2.7
 =====
-- Add on-chain wallet type: track a Bitcoin xpub/ypub/zpub via mempool.space
-- Support self-hosted mempool.space instances for privacy (configurable URL)
+- Add on-chain wallet type: track a Bitcoin xpub/ypub/zpub via Blockbook
+- Default to Trezor's public Blockbook; support self-hosted instances (Umbrel, Start9, BTCPay Server, Sparrow Server) via a configurable URL for privacy
 - Receive QR shows an unused derived address as a bitcoin: URI
 
 0.2.6
