@@ -1,3 +1,9 @@
+0.2.7
+=====
+- Add on-chain wallet type: track a Bitcoin xpub/ypub/zpub via mempool.space
+- Support self-hosted mempool.space instances for privacy (configurable URL)
+- Receive QR shows an unused derived address as a bitcoin: URI
+
 0.2.6
 =====
 - Use native ₿ font glyph for balance and transaction amounts (replaces PNG images)

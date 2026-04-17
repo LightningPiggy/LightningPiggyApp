@@ -17,6 +17,7 @@ import wallet_cache
 # This prevents ImportError when switching wallet types after the app has started
 from lnbits_wallet import LNBitsWallet
 from nwc_wallet import NWCWallet
+from onchain_wallet import OnchainWallet
 
 
 def _add_floating_back_button(screen, finish_callback):
@@ -47,6 +48,8 @@ def _should_show_wallet_setting(setting):
         return False
     if wallet_type != "nwc" and setting["key"].startswith("nwc_"):
         return False
+    if wallet_type != "onchain" and setting["key"].startswith("onchain_"):
+        return False
     return True
 
 
@@ -57,7 +60,7 @@ class WalletSettingsActivity(SettingsActivity):
         self.prefs = extras.get("prefs")
         self.settings = [
             {"title": "Wallet Type", "key": "wallet_type", "ui": "radiobuttons",
-             "ui_options": [("LNBits", "lnbits"), ("Nostr Wallet Connect", "nwc")]},
+             "ui_options": [("LNBits", "lnbits"), ("Nostr Wallet Connect", "nwc"), ("On-chain (xpub)", "onchain")]},
             {"title": "LNBits URL", "key": "lnbits_url",
              "placeholder": "https://demo.lnpiggy.com", "should_show": _should_show_wallet_setting},
             {"title": "LNBits Read Key", "key": "lnbits_readkey",
@@ -68,6 +71,12 @@ class WalletSettingsActivity(SettingsActivity):
              "placeholder": "nostr+walletconnect://69effe7b...", "should_show": _should_show_wallet_setting},
             {"title": "Optional LN Address", "key": "nwc_static_receive_code",
              "placeholder": "Optional if present in NWC URL.", "should_show": _should_show_wallet_setting},
+            {"title": "xpub / ypub / zpub", "key": "onchain_xpub",
+             "placeholder": "zpub6rF...", "should_show": _should_show_wallet_setting},
+            {"title": "Mempool URL", "key": "onchain_mempool_url",
+             "placeholder": "https://mempool.space", "should_show": _should_show_wallet_setting},
+            {"title": "Optional Receive Address", "key": "onchain_static_receive_code",
+             "placeholder": "Will be fetched if empty.", "should_show": _should_show_wallet_setting},
         ]
         screen = lv.obj()
         screen.set_style_pad_all(DisplayMetrics.pct_of_width(2), lv.PART.MAIN)
@@ -479,6 +488,18 @@ class DisplayWallet(Activity):
             except Exception as e:
                 self.error_cb(f"Couldn't initialize NWC Wallet because: {e}")
                 return
+        elif wallet_type == "onchain":
+            try:
+                mempool_url = self.prefs.get_string("onchain_mempool_url") or None
+                self.wallet = OnchainWallet(
+                    self.prefs.get_string("onchain_xpub"),
+                    mempool_url=mempool_url,
+                )
+                self.wallet.static_receive_code = self.prefs.get_string("onchain_static_receive_code")
+                self.redraw_static_receive_code_cb()
+            except Exception as e:
+                self.error_cb(f"Couldn't initialize On-chain wallet because: {e}")
+                return
         else:
             self.error_cb(f"No or unsupported wallet type configured: '{wallet_type}'")
             return
@@ -699,6 +720,8 @@ class DisplayWallet(Activity):
             self.receive_qr_data = self.prefs.get_string("nwc_static_receive_code")
         elif wallet_type == "lnbits":
             self.receive_qr_data = self.prefs.get_string("lnbits_static_receive_code")
+        elif wallet_type == "onchain":
+            self.receive_qr_data = self.prefs.get_string("onchain_static_receive_code")
         # otherwise, see if the wallet has a static receive code:
         if not self.receive_qr_data:
             self.receive_qr_data = self.wallet.static_receive_code

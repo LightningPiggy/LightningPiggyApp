@@ -28,6 +28,8 @@ class Wallet:
             return "LNBitsWallet"
         elif isinstance(self, NWCWallet):
             return "NWCWallet"
+        elif isinstance(self, OnchainWallet):
+            return "OnchainWallet"
 
     def handle_new_balance(self, new_balance, fetchPaymentsIfChanged=True):
         if not self.keep_running or new_balance is None:
