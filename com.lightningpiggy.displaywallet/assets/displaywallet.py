@@ -73,10 +73,9 @@ class WalletSettingsActivity(SettingsActivity):
              "placeholder": "Optional if present in NWC URL.", "should_show": _should_show_wallet_setting},
             {"title": "xpub / ypub / zpub", "key": "onchain_xpub",
              "placeholder": "zpub6rF...", "should_show": _should_show_wallet_setting},
-            {"title": "Blockbook URL", "key": "onchain_blockbook_url",
-             "placeholder": "https://btc1.trezor.io", "should_show": _should_show_wallet_setting},
-            {"title": "Optional Receive Address", "key": "onchain_static_receive_code",
-             "placeholder": "Will be fetched if empty.", "should_show": _should_show_wallet_setting},
+            {"title": "xpub endpoint", "key": "onchain_blockbook_url",
+             "placeholder": "https://btc1.trezor.io", "default_value": "https://btc1.trezor.io",
+             "should_show": _should_show_wallet_setting},
         ]
         screen = lv.obj()
         screen.set_style_pad_all(DisplayMetrics.pct_of_width(2), lv.PART.MAIN)
@@ -255,6 +254,12 @@ class DisplayWallet(Activity):
 
     def onCreate(self):
         self.prefs = SharedPreferences("com.lightningpiggy.displaywallet")
+        # Seed the on-chain xpub endpoint with the default so it shows in the
+        # settings list and pre-populates the editor when the user taps it.
+        if not self.prefs.get_string("onchain_blockbook_url"):
+            editor = self.prefs.edit()
+            editor.put_string("onchain_blockbook_url", OnchainWallet.DEFAULT_BLOCKBOOK_URL)
+            editor.commit()
         self.main_screen = lv.obj()
         if not AppearanceManager.is_light_mode():
             self.main_screen.set_style_bg_color(lv.color_hex(0x15171A), lv.PART.MAIN)
