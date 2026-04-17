@@ -1,6 +1,11 @@
 0.2.6
 =====
 - Use native ₿ font glyph for balance and transaction amounts (replaces PNG images)
+- Restructure settings: Wallet, Customise (balance denomination + hero image), Screen Lock
+- Screen Lock toggle prevents tapping balance, transactions, QR code, and hero image
+- Tap balance to cycle through denominations (sats, ₿, bits, micro-BTC, milli-BTC, BTC)
+- Tap hero image to cycle through characters (Lightning Piggy, Lightning Penguin, None)
+- Screen Lock toggles inline on settings screen without opening a sub-screen
 
 0.2.5
 =====

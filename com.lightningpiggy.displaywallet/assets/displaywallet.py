@@ -80,18 +80,61 @@ class WalletSettingsActivity(SettingsActivity):
         _add_floating_back_button(screen, self.finish)
 
 
+class CustomiseSettingsActivity(SettingsActivity):
+    """Sub-settings screen for display customisation."""
+    def onCreate(self):
+        extras = self.getIntent().extras or {}
+        self.prefs = extras.get("prefs")
+        # Callbacks are passed via the setting dict from the parent
+        setting = extras.get("setting") or {}
+        callbacks = setting.get("_callbacks") or {}
+        self.settings = [
+            {"title": "Balance Denomination", "key": "balance_denomination", "ui": "activity",
+             "activity_class": DenominationSettingsActivity,
+             "placeholder": self.prefs.get_string("balance_denomination", "sats"),
+             "changed_callback": callbacks.get("denomination")},
+            {"title": "Hero Image", "key": "hero_image", "ui": "radiobuttons",
+             "ui_options": [("Lightning Piggy", "lightningpiggy"), ("Lightning Penguin", "lightningpenguin"), ("None", "none")],
+             "default_value": "lightningpiggy",
+             "changed_callback": callbacks.get("hero_image")},
+        ]
+        screen = lv.obj()
+        screen.set_style_pad_all(DisplayMetrics.pct_of_width(2), lv.PART.MAIN)
+        screen.set_flex_flow(lv.FLEX_FLOW.COLUMN)
+        screen.set_style_border_width(0, lv.PART.MAIN)
+        self.setContentView(screen)
+
+    def onResume(self, screen):
+        super().onResume(screen)
+        _add_floating_back_button(screen, self.finish)
+
+
 class MainSettingsActivity(SettingsActivity):
     """Settings screen with a back-to-display button."""
     def onResume(self, screen):
         super().onResume(screen)
         _add_floating_back_button(screen, self.finish)
 
+    def startSettingActivity(self, setting):
+        """Override to handle screen lock toggle inline."""
+        if setting.get("key") == "screen_lock":
+            current = self.prefs.get_string("screen_lock", "off")
+            new_value = "on" if current == "off" else "off"
+            editor = self.prefs.edit()
+            editor.put_string("screen_lock", new_value)
+            editor.commit()
+            value_label = setting.get("value_label")
+            if value_label:
+                value_label.set_text("On - tapping disabled" if new_value == "on" else "Off - tapping changes display")
+        else:
+            super().startSettingActivity(setting)
+
 
 class DenominationSettingsActivity(Activity):
     """Custom denomination picker with 2-column radio button layout."""
     DENOMINATIONS = [
         ("sats", "sats"),
-        ("   sats", "symbol"),  # ₿ image added separately
+        ("\u20bf sats", "symbol"),
         ("bits", "bits"),
         ("micro-BTC", "ubtc"),
         ("milli-BTC", "mbtc"),
@@ -137,15 +180,6 @@ class DenominationSettingsActivity(Activity):
             style_radio_chk.set_bg_image_src(None)
             cb.add_style(style_radio_chk, lv.PART.INDICATOR | lv.STATE.CHECKED)
             cb.add_event_cb(lambda e, idx=i: self._radio_clicked(idx), lv.EVENT.VALUE_CHANGED, None)
-            if value == "symbol":
-                # Add ₿ image next to the checkbox text
-                if not AppearanceManager.is_light_mode():
-                    symbol_path = "M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/bitcoin_symbol_white_small.png"
-                else:
-                    symbol_path = "M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/bitcoin_symbol_black_small.png"
-                symbol_img = lv.image(cb)
-                symbol_img.set_src(symbol_path)
-                symbol_img.set_pos(22, 4)
             if current == value:
                 cb.add_state(lv.STATE.CHECKED)
                 self.active_index = i
@@ -255,19 +289,13 @@ class DisplayWallet(Activity):
         # This line needs to be drawn first, otherwise it's over the balance label and steals all the clicks!
         balance_line = lv.line(self.main_screen)
         balance_line.set_points([{'x':2,'y':35},{'x':DisplayMetrics.pct_of_width(100-self.receive_qr_pct_of_display*1.2),'y':35}],2)
-        balance_line.add_flag(lv.obj.FLAG.CLICKABLE)
-        balance_line.add_event_cb(self.send_button_tap,lv.EVENT.CLICKED,None)
         self.balance_label = lv.label(self.main_screen)
         self.balance_label.set_text("")
         self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
         self.balance_label.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
         self.balance_label.add_flag(lv.obj.FLAG.CLICKABLE)
         self.balance_label.set_width(DisplayMetrics.pct_of_width(100-self.receive_qr_pct_of_display)) # 100 - receive_qr
-        # Balance denomination is now set via settings, not by tapping
-        self.bitcoin_symbol = lv.image(self.main_screen)
-        self.bitcoin_symbol.set_src(self._bitcoin_symbol_path())
-        self.bitcoin_symbol.align(lv.ALIGN.TOP_LEFT, 2, 4)
-        self.bitcoin_symbol.add_flag(lv.obj.FLAG.HIDDEN)
+        self.balance_label.add_event_cb(self.balance_label_clicked_cb, lv.EVENT.CLICKED, None)
         self.receive_qr = lv.qrcode(self.main_screen)
         self.receive_qr.set_size(DisplayMetrics.pct_of_width(self.receive_qr_pct_of_display)) # bigger QR results in simpler code (less error correction?)
         dark, light = self._qr_colors()
@@ -286,7 +314,16 @@ class DisplayWallet(Activity):
         self.payments_label.add_flag(lv.obj.FLAG.CLICKABLE)
         self.payments_label.add_event_cb(self.payments_label_clicked,lv.EVENT.CLICKED,None)
         # Hero image below QR code
-        self.hero_image = lv.image(self.main_screen)
+        # Hero image area — container is always clickable, image inside may be hidden
+        self.hero_container = lv.obj(self.main_screen)
+        self.hero_container.set_size(80, 100)
+        self.hero_container.set_style_bg_opa(lv.OPA.TRANSP, lv.PART.MAIN)
+        self.hero_container.set_style_border_width(0, lv.PART.MAIN)
+        self.hero_container.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
+        self.hero_container.add_flag(lv.obj.FLAG.CLICKABLE)
+        self.hero_container.add_event_cb(self.hero_image_clicked_cb, lv.EVENT.CLICKED, None)
+        self.hero_image = lv.image(self.hero_container)
+        self.hero_image.center()
         self._update_hero_image()
         settings_button = lv.obj(self.main_screen)
         settings_button.set_size(40, 40)
@@ -315,7 +352,7 @@ class DisplayWallet(Activity):
             send_label.center()
 
         # Track wallet-mode widgets so they can be hidden/shown as a group
-        self.wallet_container_widgets = [balance_line, self.balance_label, self.receive_qr, self.payments_label, self.hero_image, settings_button]
+        self.wallet_container_widgets = [balance_line, self.balance_label, self.receive_qr, self.payments_label, self.hero_container, settings_button]
 
         # === Welcome Screen (shown when wallet is not configured) ===
         self.welcome_container = lv.obj(self.main_screen)
@@ -547,20 +584,16 @@ class DisplayWallet(Activity):
     def _update_hero_image(self):
         """Show or hide the hero image based on settings."""
         hero = self.prefs.get_string("hero_image", "lightningpiggy")
+        # Always position the container in the same spot
+        qr_size = DisplayMetrics.pct_of_width(self.receive_qr_pct_of_display)
+        qr_bottom_y = qr_size + 16
+        screen_h = DisplayMetrics.height()
+        container_h = 100
+        gap = (screen_h - qr_bottom_y - container_h) // 2
+        self.hero_container.align_to(self.receive_qr, lv.ALIGN.OUT_BOTTOM_MID, 0, gap - 10)
         if hero and hero != "none":
             self.hero_image.set_src(f"{self.ASSET_PATH}hero_{hero}.png")
-            # Center horizontally with QR code, vertically between QR bottom and screen bottom
-            # First align below QR center to get horizontal alignment right
-            self.hero_image.align_to(self.receive_qr, lv.ALIGN.OUT_BOTTOM_MID, 0, 0)
-            # Now adjust vertical: find midpoint of remaining space
-            qr_size = DisplayMetrics.pct_of_width(self.receive_qr_pct_of_display)
-            qr_bottom_y = qr_size + 16  # QR size + border (8px each side)
-            screen_h = DisplayMetrics.height()
-            img_height = self.hero_image.get_self_height()
-            if img_height <= 0:
-                img_height = 100
-            gap = (screen_h - qr_bottom_y - img_height) // 2
-            self.hero_image.align_to(self.receive_qr, lv.ALIGN.OUT_BOTTOM_MID, 0, gap - 10)
+            self.hero_image.center()
             self.hero_image.remove_flag(lv.obj.FLAG.HIDDEN)
         else:
             self.hero_image.add_flag(lv.obj.FLAG.HIDDEN)
@@ -568,12 +601,6 @@ class DisplayWallet(Activity):
     def _on_hero_image_changed(self, new_value):
         """Called when hero image setting changes."""
         self._update_hero_image()
-
-    def _bitcoin_symbol_path(self):
-        """Return path to theme-appropriate Bitcoin symbol image."""
-        if not AppearanceManager.is_light_mode():
-            return f"{self.ASSET_PATH}bitcoin_symbol_white.png"
-        return f"{self.ASSET_PATH}bitcoin_symbol_black.png"
 
     def _qr_colors(self):
         """Return (dark_color, light_color) tuple based on current theme."""
@@ -589,8 +616,7 @@ class DisplayWallet(Activity):
         self.receive_qr.set_style_border_color(light, lv.PART.MAIN)
         if self.receive_qr_data:
             self.receive_qr.update(self.receive_qr_data, len(self.receive_qr_data))
-        # Refresh bitcoin symbol and re-render balance (setting or theme may have changed)
-        self.bitcoin_symbol.set_src(self._bitcoin_symbol_path())
+        # Re-render balance in case denomination setting changed
         if hasattr(self, '_last_balance'):
             self.display_balance(self._last_balance)
 
@@ -598,6 +624,8 @@ class DisplayWallet(Activity):
         self.payments_label.set_style_text_font(self.payments_label_fonts[self.payments_label_current_font], lv.PART.MAIN)
 
     def payments_label_clicked(self, event):
+        if self._is_screen_locked():
+            return
         self.payments_label_current_font = (self.payments_label_current_font + 1) % len(self.payments_label_fonts)
         self.update_payments_label_font()
 
@@ -612,38 +640,26 @@ class DisplayWallet(Activity):
          self._last_balance = balance
          denom = self.prefs.get_string("balance_denomination", "sats")
          Payment.use_symbol = (denom == "symbol")
+         self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
          if denom in ("sats", "symbol"):
              sats = int(round(balance))
-             formatted = NumberFormat.format_number(sats) if _has_number_format else str(sats)
+             formatted = NumberFormat.format_number(sats)
              if denom == "symbol":
-                 balance_text = formatted
-                 self.bitcoin_symbol.set_src(self._bitcoin_symbol_path())
-                 self.bitcoin_symbol.remove_flag(lv.obj.FLAG.HIDDEN)
-                 self.balance_label.align(lv.ALIGN.TOP_LEFT, 24, 0)
+                 balance_text = "\u20bf" + formatted
              else:
                  balance_text = formatted + (" sat" if sats == 1 else " sats")
-                 self.bitcoin_symbol.add_flag(lv.obj.FLAG.HIDDEN)
-                 self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
          elif denom == "bits":
-             self.bitcoin_symbol.add_flag(lv.obj.FLAG.HIDDEN)
-             self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
              balance_bits = round(balance / 100, 2)
              balance_text = self.float_to_string(balance_bits, 2) + " bit"
              if balance_bits != 1:
                  balance_text += "s"
          elif denom == "ubtc":
-             self.bitcoin_symbol.add_flag(lv.obj.FLAG.HIDDEN)
-             self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
              balance_ubtc = round(balance / 100, 2)
              balance_text = self.float_to_string(balance_ubtc, 2) + " micro-BTC"
          elif denom == "mbtc":
-             self.bitcoin_symbol.add_flag(lv.obj.FLAG.HIDDEN)
-             self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
              balance_mbtc = round(balance / 100000, 5)
              balance_text = self.float_to_string(balance_mbtc, 5) + " milli-BTC"
          elif denom == "btc":
-             self.bitcoin_symbol.add_flag(lv.obj.FLAG.HIDDEN)
-             self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
              balance_btc = round(balance / 100000000, 8)
              balance_text = self.float_to_string(balance_btc, 8) + " BTC"
          self.balance_label.set_text(balance_text)
@@ -727,21 +743,60 @@ class DisplayWallet(Activity):
             {"title": "Wallet", "key": "wallet_type", "ui": "activity",
              "activity_class": WalletSettingsActivity,
              "placeholder": self.prefs.get_string("wallet_type", "not configured")},
-            {"title": "Balance Denomination", "key": "balance_denomination", "ui": "activity",
-             "activity_class": DenominationSettingsActivity,
-             "placeholder": self.prefs.get_string("balance_denomination", "sats"),
-             "changed_callback": self._on_denomination_changed},
-            {"title": "Hero Image", "key": "hero_image", "ui": "radiobuttons",
-             "ui_options": [("Lightning Piggy", "lightningpiggy"), ("Lightning Penguin", "lightningpenguin"), ("None", "none")],
-             "default_value": "lightningpiggy",
-             "changed_callback": self._on_hero_image_changed},
+            {"title": "Customise", "key": "customise", "ui": "activity",
+             "activity_class": CustomiseSettingsActivity,
+             "placeholder": "Balance denomination, hero image",
+             "_callbacks": {"denomination": self._on_denomination_changed, "hero_image": self._on_hero_image_changed}},
+            {"title": "Screen Lock", "key": "screen_lock", "activity_class": True,
+             "placeholder": "On - tapping disabled" if self.prefs.get_string("screen_lock", "off") == "on" else "Off - tapping changes display"},
         ])
         self.startActivity(intent)
+
+    HERO_CYCLE = ["lightningpiggy", "lightningpenguin", "none"]
+    DENOMINATION_CYCLE = ["sats", "symbol", "bits", "ubtc", "mbtc", "btc"]
+
+    def _is_screen_locked(self):
+        return self.prefs.get_string("screen_lock", "off") == "on"
+
+    def hero_image_clicked_cb(self, event):
+        """Cycle through hero images on tap."""
+        if self._is_screen_locked():
+            return
+        current = self.prefs.get_string("hero_image", "lightningpiggy")
+        try:
+            idx = self.HERO_CYCLE.index(current)
+        except ValueError:
+            idx = 0
+        next_hero = self.HERO_CYCLE[(idx + 1) % len(self.HERO_CYCLE)]
+        editor = self.prefs.edit()
+        editor.put_string("hero_image", next_hero)
+        editor.commit()
+        self._update_hero_image()
+
+    def balance_label_clicked_cb(self, event):
+        """Cycle through balance denominations on tap."""
+        if self._is_screen_locked():
+            return
+        current = self.prefs.get_string("balance_denomination", "sats")
+        try:
+            idx = self.DENOMINATION_CYCLE.index(current)
+        except ValueError:
+            idx = 0
+        next_denom = self.DENOMINATION_CYCLE[(idx + 1) % len(self.DENOMINATION_CYCLE)]
+        editor = self.prefs.edit()
+        editor.put_string("balance_denomination", next_denom)
+        editor.commit()
+        if hasattr(self, '_last_balance'):
+            self.display_balance(self._last_balance)
+        if self.wallet and self.wallet.payment_list and len(self.wallet.payment_list) > 0:
+            self.payments_label.set_text(str(self.wallet.payment_list))
 
     def _on_denomination_changed(self, new_value):
         """Called when balance denomination setting changes."""
         if hasattr(self, '_last_balance'):
             self.display_balance(self._last_balance)
+        if self.wallet and self.wallet.payment_list and len(self.wallet.payment_list) > 0:
+            self.payments_label.set_text(str(self.wallet.payment_list))
 
     def main_ui_set_defaults(self):
         self.balance_label.set_text("Welcome!")
@@ -749,6 +804,8 @@ class DisplayWallet(Activity):
 
     def qr_clicked_cb(self, event):
         print("QR clicked")
+        if self._is_screen_locked():
+            return
         if not self.receive_qr_data:
             return
         self.destination = FullscreenQR
