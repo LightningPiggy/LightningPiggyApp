@@ -435,6 +435,22 @@ class DisplayWallet(Activity):
         else:
             # Returning from settings or other activity
             self._update_hero_image()
+            # If the user changed wallet_type in Settings, stop the old wallet
+            # and reconnect with the new one so we don't show stale data.
+            current_wallet_type = self.prefs.get_string("wallet_type")
+            if (self.wallet and self.wallet.is_running()
+                    and getattr(self, '_active_wallet_type', None) != current_wallet_type):
+                print("wallet_type changed from {} to {} — restarting wallet".format(
+                    getattr(self, '_active_wallet_type', None), current_wallet_type))
+                self.wallet.stop()
+                self.wallet = None
+                self._active_wallet_type = None
+                # Clear stale UI so the previous wallet's data doesn't linger
+                if hasattr(self, '_last_balance'):
+                    del self._last_balance
+                self.receive_qr_data = None
+                self.payments_label.set_text("")
+                self.balance_label.set_text(lv.SYMBOL.REFRESH)
             if self.wallet and self.wallet.is_running():
                 # Wallet already running — just redisplay, no re-fetch
                 if hasattr(self, '_last_balance'):
@@ -503,6 +519,8 @@ class DisplayWallet(Activity):
         else:
             self.error_cb(f"No or unsupported wallet type configured: '{wallet_type}'")
             return
+        # Remember which wallet_type we just activated so onResume can detect changes.
+        self._active_wallet_type = wallet_type
         if not (hasattr(self, '_last_balance') and self._last_balance):
             self.balance_label.set_text(lv.SYMBOL.REFRESH)
             self.payments_label.set_text(f"\nConnecting to {wallet_type} backend.\n\nIf this takes too long, it might be down or something's wrong with the settings.")
