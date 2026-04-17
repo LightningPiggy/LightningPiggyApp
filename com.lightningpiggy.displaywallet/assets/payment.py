@@ -1,6 +1,6 @@
 # Payment class remains unchanged
 class Payment:
-    use_symbol = False  # When True, omit "sats" text (₿ image shown separately)
+    use_symbol = False  # When True, use ₿ prefix instead of "sats" suffix
 
     def __init__(self, epoch_time, amount_sats, comment):
         self.epoch_time = epoch_time
@@ -13,8 +13,8 @@ class Payment:
                 verb = "spent"
                 if self.amount_sats > 0:
                     verb = "received!"
-                return f"{self.amount_sats} {verb}"
-            return f"{self.amount_sats}: {self.comment}"
+                return f"\u20bf{self.amount_sats} {verb}"
+            return f"\u20bf{self.amount_sats}: {self.comment}"
         else:
             sattext = "sats"
             if self.amount_sats == 1:
