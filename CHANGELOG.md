@@ -1,3 +1,19 @@
+0.2.8
+=====
+- Support two wallets side-by-side: settings includes an "Add wallet" button, with a "Switch to …" toggle once the second wallet is configured
+- Per-wallet hero image and balance denomination — each wallet remembers its own
+- Wallet-type indicator next to the balance: yellow ⚡ for LNBits/NWC, pink chain link for on-chain
+
+0.2.7
+=====
+- Add on-chain wallet type: track a Bitcoin xpub/ypub/zpub via Blockbook
+- Default to Trezor's public Blockbook; support self-hosted instances (Umbrel, Start9, BTCPay Server, Sparrow Server) via a configurable URL for privacy
+- Receive QR shows an unused derived address as a bitcoin: URI
+
+0.2.6
+=====
+- Use native ₿ font glyph for balance and transaction amounts (replaces PNG images)
+
 0.2.5
 =====
 - Add selectable hero image on main screen (Lightning Piggy, Lightning Penguin, or None)
