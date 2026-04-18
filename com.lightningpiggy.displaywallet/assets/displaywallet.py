@@ -642,7 +642,8 @@ class DisplayWallet(Activity):
         lv.async_call(lambda *args: self.settings_button_tap(None), None)
 
     def _restart_active_wallet(self, *args):
-        """Stop current wallet, clear UI, fire network_changed to start the new one.
+        """Stop current wallet, repaint with the new slot's cached data,
+        fire network_changed to start the new wallet.
 
         Mirrors the swap path in onResume — used when the swap is triggered from
         outside the Settings round-trip (e.g. by the BOOT button).
@@ -656,6 +657,9 @@ class DisplayWallet(Activity):
         self.receive_qr_data = None
         self.payments_label.set_text("")
         self.balance_label.set_text(lv.SYMBOL.REFRESH)
+        # Show the new slot's cached values immediately so the user doesn't
+        # stare at a refresh spinner during the (sometimes 30-60s) Blockbook fetch.
+        self._load_and_display_cache()
         # Picks up new slot's hero + wallet-type icon
         self._update_hero_image()
         cm = ConnectivityManager.get()
@@ -723,6 +727,9 @@ class DisplayWallet(Activity):
         else:
             self.error_cb(f"No or unsupported wallet type configured: '{wallet_type}'")
             return
+        # Tag the wallet with its slot so cache reads/writes namespace correctly
+        # (slot 1 uses unsuffixed cache keys for back-compat; slot 2 uses _2).
+        self.wallet.slot = int(slot)
         # Remember (wallet_type, slot) so onResume can detect either-dimension changes.
         self._active_wallet_key = (wallet_type, slot)
         if not (hasattr(self, '_last_balance') and self._last_balance):
@@ -765,21 +772,23 @@ class DisplayWallet(Activity):
         self.network_changed(cm.is_online())
 
     def _load_and_display_cache(self):
-        """Load cached wallet data and display it immediately."""
-        if not self.prefs.get_string("wallet_type"):
-            return  # no wallet configured, nothing to show
+        """Load and display the active slot's cached wallet data immediately."""
+        slot, s = self._active_slot_and_suffix()
+        if not self.prefs.get_string("wallet_type" + s):
+            return  # active slot has no wallet configured, nothing to show
         self.show_wallet_screen()
-        cached_balance = wallet_cache.load_cached_balance()
+        slot_int = int(slot)
+        cached_balance = wallet_cache.load_cached_balance(slot=slot_int)
         if cached_balance is not None:
-            print(f"Cache: displaying cached balance {cached_balance}")
+            print("Cache: displaying cached balance {} (slot {})".format(cached_balance, slot_int))
             self.display_balance(cached_balance)
-        cached_payments = wallet_cache.load_cached_payments()
+        cached_payments = wallet_cache.load_cached_payments(slot=slot_int)
         if cached_payments is not None and len(cached_payments) > 0:
-            print(f"Cache: displaying {len(cached_payments)} cached payments")
+            print("Cache: displaying {} cached payments (slot {})".format(len(cached_payments), slot_int))
             self.payments_label.set_text(str(cached_payments))
-        cached_receive_code = wallet_cache.load_cached_static_receive_code()
+        cached_receive_code = wallet_cache.load_cached_static_receive_code(slot=slot_int)
         if cached_receive_code:
-            print(f"Cache: displaying cached QR code")
+            print("Cache: displaying cached QR code (slot {})".format(slot_int))
             self.receive_qr_data = cached_receive_code
             self.receive_qr.update(cached_receive_code, len(cached_receive_code))
 
@@ -918,7 +927,7 @@ class DisplayWallet(Activity):
         if getattr(self.wallet, "payment_list", None) is not None:
             if len(self.wallet.payment_list) == 0:
                 # Don't overwrite cached payments with "no payments" message
-                cached = wallet_cache.load_cached_payments()
+                cached = wallet_cache.load_cached_payments(slot=self.wallet.slot)
                 if cached and len(cached) > 0:
                     self.payments_label.set_text(str(cached))
                 else:

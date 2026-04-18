@@ -12,7 +12,10 @@ class Wallet:
 
     # Variables
     keep_running = True
-    
+    # Cache namespace. Slot 1 = unsuffixed keys (back-compat). The host app
+    # sets self.slot = 2 on slot-2 wallets so cache reads/writes don't collide.
+    slot = 1
+
     # Callbacks:
     balance_updated_cb = None
     payments_updated_cb = None
@@ -39,7 +42,7 @@ class Wallet:
         if self.last_known_balance is None:
             self.last_known_balance = new_balance
             print("First balance received")
-            wallet_cache.save_cache(balance=new_balance)
+            wallet_cache.save_cache(balance=new_balance, slot=self.slot)
             if self.balance_updated_cb:
                 self.balance_updated_cb(0)
             # optional: fetch payments once on initial connect
@@ -51,7 +54,7 @@ class Wallet:
         if new_balance != self.last_known_balance:
             print("Balance changed!")
             self.last_known_balance = new_balance
-            wallet_cache.save_cache(balance=new_balance)
+            wallet_cache.save_cache(balance=new_balance, slot=self.slot)
             print("Calling balance_updated_cb")
             if self.balance_updated_cb:
                 self.balance_updated_cb(sats_added)
@@ -65,7 +68,7 @@ class Wallet:
             return
         print("handle_new_payment")
         self.payment_list.add(new_payment)
-        wallet_cache.save_cache(payments=self.payment_list)
+        wallet_cache.save_cache(payments=self.payment_list, slot=self.slot)
         self.payments_updated_cb()
 
     def handle_new_payments(self, new_payments):
@@ -75,7 +78,7 @@ class Wallet:
         if self.payment_list != new_payments:
             print("new list of payments")
             self.payment_list = new_payments
-            wallet_cache.save_cache(payments=self.payment_list)
+            wallet_cache.save_cache(payments=self.payment_list, slot=self.slot)
             self.payments_updated_cb()
 
     def handle_new_static_receive_code(self, new_static_receive_code):
@@ -86,7 +89,7 @@ class Wallet:
         if self.static_receive_code != new_static_receive_code:
             print("it's really a new static_receive_code")
             self.static_receive_code = new_static_receive_code
-            wallet_cache.save_cache(static_receive_code=new_static_receive_code)
+            wallet_cache.save_cache(static_receive_code=new_static_receive_code, slot=self.slot)
             if self.static_receive_code_updated_cb:
                 self.static_receive_code_updated_cb()
         else:
