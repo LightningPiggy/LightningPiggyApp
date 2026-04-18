@@ -526,6 +526,12 @@ class DisplayWallet(Activity):
         # Ensure the app's effective theme (local override or OS) is applied.
         # This never writes to OS prefs — see _apply_displaywallet_theme.
         _apply_displaywallet_theme(self.prefs)
+        # Re-apply theme-dependent styles (screen bg, QR colors) right away —
+        # onCreate set these based on is_light_mode at construction time, before
+        # our app-local override had a chance to flip it. On first launch after
+        # a theme override is active, the onCreate bg colour is wrong; this
+        # corrects it before the splash even runs.
+        self._apply_qr_theme()
         cm = ConnectivityManager.get()
         cm.register_callback(self.network_changed)
         if not self.splash_shown:
@@ -536,9 +542,6 @@ class DisplayWallet(Activity):
         else:
             # Returning from settings or other activity
             self._update_hero_image()
-            # Re-apply theme-dependent styles every time we return — the user
-            # may have toggled Light/Dark in the Customise settings.
-            self._apply_qr_theme()
             if self.wallet and self.wallet.is_running():
                 # Wallet already running — just redisplay, no re-fetch
                 if hasattr(self, '_last_balance'):
