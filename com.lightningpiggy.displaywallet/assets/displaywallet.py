@@ -456,6 +456,9 @@ class DisplayWallet(Activity):
         self.welcome_container.set_flex_align(lv.FLEX_ALIGN.START, lv.FLEX_ALIGN.CENTER, lv.FLEX_ALIGN.CENTER)
         self.welcome_container.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
         self.welcome_container.add_flag(lv.obj.FLAG.HIDDEN)
+        # Opaque welcome screen bg follows the theme (pure black in dark mode,
+        # pure white in light) — otherwise LVGL's default dark-grey shows through.
+        _apply_screen_theme(self.welcome_container)
 
         welcome_title = lv.label(self.welcome_container)
         welcome_title.set_text("Lightning Piggy")
@@ -521,8 +524,11 @@ class DisplayWallet(Activity):
         self.splash_container = lv.obj(self.main_screen)
         self.splash_container.set_size(lv.pct(100), lv.pct(100))
         self.splash_container.set_style_border_width(0, lv.PART.MAIN)
-        # Let splash background follow the theme (don't hardcode white)
+        # Splash bg is opaque and follows the theme — pure black in dark mode,
+        # pure white in light. Without this, LVGL's default dark-grey leaks
+        # through on first boot before _apply_qr_theme has had a chance to run.
         self.splash_container.set_style_bg_opa(lv.OPA.COVER, lv.PART.MAIN)
+        _apply_screen_theme(self.splash_container)
         self.splash_container.set_flex_flow(lv.FLEX_FLOW.COLUMN)
         self.splash_container.set_flex_align(lv.FLEX_ALIGN.CENTER, lv.FLEX_ALIGN.CENTER, lv.FLEX_ALIGN.CENTER)
         self.splash_container.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
@@ -735,6 +741,13 @@ class DisplayWallet(Activity):
         # Settings-cog icon colour tracks the theme (white in dark mode, black in light).
         if hasattr(self, 'settings_icon'):
             self.settings_icon.set_style_text_color(self._icon_color(), lv.PART.MAIN)
+        # Splash + welcome containers are opaque overlays; keep their bg in sync
+        # with the screen so a theme flip while either is visible doesn't leave
+        # a stale dark-grey rectangle behind.
+        if getattr(self, 'splash_container', None) is not None:
+            _apply_screen_theme(self.splash_container)
+        if getattr(self, 'welcome_container', None) is not None:
+            _apply_screen_theme(self.welcome_container)
         # Re-render balance in case denomination setting changed
         if hasattr(self, '_last_balance'):
             self.display_balance(self._last_balance)
