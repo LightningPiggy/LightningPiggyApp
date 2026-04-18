@@ -1,6 +1,7 @@
 import lvgl as lv
+import time
 
-from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, DisplayMetrics, SharedPreferences, SettingsActivity, WidgetAnimator
+from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, DisplayMetrics, SharedPreferences, SettingsActivity, TaskManager, WidgetAnimator
 try:
     from mpos import NumberFormat
     _has_number_format = True
@@ -519,6 +520,11 @@ class DisplayWallet(Activity):
         # Initialize Confetti
         self.confetti = Confetti(main_screen, self.ICON_PATH, self.ASSET_PATH, self.confetti_duration)
 
+        # ESP32 BOOT button (GPIO0) — short press swaps active wallet (no-op if only
+        # one configured), long press opens Settings. Silently no-ops on platforms
+        # without machine.Pin (desktop build).
+        self._start_boot_button_watcher()
+
     def onResume(self, main_screen):
         super().onResume(main_screen)
         cm = ConnectivityManager.get()
@@ -569,7 +575,91 @@ class DisplayWallet(Activity):
         cm.unregister_callback(self.network_changed)
 
     def onDestroy(self, main_screen):
-        pass # would be good to cleanup lv.layer_top() of those confetti images
+        # Stop the BOOT-button watcher task (no-op if it never started).
+        self._boot_button_keep_running = False
+        # would be good to cleanup lv.layer_top() of those confetti images
+
+    # ---- ESP32 BOOT button (GPIO0) handling ----------------------------------
+
+    _BOOT_LONG_PRESS_MS = 800
+    _BOOT_DEBOUNCE_MS = 30
+
+    def _start_boot_button_watcher(self):
+        """Wire up GPIO0 (BOOT button) for short/long press detection."""
+        try:
+            from machine import Pin
+        except ImportError:
+            # Desktop build — no GPIO. Silently skip.
+            self._boot_button_keep_running = False
+            return
+        try:
+            self._boot_button_pin = Pin(0, Pin.IN, Pin.PULL_UP)
+        except Exception as e:
+            print("BOOT button: could not init GPIO0: {}".format(e))
+            self._boot_button_keep_running = False
+            return
+        self._boot_button_keep_running = True
+        TaskManager.create_task(self._boot_button_watcher_task())
+
+    async def _boot_button_watcher_task(self):
+        """Polling watcher with short/long press detection. Runs until onDestroy."""
+        pin = self._boot_button_pin
+        debounce_s = self._BOOT_DEBOUNCE_MS / 1000
+        while self._boot_button_keep_running:
+            if pin.value() == 0:  # active LOW: pressed
+                await TaskManager.sleep(debounce_s)
+                if pin.value() != 0:
+                    # bounce — released too fast
+                    continue
+                t0 = time.ticks_ms()
+                # Wait for release
+                while pin.value() == 0 and self._boot_button_keep_running:
+                    await TaskManager.sleep(0.02)
+                duration = time.ticks_diff(time.ticks_ms(), t0)
+                if duration >= self._BOOT_LONG_PRESS_MS:
+                    self._on_boot_button_long_press()
+                else:
+                    self._on_boot_button_short_press()
+            await TaskManager.sleep(0.05)
+
+    def _on_boot_button_short_press(self):
+        """Short press: switch active wallet, but only if a second wallet is configured."""
+        if not self.prefs.get_string("wallet_type_2"):
+            print("BOOT short press: no second wallet configured, ignoring")
+            return
+        current = self.prefs.get_string("active_wallet_slot", "1")
+        new_value = "2" if current == "1" else "1"
+        editor = self.prefs.edit()
+        editor.put_string("active_wallet_slot", new_value)
+        editor.commit()
+        print("BOOT short press: switching active wallet {} -> {}".format(current, new_value))
+        # UI work must run on the LVGL thread
+        lv.async_call(self._restart_active_wallet, None)
+
+    def _on_boot_button_long_press(self):
+        """Long press: open Settings (same as tapping the cog)."""
+        print("BOOT long press: opening Settings")
+        lv.async_call(lambda *args: self.settings_button_tap(None), None)
+
+    def _restart_active_wallet(self, *args):
+        """Stop current wallet, clear UI, fire network_changed to start the new one.
+
+        Mirrors the swap path in onResume — used when the swap is triggered from
+        outside the Settings round-trip (e.g. by the BOOT button).
+        """
+        if self.wallet:
+            self.wallet.stop()
+        self.wallet = None
+        self._active_wallet_key = None
+        if hasattr(self, '_last_balance'):
+            del self._last_balance
+        self.receive_qr_data = None
+        self.payments_label.set_text("")
+        self.balance_label.set_text(lv.SYMBOL.REFRESH)
+        # Picks up new slot's hero + wallet-type icon
+        self._update_hero_image()
+        cm = ConnectivityManager.get()
+        self.network_changed(cm.is_online())
 
     def network_changed(self, online):
         print("displaywallet.py network_changed, now:", "ONLINE" if online else "OFFLINE")
