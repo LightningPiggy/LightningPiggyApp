@@ -122,9 +122,11 @@ class CustomiseSettingsActivity(SettingsActivity):
         callbacks = setting.get("_callbacks") or {}
         # Theme row shows the effective mode. If the app has a local override
         # set, use that; otherwise show whatever the OS theme resolves to.
+        # (Using a literal map because MicroPython's str lacks .capitalize().)
         override = self.prefs.get_string("theme_override", "")
-        if override in ("light", "dark"):
-            theme_label = override.capitalize()
+        theme_display = {"light": "Light", "dark": "Dark"}
+        if override in theme_display:
+            theme_label = theme_display[override]
         else:
             theme_label = "Light" if AppearanceManager.is_light_mode() else "Dark"
         self.settings = [
@@ -164,7 +166,7 @@ class CustomiseSettingsActivity(SettingsActivity):
             # any chance to disturb the widget state.
             value_label = setting.get("value_label")
             if value_label:
-                value_label.set_text(new_value.capitalize())
+                value_label.set_text({"light": "Light", "dark": "Dark"}[new_value])
             # Defer theme reinit to the next LVGL tick so the current click
             # event finishes cleanly before LVGL re-themes everything. Calling
             # lv.theme_default_init() from inside an event handler causes the
@@ -403,11 +405,11 @@ class DisplayWallet(Activity):
         settings_button.set_style_border_width(0, lv.PART.MAIN)
         settings_button.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
         settings_button.add_event_cb(self.settings_button_tap,lv.EVENT.CLICKED,None)
-        settings_icon = lv.label(settings_button)
-        settings_icon.set_text(lv.SYMBOL.SETTINGS)
-        settings_icon.set_style_text_font(lv.font_montserrat_18, lv.PART.MAIN)
-        settings_icon.set_style_text_color(self._icon_color(), lv.PART.MAIN)
-        settings_icon.center()
+        self.settings_icon = lv.label(settings_button)
+        self.settings_icon.set_text(lv.SYMBOL.SETTINGS)
+        self.settings_icon.set_style_text_font(lv.font_montserrat_18, lv.PART.MAIN)
+        self.settings_icon.set_style_text_color(self._icon_color(), lv.PART.MAIN)
+        self.settings_icon.center()
         focusgroup = lv.group_get_default()
         if focusgroup:
             focusgroup.add_obj(settings_button)
@@ -696,7 +698,7 @@ class DisplayWallet(Activity):
         return (lv.color_black(), lv.color_white())
 
     def _apply_qr_theme(self):
-        """Reapply theme-dependent styles (screen bg, QR colors) when returning from settings."""
+        """Reapply theme-dependent styles (screen bg, QR colors, icon tints)."""
         # Screen background follows light/dark mode — otherwise the hardcoded
         # bg from onCreate lingers after a theme toggle.
         if AppearanceManager.is_light_mode():
@@ -709,6 +711,9 @@ class DisplayWallet(Activity):
         self.receive_qr.set_style_border_color(light, lv.PART.MAIN)
         if self.receive_qr_data:
             self.receive_qr.update(self.receive_qr_data, len(self.receive_qr_data))
+        # Settings-cog icon colour tracks the theme (white in dark mode, black in light).
+        if hasattr(self, 'settings_icon'):
+            self.settings_icon.set_style_text_color(self._icon_color(), lv.PART.MAIN)
         # Re-render balance in case denomination setting changed
         if hasattr(self, '_last_balance'):
             self.display_balance(self._last_balance)
