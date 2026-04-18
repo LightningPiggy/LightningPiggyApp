@@ -348,7 +348,7 @@ class DisplayWallet(Activity):
         self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
         self.balance_label.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
         self.balance_label.add_flag(lv.obj.FLAG.CLICKABLE)
-        self.balance_label.set_width(DisplayMetrics.pct_of_width(100-self.receive_qr_pct_of_display*1.2)) # leave a gap to the QR (matches balance_line)
+        self.balance_label.set_width(DisplayMetrics.pct_of_width(100-self.receive_qr_pct_of_display*1.1)) # leave a small gap to the QR
         self.balance_label.add_event_cb(self.balance_label_clicked_cb, lv.EVENT.CLICKED, None)
         self.receive_qr = lv.qrcode(self.main_screen)
         self.receive_qr.set_size(DisplayMetrics.pct_of_width(self.receive_qr_pct_of_display)) # bigger QR results in simpler code (less error correction?)
@@ -379,7 +379,7 @@ class DisplayWallet(Activity):
         self.payments_label.set_text("")
         self.payments_label.align_to(balance_line,lv.ALIGN.OUT_BOTTOM_LEFT, 2, 10)
         self.update_payments_label_font()
-        self.payments_label.set_width(DisplayMetrics.pct_of_width(100-self.receive_qr_pct_of_display*1.2)) # leave a gap to the QR (matches balance_line)
+        self.payments_label.set_width(DisplayMetrics.pct_of_width(100-self.receive_qr_pct_of_display*1.1)) # leave a small gap to the QR
         # Force word-wrap so payment lines that exceed the label width don't
         # bleed into the QR code area on the right.
         self.payments_label.set_long_mode(lv.label.LONG_MODE.WRAP)
