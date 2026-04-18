@@ -160,11 +160,17 @@ class CustomiseSettingsActivity(SettingsActivity):
             editor = self.prefs.edit()
             editor.put_string("theme_override", new_value)
             editor.commit()
-            # Apply immediately via the synthesised prefs (no OS disk writes)
-            _apply_displaywallet_theme(self.prefs)
+            # Update the label synchronously FIRST, before the theme reinit has
+            # any chance to disturb the widget state.
             value_label = setting.get("value_label")
             if value_label:
                 value_label.set_text(new_value.capitalize())
+            # Defer theme reinit to the next LVGL tick so the current click
+            # event finishes cleanly before LVGL re-themes everything. Calling
+            # lv.theme_default_init() from inside an event handler causes the
+            # setting row's click handlers to misbehave on subsequent taps.
+            prefs = self.prefs
+            lv.async_call(lambda *args: _apply_displaywallet_theme(prefs), None)
         else:
             super().startSettingActivity(setting)
 
