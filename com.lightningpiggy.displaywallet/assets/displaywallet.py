@@ -413,15 +413,6 @@ class DisplayWallet(Activity):
         focusgroup = lv.group_get_default()
         if focusgroup:
             focusgroup.add_obj(settings_button)
-        if False: # send button disabled for now, not implemented
-            send_button = lv.button(self.main_screen)
-            send_button.set_size(lv.pct(20), lv.pct(25))
-            send_button.align_to(settings_button, lv.ALIGN.OUT_TOP_MID, 0, -pct_of_display_height(2))
-            send_button.add_event_cb(self.send_button_tap,lv.EVENT.CLICKED,None)
-            send_label = lv.label(send_button)
-            send_label.set_text(lv.SYMBOL.UPLOAD)
-            send_label.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
-            send_label.center()
 
         # Track wallet-mode widgets so they can be hidden/shown as a group
         self.wallet_container_widgets = [balance_line, self.balance_label, self.receive_qr, self.lightning_bolt, self.chain_link, self.payments_label, self.hero_container, settings_button]
@@ -750,7 +741,11 @@ class DisplayWallet(Activity):
         self.wallet.start(self.balance_updated_cb, self.redraw_payments_cb, self.redraw_static_receive_code_cb, self.error_cb)
 
     def went_offline(self):
-        if not self.prefs.get_string("wallet_type"):
+        # Check the ACTIVE slot's wallet_type, not slot 1's: a user on slot 2
+        # with slot 1 unconfigured would otherwise see the welcome screen
+        # instead of the offline message. Mirrors the pattern in went_online.
+        _, s = self._active_slot_and_suffix()
+        if not self.prefs.get_string("wallet_type" + s):
             self.show_welcome_screen()
             return
         if self.wallet:
@@ -988,10 +983,6 @@ class DisplayWallet(Activity):
                 print(f"WARNING: {error} (keeping cached data on screen)")
             else:
                 self.payments_label.set_text(str(error))
-
-    def send_button_tap(self, event):
-        print("send_button clicked")
-        self.confetti.start() # for testing the receive animation
 
     _WALLET_TYPE_PRETTY = {
         "lnbits": "LNBits",
