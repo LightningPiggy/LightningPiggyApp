@@ -247,7 +247,10 @@ class NWCWallet(Wallet):
             # Split into pubkey and query params
             parts = nwc_url.split('?')
             pubkey = parts[0]
-            print(f"DEBUG: Extracted pubkey: {pubkey}")
+            # Pubkey is semi-public (identifies the wallet service) but
+            # logging its raw value still fingerprints the user's setup.
+            # Log only that extraction happened, not the value.
+            print("DEBUG: Extracted pubkey (content redacted)")
             # Validate pubkey (should be 64 hex characters)
             if len(pubkey) != 64 or not all(c in '0123456789abcdef' for c in pubkey):
                 raise ValueError("Invalid NWC URL: pubkey must be 64 hex characters")
@@ -256,7 +259,9 @@ class NWCWallet(Wallet):
             lud16 = None
             secret = None
             if len(parts) > 1:
-                print(f"DEBUG: Query parameters found: {parts[1]}")
+                # The query string contains `secret=…`; don't log its raw
+                # value — only that query params were found.
+                print("DEBUG: Query parameters found")
                 params = parts[1].split('&')
                 for param in params:
                     if param.startswith('relay='):
