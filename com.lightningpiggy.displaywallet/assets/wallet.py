@@ -64,7 +64,8 @@ class Wallet:
         print("handle_new_payment")
         self.payment_list.add(new_payment)
         wallet_cache.save_cache(payments=self.payment_list)
-        self.payments_updated_cb()
+        if self.payments_updated_cb:
+            self.payments_updated_cb()
 
     def handle_new_payments(self, new_payments):
         if not self.keep_running:
@@ -74,7 +75,8 @@ class Wallet:
             print("new list of payments")
             self.payment_list = new_payments
             wallet_cache.save_cache(payments=self.payment_list)
-            self.payments_updated_cb()
+            if self.payments_updated_cb:
+                self.payments_updated_cb()
 
     def handle_new_static_receive_code(self, new_static_receive_code):
         print("handle_new_static_receive_code")

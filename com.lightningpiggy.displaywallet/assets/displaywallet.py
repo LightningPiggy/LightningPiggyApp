@@ -341,15 +341,6 @@ class DisplayWallet(Activity):
         focusgroup = lv.group_get_default()
         if focusgroup:
             focusgroup.add_obj(settings_button)
-        if False: # send button disabled for now, not implemented
-            send_button = lv.button(self.main_screen)
-            send_button.set_size(lv.pct(20), lv.pct(25))
-            send_button.align_to(settings_button, lv.ALIGN.OUT_TOP_MID, 0, -pct_of_display_height(2))
-            send_button.add_event_cb(self.send_button_tap,lv.EVENT.CLICKED,None)
-            send_label = lv.label(send_button)
-            send_label.set_text(lv.SYMBOL.UPLOAD)
-            send_label.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
-            send_label.center()
 
         # Track wallet-mode widgets so they can be hidden/shown as a group
         self.wallet_container_widgets = [balance_line, self.balance_label, self.receive_qr, self.payments_label, self.hero_container, settings_button]
@@ -705,7 +696,9 @@ class DisplayWallet(Activity):
         )
     
     def redraw_payments_cb(self):
-        # this gets called from another thread (the wallet) so make sure it happens in the LVGL thread using lv.async_call():
+        # Called from the wallet's polling task. MicroPython asyncio is
+        # single-threaded and cooperative, so this runs on the same event
+        # loop as LVGL — direct widget writes are safe between awaits.
         self.payments_label.set_text(str(self.wallet.payment_list))
 
     def redraw_static_receive_code_cb(self):
@@ -730,10 +723,6 @@ class DisplayWallet(Activity):
                 print(f"WARNING: {error} (keeping cached data on screen)")
             else:
                 self.payments_label.set_text(str(error))
-
-    def send_button_tap(self, event):
-        print("send_button clicked")
-        self.confetti.start() # for testing the receive animation
 
     def settings_button_tap(self, event):
         self.destination = MainSettingsActivity  # prevent wallet.stop() in onPause
