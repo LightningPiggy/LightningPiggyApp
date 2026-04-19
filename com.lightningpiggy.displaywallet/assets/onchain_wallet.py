@@ -139,12 +139,17 @@ class OnchainWallet(Wallet):
         """Single Blockbook call populates balance, payments, and receive code."""
         url = "{}/api/v2/xpub/{}?details=txs&tokens=derived".format(
             self.blockbook_url, self.xpub)
-        print("OnchainWallet: fetching " + url)
+        # Don't log the full URL: it contains the xpub, which would leak the
+        # user's entire derivation tree (all past/future addresses) if logs
+        # are ever shared for debugging.
+        print("OnchainWallet: fetching from {}".format(self.blockbook_url))
         try:
             response_bytes = await DownloadManager.download_url(
                 url, headers={"User-Agent": self._USER_AGENT})
         except Exception as e:
-            raise RuntimeError("fetch_balance: GET {} failed: {}".format(url, e))
+            # Scrub xpub from error message for the same reason.
+            raise RuntimeError(
+                "fetch_balance: GET to {} failed: {}".format(self.blockbook_url, e))
 
         try:
             response = json.loads(response_bytes.decode("utf-8"))
