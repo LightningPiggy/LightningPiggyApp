@@ -80,14 +80,55 @@ class WalletSettingsActivity(SettingsActivity):
         _add_floating_back_button(screen, self.finish)
 
 
+class _AppThemeView:
+    """Minimal prefs-like view for AppearanceManager.init() — lets us force
+    theme_light_dark to a specific value while preserving the OS primary color,
+    without touching OS prefs on disk. Only exposes get_string() because that's
+    all AppearanceManager.init() reads."""
+    def __init__(self, theme_light_dark, primary_color):
+        self._data = {
+            "theme_light_dark": theme_light_dark,
+            "theme_primary_color": primary_color,
+        }
+
+    def get_string(self, key, default=None):
+        return self._data.get(key, default)
+
+
+def _apply_displaywallet_theme(app_prefs):
+    """Apply the effective Light/Dark theme for displaywallet.
+
+    If the app has a local `theme_override` pref ("light"/"dark"), that wins
+    and is applied via a synthesised prefs view — OS prefs on disk are NEVER
+    modified. Otherwise the OS setting is applied verbatim.
+    """
+    override = app_prefs.get_string("theme_override", "")
+    os_prefs = SharedPreferences("com.micropythonos.settings")
+    if override in ("light", "dark"):
+        primary_color = os_prefs.get_string("theme_primary_color", AppearanceManager.DEFAULT_PRIMARY_COLOR)
+        AppearanceManager.init(_AppThemeView(override, primary_color))
+    else:
+        AppearanceManager.init(os_prefs)
+
+
 class CustomiseSettingsActivity(SettingsActivity):
     """Sub-settings screen for display customisation."""
+
     def onCreate(self):
         extras = self.getIntent().extras or {}
         self.prefs = extras.get("prefs")
         # Callbacks are passed via the setting dict from the parent
         setting = extras.get("setting") or {}
         callbacks = setting.get("_callbacks") or {}
+        # Theme row shows the effective mode. If the app has a local override
+        # set, use that; otherwise show whatever the OS theme resolves to.
+        # (Using a literal map because MicroPython's str lacks .capitalize().)
+        override = self.prefs.get_string("theme_override", "")
+        theme_display = {"light": "Light", "dark": "Dark"}
+        if override in theme_display:
+            theme_label = theme_display[override]
+        else:
+            theme_label = "Light" if AppearanceManager.is_light_mode() else "Dark"
         self.settings = [
             {"title": "Balance Denomination", "key": "balance_denomination", "ui": "activity",
              "activity_class": DenominationSettingsActivity,
@@ -97,12 +138,43 @@ class CustomiseSettingsActivity(SettingsActivity):
              "ui_options": [("Lightning Piggy", "lightningpiggy"), ("Lightning Penguin", "lightningpenguin"), ("None", "none")],
              "default_value": "lightningpiggy",
              "changed_callback": callbacks.get("hero_image")},
+            {"title": "Theme", "key": "theme_override", "activity_class": True,
+             "placeholder": theme_label},
         ]
         screen = lv.obj()
         screen.set_style_pad_all(DisplayMetrics.pct_of_width(2), lv.PART.MAIN)
         screen.set_flex_flow(lv.FLEX_FLOW.COLUMN)
         screen.set_style_border_width(0, lv.PART.MAIN)
         self.setContentView(screen)
+
+    def startSettingActivity(self, setting):
+        """Inline toggle for Theme (Light ↔ Dark). Writes only to the app's own
+        prefs — OS-level theme is never modified, so other apps keep the
+        user's OS preference."""
+        if setting.get("key") == "theme_override":
+            # Determine current effective mode and flip it.
+            current_override = self.prefs.get_string("theme_override", "")
+            if current_override in ("light", "dark"):
+                currently_light = (current_override == "light")
+            else:
+                currently_light = AppearanceManager.is_light_mode()
+            new_value = "dark" if currently_light else "light"
+            editor = self.prefs.edit()
+            editor.put_string("theme_override", new_value)
+            editor.commit()
+            # Update the label synchronously FIRST, before the theme reinit has
+            # any chance to disturb the widget state.
+            value_label = setting.get("value_label")
+            if value_label:
+                value_label.set_text({"light": "Light", "dark": "Dark"}[new_value])
+            # Defer theme reinit to the next LVGL tick so the current click
+            # event finishes cleanly before LVGL re-themes everything. Calling
+            # lv.theme_default_init() from inside an event handler causes the
+            # setting row's click handlers to misbehave on subsequent taps.
+            prefs = self.prefs
+            lv.async_call(lambda *args: _apply_displaywallet_theme(prefs), None)
+        else:
+            super().startSettingActivity(setting)
 
     def onResume(self, screen):
         super().onResume(screen)
@@ -333,11 +405,11 @@ class DisplayWallet(Activity):
         settings_button.set_style_border_width(0, lv.PART.MAIN)
         settings_button.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
         settings_button.add_event_cb(self.settings_button_tap,lv.EVENT.CLICKED,None)
-        settings_icon = lv.label(settings_button)
-        settings_icon.set_text(lv.SYMBOL.SETTINGS)
-        settings_icon.set_style_text_font(lv.font_montserrat_18, lv.PART.MAIN)
-        settings_icon.set_style_text_color(self._icon_color(), lv.PART.MAIN)
-        settings_icon.center()
+        self.settings_icon = lv.label(settings_button)
+        self.settings_icon.set_text(lv.SYMBOL.SETTINGS)
+        self.settings_icon.set_style_text_font(lv.font_montserrat_18, lv.PART.MAIN)
+        self.settings_icon.set_style_text_color(self._icon_color(), lv.PART.MAIN)
+        self.settings_icon.center()
         focusgroup = lv.group_get_default()
         if focusgroup:
             focusgroup.add_obj(settings_button)
@@ -453,6 +525,15 @@ class DisplayWallet(Activity):
 
     def onResume(self, main_screen):
         super().onResume(main_screen)
+        # Ensure the app's effective theme (local override or OS) is applied.
+        # This never writes to OS prefs — see _apply_displaywallet_theme.
+        _apply_displaywallet_theme(self.prefs)
+        # Re-apply theme-dependent styles (screen bg, QR colors) right away —
+        # onCreate set these based on is_light_mode at construction time, before
+        # our app-local override had a chance to flip it. On first launch after
+        # a theme override is active, the onCreate bg colour is wrong; this
+        # corrects it before the splash even runs.
+        self._apply_qr_theme()
         cm = ConnectivityManager.get()
         cm.register_callback(self.network_changed)
         if not self.splash_shown:
@@ -471,12 +552,20 @@ class DisplayWallet(Activity):
                     self.payments_label.set_text(str(self.wallet.payment_list))
             else:
                 # Wallet not running — reconnect
-                self._apply_qr_theme()
                 self.network_changed(cm.is_online())
 
     def onPause(self, main_screen):
-        if self.wallet and self.destination not in (FullscreenQR, MainSettingsActivity):
+        leaving_app = self.destination not in (FullscreenQR, MainSettingsActivity)
+        if self.wallet and leaving_app:
             self.wallet.stop() # don't stop the wallet for fullscreen QR or settings
+        if leaving_app:
+            # Restore the OS-level theme so the launcher and other apps see the
+            # user's OS preference unmodified (our theme override only applies
+            # while displaywallet is foregrounded).
+            try:
+                AppearanceManager.init(SharedPreferences("com.micropythonos.settings"))
+            except Exception as e:
+                print("displaywallet: failed to restore OS theme:", e)
         self.destination = None
         cm = ConnectivityManager.get()
         cm.unregister_callback(self.network_changed)
@@ -609,13 +698,22 @@ class DisplayWallet(Activity):
         return (lv.color_black(), lv.color_white())
 
     def _apply_qr_theme(self):
-        """Reapply QR colors and symbol when returning from settings."""
+        """Reapply theme-dependent styles (screen bg, QR colors, icon tints)."""
+        # Screen background follows light/dark mode — otherwise the hardcoded
+        # bg from onCreate lingers after a theme toggle.
+        if AppearanceManager.is_light_mode():
+            self.main_screen.set_style_bg_color(lv.color_white(), lv.PART.MAIN)
+        else:
+            self.main_screen.set_style_bg_color(lv.color_hex(0x15171A), lv.PART.MAIN)
         dark, light = self._qr_colors()
         self.receive_qr.set_dark_color(dark)
         self.receive_qr.set_light_color(light)
         self.receive_qr.set_style_border_color(light, lv.PART.MAIN)
         if self.receive_qr_data:
             self.receive_qr.update(self.receive_qr_data, len(self.receive_qr_data))
+        # Settings-cog icon colour tracks the theme (white in dark mode, black in light).
+        if hasattr(self, 'settings_icon'):
+            self.settings_icon.set_style_text_color(self._icon_color(), lv.PART.MAIN)
         # Re-render balance in case denomination setting changed
         if hasattr(self, '_last_balance'):
             self.display_balance(self._last_balance)
