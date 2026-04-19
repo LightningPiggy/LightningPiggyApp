@@ -1,3 +1,9 @@
+0.3.0
+=====
+- Remove dead send_button code (pre-multi-wallet placeholder that never shipped) and its orphan tap handler
+- Guard the payments_updated_cb callback against a missing assignment (consistency with the peer callbacks)
+- Correct a misleading comment that claimed wallet callbacks run "on another thread" — they actually run on the same event loop as LVGL via TaskManager.create_task
+
 0.2.6
 =====
 - Use native ₿ font glyph for balance and transaction amounts (replaces PNG images)
