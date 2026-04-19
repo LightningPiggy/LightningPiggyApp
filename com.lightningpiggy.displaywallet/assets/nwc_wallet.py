@@ -226,7 +226,9 @@ class NWCWallet(Wallet):
 
     def parse_nwc_url(self, nwc_url):
         """Parse Nostr Wallet Connect URL to extract pubkey, relays, secret, and lud16."""
-        print(f"DEBUG: Starting to parse NWC URL: {nwc_url}")
+        # Don't log the raw URL — the query string contains the secret, which
+        # authorises spending. Log only state transitions, not content.
+        print("DEBUG: Starting to parse NWC URL")
         try:
             # Remove 'nostr+walletconnect://' or 'nwc:' prefix
             if nwc_url.startswith('nostr+walletconnect://'):
@@ -238,10 +240,10 @@ class NWCWallet(Wallet):
             else:
                 print(f"DEBUG: No recognized prefix found in URL")
                 raise ValueError("Invalid NWC URL: missing 'nostr+walletconnect://' or 'nwc:' prefix")
-            print(f"DEBUG: URL after prefix removal: {nwc_url}")
+            # (URL after prefix removal is not logged — still contains secret.)
             # urldecode because the relay might have %3A%2F%2F etc
             nwc_url = urldecode(nwc_url)
-            print(f"after urldecode: {nwc_url}")
+            # (urldecoded URL also not logged — still contains secret.)
             # Split into pubkey and query params
             parts = nwc_url.split('?')
             pubkey = parts[0]
@@ -263,7 +265,8 @@ class NWCWallet(Wallet):
                         relays.append(relay)
                     elif param.startswith('secret='):
                         secret = param[7:]
-                        print(f"DEBUG: Extracted secret: {secret}")
+                        # Never log the secret itself — it authorises spending.
+                        print("DEBUG: Extracted secret (content redacted)")
                     elif param.startswith('lud16='):
                         lud16 = param[6:]
                         print(f"DEBUG: Extracted lud16: {lud16}")
@@ -274,9 +277,14 @@ class NWCWallet(Wallet):
             # Validate secret (should be 64 hex characters)
             if len(secret) != 64 or not all(c in '0123456789abcdef' for c in secret):
                 raise ValueError("Invalid NWC URL: secret must be 64 hex characters")
-            print(f"DEBUG: Parsed NWC data - Relay: {relays}, Pubkey: {pubkey}, Secret: {secret}, lud16: {lud16}")
+            # Relays + lud16 are not sensitive; pubkey + secret are redacted
+            # (pubkey is effectively public once paired, but still fingerprints
+            # the user's wallet provider to anyone reading logs; secret
+            # authorises spending).
+            print(f"DEBUG: Parsed NWC data - Relays: {relays}, lud16: {lud16}")
             return relays, pubkey, secret, lud16
         except Exception as e:
-            raise RuntimeError(f"Exception parsing NWC URL {nwc_url}: {e}")
+            # Don't include the NWC URL in the error — it contains the secret.
+            raise RuntimeError(f"Exception parsing NWC URL: {e}")
 
 
