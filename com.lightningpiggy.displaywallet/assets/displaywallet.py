@@ -546,6 +546,7 @@ class DisplayWallet(Activity):
             current_suffix = "_2" if current_slot == "2" else ""
             current_wallet_type = self.prefs.get_string("wallet_type" + current_suffix)
             current_key = (current_wallet_type, current_slot)
+            wallet_was_swapped = False
             if (self.wallet and self.wallet.is_running()
                     and getattr(self, '_active_wallet_key', None) != current_key):
                 print("wallet changed from {} to {} — restarting wallet".format(
@@ -559,6 +560,7 @@ class DisplayWallet(Activity):
                 self.receive_qr_data = None
                 self.payments_label.set_text("")
                 self.balance_label.set_text(lv.SYMBOL.REFRESH)
+                wallet_was_swapped = True
             if self.wallet and self.wallet.is_running():
                 # Wallet already running — just redisplay, no re-fetch
                 if hasattr(self, '_last_balance'):
@@ -566,7 +568,13 @@ class DisplayWallet(Activity):
                 if self.wallet.payment_list and len(self.wallet.payment_list) > 0:
                     self.payments_label.set_text(str(self.wallet.payment_list))
             else:
-                # Wallet not running — reconnect
+                # Wallet not running — reconnect. If we just swapped to a new
+                # slot, paint its cached balance/payments/QR first so the user
+                # sees instant feedback instead of a refresh spinner while the
+                # new wallet's first network fetch runs (onchain Blockbook is
+                # 30-60s). Mirrors the BOOT-button path in _restart_active_wallet.
+                if wallet_was_swapped:
+                    self._load_and_display_cache()
                 self._apply_qr_theme()
                 self.network_changed(cm.is_online())
 
