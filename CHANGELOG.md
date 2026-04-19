@@ -1,3 +1,9 @@
+1.0.0
+=====
+- Add on-chain wallet type: track a Bitcoin xpub/ypub/zpub via Blockbook
+- Default to Trezor's public Blockbook; support self-hosted instances (Umbrel, Start9, BTCPay Server, Sparrow Server) via a configurable URL for privacy
+- Receive QR shows an unused derived address as a bitcoin: URI
+
 0.2.6
 =====
 - Use native ₿ font glyph for balance and transaction amounts (replaces PNG images)

@@ -17,6 +17,7 @@ import wallet_cache
 # This prevents ImportError when switching wallet types after the app has started
 from lnbits_wallet import LNBitsWallet
 from nwc_wallet import NWCWallet
+from onchain_wallet import OnchainWallet
 
 
 def _add_floating_back_button(screen, finish_callback):
@@ -47,6 +48,8 @@ def _should_show_wallet_setting(setting):
         return False
     if wallet_type != "nwc" and setting["key"].startswith("nwc_"):
         return False
+    if wallet_type != "onchain" and setting["key"].startswith("onchain_"):
+        return False
     return True
 
 
@@ -57,7 +60,7 @@ class WalletSettingsActivity(SettingsActivity):
         self.prefs = extras.get("prefs")
         self.settings = [
             {"title": "Wallet Type", "key": "wallet_type", "ui": "radiobuttons",
-             "ui_options": [("LNBits", "lnbits"), ("Nostr Wallet Connect", "nwc")]},
+             "ui_options": [("LNBits", "lnbits"), ("Nostr Wallet Connect", "nwc"), ("On-chain (xpub)", "onchain")]},
             {"title": "LNBits URL", "key": "lnbits_url",
              "placeholder": "https://demo.lnpiggy.com", "should_show": _should_show_wallet_setting},
             {"title": "LNBits Read Key", "key": "lnbits_readkey",
@@ -68,6 +71,11 @@ class WalletSettingsActivity(SettingsActivity):
              "placeholder": "nostr+walletconnect://69effe7b...", "should_show": _should_show_wallet_setting},
             {"title": "Optional LN Address", "key": "nwc_static_receive_code",
              "placeholder": "Optional if present in NWC URL.", "should_show": _should_show_wallet_setting},
+            {"title": "xpub / ypub / zpub", "key": "onchain_xpub",
+             "placeholder": "zpub6rF...", "should_show": _should_show_wallet_setting},
+            {"title": "xpub endpoint", "key": "onchain_blockbook_url",
+             "placeholder": "https://btc1.trezor.io", "default_value": "https://btc1.trezor.io",
+             "should_show": _should_show_wallet_setting},
         ]
         screen = lv.obj()
         screen.set_style_pad_all(DisplayMetrics.pct_of_width(2), lv.PART.MAIN)
@@ -280,6 +288,12 @@ class DisplayWallet(Activity):
 
     def onCreate(self):
         self.prefs = SharedPreferences("com.lightningpiggy.displaywallet")
+        # Seed the on-chain xpub endpoint with the default so it shows in the
+        # settings list and pre-populates the editor when the user taps it.
+        if not self.prefs.get_string("onchain_blockbook_url"):
+            editor = self.prefs.edit()
+            editor.put_string("onchain_blockbook_url", OnchainWallet.DEFAULT_BLOCKBOOK_URL)
+            editor.commit()
         self.main_screen = lv.obj()
         if not AppearanceManager.is_light_mode():
             self.main_screen.set_style_bg_color(lv.color_hex(0x15171A), lv.PART.MAIN)
@@ -463,6 +477,22 @@ class DisplayWallet(Activity):
         else:
             # Returning from settings or other activity
             self._update_hero_image()
+            # If the user changed wallet_type in Settings, stop the old wallet
+            # and reconnect with the new one so we don't show stale data.
+            current_wallet_type = self.prefs.get_string("wallet_type")
+            if (self.wallet and self.wallet.is_running()
+                    and getattr(self, '_active_wallet_type', None) != current_wallet_type):
+                print("wallet_type changed from {} to {} — restarting wallet".format(
+                    getattr(self, '_active_wallet_type', None), current_wallet_type))
+                self.wallet.stop()
+                self.wallet = None
+                self._active_wallet_type = None
+                # Clear stale UI so the previous wallet's data doesn't linger
+                if hasattr(self, '_last_balance'):
+                    del self._last_balance
+                self.receive_qr_data = None
+                self.payments_label.set_text("")
+                self.balance_label.set_text(lv.SYMBOL.REFRESH)
             if self.wallet and self.wallet.is_running():
                 # Wallet already running — just redisplay, no re-fetch
                 if hasattr(self, '_last_balance'):
@@ -516,9 +546,23 @@ class DisplayWallet(Activity):
             except Exception as e:
                 self.error_cb(f"Couldn't initialize NWC Wallet because: {e}")
                 return
+        elif wallet_type == "onchain":
+            try:
+                blockbook_url = self.prefs.get_string("onchain_blockbook_url") or None
+                self.wallet = OnchainWallet(
+                    self.prefs.get_string("onchain_xpub"),
+                    blockbook_url=blockbook_url,
+                )
+                self.wallet.static_receive_code = self.prefs.get_string("onchain_static_receive_code")
+                self.redraw_static_receive_code_cb()
+            except Exception as e:
+                self.error_cb(f"Couldn't initialize On-chain wallet because: {e}")
+                return
         else:
             self.error_cb(f"No or unsupported wallet type configured: '{wallet_type}'")
             return
+        # Remember which wallet_type we just activated so onResume can detect changes.
+        self._active_wallet_type = wallet_type
         if not (hasattr(self, '_last_balance') and self._last_balance):
             self.balance_label.set_text(lv.SYMBOL.REFRESH)
             self.payments_label.set_text(f"\nConnecting to {wallet_type} backend.\n\nIf this takes too long, it might be down or something's wrong with the settings.")
@@ -715,6 +759,8 @@ class DisplayWallet(Activity):
             self.receive_qr_data = self.prefs.get_string("nwc_static_receive_code")
         elif wallet_type == "lnbits":
             self.receive_qr_data = self.prefs.get_string("lnbits_static_receive_code")
+        elif wallet_type == "onchain":
+            self.receive_qr_data = self.prefs.get_string("onchain_static_receive_code")
         # otherwise, see if the wallet has a static receive code:
         if not self.receive_qr_data:
             self.receive_qr_data = self.wallet.static_receive_code
