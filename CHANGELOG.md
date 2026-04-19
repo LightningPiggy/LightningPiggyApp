@@ -1,6 +1,7 @@
 0.3.0
 =====
 - Light/Dark theme toggle in Customise settings — app-local override that doesn't touch the OS-level theme; other apps and the launcher keep the user's OS preference
+- Dark mode uses pure black (#000) for the main display, settings screens, and the fullscreen QR view (previously a dark charcoal); keeps all surfaces consistent with the QR code backdrop
 
 0.2.6
 =====

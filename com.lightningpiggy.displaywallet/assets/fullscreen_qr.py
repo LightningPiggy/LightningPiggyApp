@@ -10,13 +10,20 @@ class FullscreenQR(Activity):
         qr_screen = lv.obj()
         qr_screen.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
         qr_screen.set_scroll_dir(lv.DIR.NONE)
+        # Explicit screen bg — otherwise LVGL's default dark-theme charcoal
+        # shows around the QR instead of matching the main display's pure
+        # black / pure white.
+        if AppearanceManager.is_light_mode():
+            qr_screen.set_style_bg_color(lv.color_white(), lv.PART.MAIN)
+        else:
+            qr_screen.set_style_bg_color(lv.color_black(), lv.PART.MAIN)
         qr_screen.add_event_cb(lambda e: self.finish(),lv.EVENT.CLICKED,None)
         big_receive_qr = lv.qrcode(qr_screen)
         big_receive_qr.set_size(round(DisplayMetrics.min_dimension()*0.9))
         if not AppearanceManager.is_light_mode():
             big_receive_qr.set_dark_color(lv.color_white())
-            big_receive_qr.set_light_color(lv.color_hex(0x15171A))
-            border_color = lv.color_hex(0x15171A)
+            big_receive_qr.set_light_color(lv.color_black())
+            border_color = lv.color_black()
         else:
             big_receive_qr.set_dark_color(lv.color_black())
             big_receive_qr.set_light_color(lv.color_white())

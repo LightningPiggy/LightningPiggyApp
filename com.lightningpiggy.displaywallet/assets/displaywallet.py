@@ -19,8 +19,22 @@ from lnbits_wallet import LNBitsWallet
 from nwc_wallet import NWCWallet
 
 
+def _apply_screen_theme(screen):
+    """Force an explicit screen bg that matches the app's main display colour —
+    pure black in dark mode, pure white in light mode. Must set BOTH directions:
+    once the explicit style is set it overrides LVGL's default-theme bg, so a
+    dark→light toggle would leave a lingering black bg if we only set black."""
+    if AppearanceManager.is_light_mode():
+        screen.set_style_bg_color(lv.color_white(), lv.PART.MAIN)
+    else:
+        screen.set_style_bg_color(lv.color_black(), lv.PART.MAIN)
+
+
 def _add_floating_back_button(screen, finish_callback):
-    """Add a floating back-to-display button at bottom-right of a settings screen."""
+    """Add a floating back-to-display button at bottom-right of a settings screen.
+    Also tints the screen bg to match the active theme (pure black in dark mode,
+    pure white in light mode) for consistency with the main wallet display."""
+    _apply_screen_theme(screen)
     back_btn = lv.obj(screen)
     back_btn.set_size(50, 50)
     back_btn.align(lv.ALIGN.BOTTOM_RIGHT, 0, 0)
@@ -171,8 +185,14 @@ class CustomiseSettingsActivity(SettingsActivity):
             # event finishes cleanly before LVGL re-themes everything. Calling
             # lv.theme_default_init() from inside an event handler causes the
             # setting row's click handlers to misbehave on subsequent taps.
+            # Also re-tint the active screen's bg — the explicit style set by
+            # _apply_screen_theme doesn't change automatically when the theme
+            # reinits, so a dark→light flip would leave the old bg behind.
             prefs = self.prefs
-            lv.async_call(lambda *args: _apply_displaywallet_theme(prefs), None)
+            def _retheme(*args):
+                _apply_displaywallet_theme(prefs)
+                _apply_screen_theme(lv.screen_active())
+            lv.async_call(_retheme, None)
         else:
             super().startSettingActivity(setting)
 
@@ -223,6 +243,7 @@ class DenominationSettingsActivity(Activity):
         screen.set_style_pad_all(DisplayMetrics.pct_of_width(2), lv.PART.MAIN)
         screen.set_flex_flow(lv.FLEX_FLOW.COLUMN)
         screen.set_style_border_width(0, lv.PART.MAIN)
+        _apply_screen_theme(screen)
 
         title = lv.label(screen)
         title.set_text("Balance Denomination")
@@ -354,7 +375,7 @@ class DisplayWallet(Activity):
         self.prefs = SharedPreferences("com.lightningpiggy.displaywallet")
         self.main_screen = lv.obj()
         if not AppearanceManager.is_light_mode():
-            self.main_screen.set_style_bg_color(lv.color_hex(0x15171A), lv.PART.MAIN)
+            self.main_screen.set_style_bg_color(lv.color_black(), lv.PART.MAIN)
         else:
             self.main_screen.set_style_bg_color(lv.color_white(), lv.PART.MAIN)
         self.main_screen.set_style_pad_all(0, lv.PART.MAIN)
@@ -435,6 +456,9 @@ class DisplayWallet(Activity):
         self.welcome_container.set_flex_align(lv.FLEX_ALIGN.START, lv.FLEX_ALIGN.CENTER, lv.FLEX_ALIGN.CENTER)
         self.welcome_container.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
         self.welcome_container.add_flag(lv.obj.FLAG.HIDDEN)
+        # Opaque welcome screen bg follows the theme (pure black in dark mode,
+        # pure white in light) — otherwise LVGL's default dark-grey shows through.
+        _apply_screen_theme(self.welcome_container)
 
         welcome_title = lv.label(self.welcome_container)
         welcome_title.set_text("Lightning Piggy")
@@ -500,8 +524,11 @@ class DisplayWallet(Activity):
         self.splash_container = lv.obj(self.main_screen)
         self.splash_container.set_size(lv.pct(100), lv.pct(100))
         self.splash_container.set_style_border_width(0, lv.PART.MAIN)
-        # Let splash background follow the theme (don't hardcode white)
+        # Splash bg is opaque and follows the theme — pure black in dark mode,
+        # pure white in light. Without this, LVGL's default dark-grey leaks
+        # through on first boot before _apply_qr_theme has had a chance to run.
         self.splash_container.set_style_bg_opa(lv.OPA.COVER, lv.PART.MAIN)
+        _apply_screen_theme(self.splash_container)
         self.splash_container.set_flex_flow(lv.FLEX_FLOW.COLUMN)
         self.splash_container.set_flex_align(lv.FLEX_ALIGN.CENTER, lv.FLEX_ALIGN.CENTER, lv.FLEX_ALIGN.CENTER)
         self.splash_container.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
@@ -694,7 +721,7 @@ class DisplayWallet(Activity):
     def _qr_colors(self):
         """Return (dark_color, light_color) tuple based on current theme."""
         if not AppearanceManager.is_light_mode():
-            return (lv.color_white(), lv.color_hex(0x15171A))
+            return (lv.color_white(), lv.color_black())
         return (lv.color_black(), lv.color_white())
 
     def _apply_qr_theme(self):
@@ -704,7 +731,7 @@ class DisplayWallet(Activity):
         if AppearanceManager.is_light_mode():
             self.main_screen.set_style_bg_color(lv.color_white(), lv.PART.MAIN)
         else:
-            self.main_screen.set_style_bg_color(lv.color_hex(0x15171A), lv.PART.MAIN)
+            self.main_screen.set_style_bg_color(lv.color_black(), lv.PART.MAIN)
         dark, light = self._qr_colors()
         self.receive_qr.set_dark_color(dark)
         self.receive_qr.set_light_color(light)
@@ -714,6 +741,13 @@ class DisplayWallet(Activity):
         # Settings-cog icon colour tracks the theme (white in dark mode, black in light).
         if hasattr(self, 'settings_icon'):
             self.settings_icon.set_style_text_color(self._icon_color(), lv.PART.MAIN)
+        # Splash + welcome containers are opaque overlays; keep their bg in sync
+        # with the screen so a theme flip while either is visible doesn't leave
+        # a stale dark-grey rectangle behind.
+        if getattr(self, 'splash_container', None) is not None:
+            _apply_screen_theme(self.splash_container)
+        if getattr(self, 'welcome_container', None) is not None:
+            _apply_screen_theme(self.welcome_container)
         # Re-render balance in case denomination setting changed
         if hasattr(self, '_last_balance'):
             self.display_balance(self._last_balance)
