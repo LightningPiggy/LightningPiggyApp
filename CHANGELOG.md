@@ -2,7 +2,7 @@
 =====
 - Support two wallets side-by-side: settings includes an "Add wallet" button, with a "Switch to …" toggle once the second wallet is configured
 - Per-wallet hero image and balance denomination — each wallet remembers its own
-- Wallet-type indicator next to the balance: yellow ⚡ for LNBits/NWC, pink chain link for on-chain
+- Wallet-type indicator next to the balance: yellow ⚡ for LNBits/NWC, chain link for on-chain
 - ESP32 BOOT button (GPIO0) shortcut: short press swaps active wallet, long press opens Settings (no-op when only one wallet is configured; silently disabled on hardware without GPIO0)
 - Per-wallet cache: switching between wallets repaints the new wallet's last-known balance, transactions and QR immediately instead of waiting for the network fetch (especially noticeable for the 30-60s on-chain Blockbook calls)
 

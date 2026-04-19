@@ -371,7 +371,7 @@ class DisplayWallet(Activity):
         self.lightning_bolt.move_background()
         self.lightning_bolt.add_flag(lv.obj.FLAG.HIDDEN)
         self.chain_link = lv.image(self.main_screen)
-        self.chain_link.set_src(f"{self.ASSET_PATH}chain_link_pink.png")
+        self.chain_link.set_src(f"{self.ASSET_PATH}chain_link.png")
         self.chain_link.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, -4, 2)
         self.chain_link.move_background()
         self.chain_link.add_flag(lv.obj.FLAG.HIDDEN)
