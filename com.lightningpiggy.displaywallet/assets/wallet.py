@@ -18,11 +18,27 @@ class Wallet:
     # teardown task is in flight and back to True when it completes.
     _cleanup_done = True
 
+    # Cache identity — subclasses set these in their __init__ so handle_new_*
+    # can tag writes to wallet_cache with the right slot + fingerprints.
+    # `slot_key` is the cache slot this wallet writes to ("lnbits", "nwc").
+    # `creds_fingerprint` guards balance + payments (URL/readkey/NWC-string).
+    # `qr_fingerprint` guards static_receive_code (adds the LN-address override).
+    slot_key = None
+    creds_fingerprint = None
+    qr_fingerprint = None
+
     # Callbacks:
     balance_updated_cb = None
     payments_updated_cb = None
     static_receive_code_updated_cb = None
     error_cb = None
+    # Fires on every successful fetch, regardless of whether the data
+    # changed. Required for the stale-data indicator — balance/payments
+    # callbacks only fire on *change*, so an otherwise-healthy wallet
+    # whose balance never moves would look indistinguishable from an
+    # offline one. DisplayWallet wires this to _note_successful_update
+    # after start() (see went_online).
+    poll_success_cb = None
 
     def __init__(self):
         self.last_known_balance = None
@@ -34,6 +50,32 @@ class Wallet:
         elif isinstance(self, NWCWallet):
             return "NWCWallet"
 
+    def notify_poll_success(self):
+        """Subclasses call this after any successful fetch (balance OR
+        payments) so the UI can distinguish a healthy-but-quiet wallet
+        from one that's failing. Also bumps the cache's last_updated
+        without writing any data field."""
+        if not self.keep_running:
+            return
+        # Refresh last_updated in the cache so offline-resume shows
+        # correct age, without rewriting balance/payments/QR.
+        self._save_cache()
+        if self.poll_success_cb:
+            self.poll_success_cb()
+
+    def _save_cache(self, **kwargs):
+        """Route handle_new_* writes through the slot API. No-op if the
+        subclass didn't set slot_key (base Wallet is never instantiated
+        directly, but the guard keeps unit tests of bare mocks safe)."""
+        if not self.slot_key:
+            return
+        wallet_cache.save_slot(
+            self.slot_key,
+            creds_fp=self.creds_fingerprint,
+            qr_fp=self.qr_fingerprint,
+            **kwargs,
+        )
+
     def handle_new_balance(self, new_balance, fetchPaymentsIfChanged=True):
         if not self.keep_running or new_balance is None:
             return
@@ -42,7 +84,7 @@ class Wallet:
         if self.last_known_balance is None:
             self.last_known_balance = new_balance
             print("First balance received")
-            wallet_cache.save_cache(balance=new_balance)
+            self._save_cache(balance=new_balance)
             if self.balance_updated_cb:
                 self.balance_updated_cb(0)
             # optional: fetch payments once on initial connect
@@ -54,7 +96,7 @@ class Wallet:
         if new_balance != self.last_known_balance:
             print("Balance changed!")
             self.last_known_balance = new_balance
-            wallet_cache.save_cache(balance=new_balance)
+            self._save_cache(balance=new_balance)
             print("Calling balance_updated_cb")
             if self.balance_updated_cb:
                 self.balance_updated_cb(sats_added)
@@ -68,7 +110,7 @@ class Wallet:
             return
         print("handle_new_payment")
         self.payment_list.add(new_payment)
-        wallet_cache.save_cache(payments=self.payment_list)
+        self._save_cache(payments=self.payment_list)
         if self.payments_updated_cb:
             self.payments_updated_cb()
 
@@ -79,7 +121,7 @@ class Wallet:
         if self.payment_list != new_payments:
             print("new list of payments")
             self.payment_list = new_payments
-            wallet_cache.save_cache(payments=self.payment_list)
+            self._save_cache(payments=self.payment_list)
             if self.payments_updated_cb:
                 self.payments_updated_cb()
 
@@ -91,7 +133,7 @@ class Wallet:
         if self.static_receive_code != new_static_receive_code:
             print("it's really a new static_receive_code")
             self.static_receive_code = new_static_receive_code
-            wallet_cache.save_cache(static_receive_code=new_static_receive_code)
+            self._save_cache(static_receive_code=new_static_receive_code)
             if self.static_receive_code_updated_cb:
                 self.static_receive_code_updated_cb()
         else:

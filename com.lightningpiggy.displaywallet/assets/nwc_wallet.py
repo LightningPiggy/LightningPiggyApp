@@ -15,10 +15,29 @@ from wallet import Wallet
 from payment import Payment
 from unique_sorted_list import UniqueSortedList
 
+# TEMPORARY DIAGNOSTIC — monkey-patch nostr.relay.Relay._on_error to include
+# the exception detail + URL in its log output. The upstream library only
+# prints a bare "relay.py got error" (fixed in micropython-nostr PR #1 but
+# that's not yet shipping in a MicroPythonOS release). We patch it at
+# runtime here so a failing NWC connect surfaces the actual cause in logs.
+# Remove this block once the upstream fix is in the frozen nostr module.
+try:
+    import nostr.relay as _nostr_relay
+    _orig_relay_on_error = _nostr_relay.Relay._on_error
+    def _patched_relay_on_error(self, class_obj, error):
+        try:
+            print("relay.py got error for {}: {!r}".format(self.url, error))
+        except Exception:
+            pass
+        return _orig_relay_on_error(self, class_obj, error)
+    _nostr_relay.Relay._on_error = _patched_relay_on_error
+except Exception as _e:
+    print("Failed to patch Relay._on_error for diagnostics:", _e)
+
 class NWCWallet(Wallet):
 
     PAYMENTS_TO_SHOW = 6
-    PERIODIC_FETCH_BALANCE_SECONDS = 60 # seconds
+    PERIODIC_FETCH_BALANCE_SECONDS = 120 # seconds — NWC pushes cover real-time payments, this poll is a heartbeat / silent-disconnect check
     
     relays = []
     secret = None
@@ -33,6 +52,9 @@ class NWCWallet(Wallet):
         self.nwc_url = nwc_url
         if not nwc_url:
             raise ValueError('NWC URL is not set.')
+        # Cache slot identity — fingerprints are stamped on by DisplayWallet
+        # after construction (they depend on prefs, not just wallet state).
+        self.slot_key = "nwc"
         self.connected = False
         self.relays, self.wallet_pubkey, self.secret, self.lud16 = self.parse_nwc_url(self.nwc_url)
         if not self.relays:
@@ -97,10 +119,17 @@ class NWCWallet(Wallet):
         await self.relay_manager.open_connections({"cert_reqs": ssl.CERT_NONE})
         self.connected = False
         nrconnected = 0
-        for _ in range(100):
+        # Up to 30 s wait. The first connect attempt can fail fast
+        # (ECONNABORTED during a WiFi blip), then the relay's own
+        # auto-reconnect (3 s back-off + fresh TLS handshake) needs ~15 s
+        # before on_open actually fires. A 10 s wait here used to time
+        # out right before the successful reconnect, causing the wallet
+        # task to exit while the websocket quietly came up behind it —
+        # leaving the UI with cached data and no further updates until
+        # the next app relaunch.
+        for _ in range(300):
             await TaskManager.sleep(0.1)
             nrconnected = self.relay_manager.connected_or_errored_relays()
-            #print(f"Waiting for relay connections, currently: {nrconnected}/{len(self.relays)}")
             if nrconnected == len(self.relays) or not self.keep_running:
                 break
         if nrconnected == 0:
@@ -169,6 +198,11 @@ class NWCWallet(Wallet):
                             new_balance = round(int(result["balance"]) / 1000)
                             print(f"Got balance: {new_balance}")
                             self.handle_new_balance(new_balance)
+                            # Signal "we got a response" regardless of whether
+                            # the balance actually changed — without this the
+                            # stale-data indicator never resets when balance
+                            # is unchanged across polls.
+                            self.notify_poll_success()
                         elif result.get("transactions") is not None:
                             print("Response contains transactions!")
                             new_payment_list = UniqueSortedList()

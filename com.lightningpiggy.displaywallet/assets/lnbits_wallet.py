@@ -11,7 +11,7 @@ from unique_sorted_list import UniqueSortedList
 class LNBitsWallet(Wallet):
 
     PAYMENTS_TO_SHOW = 6
-    PERIODIC_FETCH_BALANCE_SECONDS = 60 # seconds
+    PERIODIC_FETCH_BALANCE_SECONDS = 120 # seconds — LNBits websocket pushes cover real-time payments, this poll is a heartbeat / silent-disconnect check
 
     ws = None
 
@@ -26,6 +26,9 @@ class LNBitsWallet(Wallet):
             raise ValueError('LNBits Read Key is not set.')
         self.lnbits_url = lnbits_url.rstrip('/')
         self.lnbits_readkey = lnbits_readkey
+        # Cache slot identity — fingerprints are stamped on by DisplayWallet
+        # after construction (they depend on prefs, not just wallet state).
+        self.slot_key = "lnbits"
 
     def stop(self):
         """Stop the wallet AND eagerly close the payment-notification
@@ -146,6 +149,11 @@ class LNBitsWallet(Wallet):
                 print(f"balance_msat: {balance_msat}")
                 new_balance = round(balance_msat / 1000)
                 self.handle_new_balance(new_balance)
+                # Signal "we polled successfully" regardless of whether the
+                # balance actually changed. Without this the stale-data
+                # indicator would never reset on a healthy-but-quiet wallet
+                # (balance unchanged = no balance_updated_cb = no UI reset).
+                self.notify_poll_success()
             else:
                 error = balance_reply.get("detail")
                 if error:
