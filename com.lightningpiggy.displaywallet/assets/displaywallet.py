@@ -1,6 +1,6 @@
 import lvgl as lv
 
-from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, DisplayMetrics, SharedPreferences, SettingsActivity, WidgetAnimator
+from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, DisplayMetrics, SharedPreferences, SettingsActivity, TaskManager, WidgetAnimator
 try:
     from mpos import NumberFormat
     _has_number_format = True
@@ -434,15 +434,6 @@ class DisplayWallet(Activity):
         focusgroup = lv.group_get_default()
         if focusgroup:
             focusgroup.add_obj(settings_button)
-        if False: # send button disabled for now, not implemented
-            send_button = lv.button(self.main_screen)
-            send_button.set_size(lv.pct(20), lv.pct(25))
-            send_button.align_to(settings_button, lv.ALIGN.OUT_TOP_MID, 0, -pct_of_display_height(2))
-            send_button.add_event_cb(self.send_button_tap,lv.EVENT.CLICKED,None)
-            send_label = lv.label(send_button)
-            send_label.set_text(lv.SYMBOL.UPLOAD)
-            send_label.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
-            send_label.center()
 
         # Track wallet-mode widgets so they can be hidden/shown as a group
         self.wallet_container_widgets = [balance_line, self.balance_label, self.receive_qr, self.payments_label, self.hero_container, settings_button]
@@ -555,6 +546,50 @@ class DisplayWallet(Activity):
         # Ensure the app's effective theme (local override or OS) is applied.
         # This never writes to OS prefs — see _apply_displaywallet_theme.
         _apply_displaywallet_theme(self.prefs)
+        # Detect wallet config change EARLY (before _apply_qr_theme and before
+        # the else branch below) so we can wipe the display state before any
+        # code path repaints the previous wallet's data onto the now-visible
+        # screen. In particular: the 15-second balance WidgetAnimator started
+        # by balance_updated_cb keeps calling display_balance on each tick —
+        # without lv.anim_delete() the animator overwrites our SYMBOL.REFRESH
+        # for up to 15 seconds, which is exactly the "old balance lingers for
+        # seconds after wallet switch" symptom.
+        config_changed_old_wallet = None
+        if self.splash_shown and self.wallet and self.wallet.is_running():
+            _current_key = self._wallet_config_key()
+            if getattr(self, '_active_wallet_key', None) != _current_key:
+                # Log only the wallet_type transition, NOT the full key tuples —
+                # those contain URLs/readkeys/NWC secrets which would leak to
+                # the serial console.
+                _prev_type = (self._active_wallet_key[0]
+                              if getattr(self, '_active_wallet_key', None) else None)
+                _new_type = _current_key[0] if _current_key else None
+                print("wallet config changed ({} -> {}) — restarting wallet".format(
+                    _prev_type, _new_type))
+                config_changed_old_wallet = self.wallet
+                config_changed_old_wallet.stop()
+                self.wallet = None
+                self._active_wallet_key = None
+                # Drop cached display state so _apply_qr_theme's tail (which
+                # re-renders self._last_balance and QR data) is a no-op.
+                if hasattr(self, '_last_balance'):
+                    del self._last_balance
+                self.receive_qr_data = None
+                # Cancel any in-flight balance animation on balance_label —
+                # otherwise WidgetAnimator.change_widget keeps ticking
+                # display_balance for the remainder of its duration (15s by
+                # default), continuously resetting the label to the PREVIOUS
+                # wallet's balance and overwriting our SYMBOL.REFRESH below.
+                lv.anim_delete(self.balance_label, None)
+                self.balance_label.set_text(lv.SYMBOL.REFRESH)
+                self.payments_label.set_text("")
+                # Hide the QR widget until the new wallet emits a static
+                # receive code. redraw_static_receive_code_cb un-hides it
+                # when it has fresh data to draw. show_wallet_screen()
+                # below specifically skips un-hiding receive_qr when
+                # self.receive_qr_data is empty, so this hide persists
+                # across went_online → show_wallet_screen.
+                self.receive_qr.add_flag(lv.obj.FLAG.HIDDEN)
         # Re-apply theme-dependent styles (screen bg, QR colors) right away —
         # onCreate set these based on is_light_mode at construction time, before
         # our app-local override had a chance to flip it. On first launch after
@@ -571,6 +606,14 @@ class DisplayWallet(Activity):
         else:
             # Returning from settings or other activity
             self._update_hero_image()
+            if config_changed_old_wallet is not None:
+                # Starting the new wallet synchronously now would race against
+                # the old wallet's async socket teardown — on ESP32 that
+                # exhausts the TCP pool and the new connection fails. Defer
+                # the restart until old_wallet.is_stopped() reports cleanup
+                # is fully done.
+                TaskManager.create_task(self._await_old_and_reconnect(config_changed_old_wallet))
+                return
             if self.wallet and self.wallet.is_running():
                 # Wallet already running — just redisplay, no re-fetch
                 if hasattr(self, '_last_balance'):
@@ -580,6 +623,36 @@ class DisplayWallet(Activity):
             else:
                 # Wallet not running — reconnect
                 self.network_changed(cm.is_online())
+
+    async def _await_old_and_reconnect(self, old_wallet):
+        """Poll the old wallet's is_stopped() flag, then start the new one.
+
+        Keeps a cap on the wait so a stuck teardown (e.g. a relay that
+        won't close cleanly) doesn't lock out a reconnect. 5s is enough
+        for a clean NWC relay close (WebSocket CLOSE + TCP FIN handshake);
+        past that we proceed and hope the sockets are released by the
+        time the new wallet actually opens connections."""
+        for _ in range(50):
+            if old_wallet.is_stopped():
+                break
+            await TaskManager.sleep(0.1)
+        else:
+            print("WARN: old wallet didn't fully stop in 5s; reconnecting anyway")
+        cm = ConnectivityManager.get()
+        self.network_changed(cm.is_online())
+
+    def _wallet_config_key(self):
+        """Tuple that uniquely identifies the current wallet config. Changes
+        to any of these prefs invalidate the running wallet — onResume uses
+        this to detect when the user changed settings and restart."""
+        wt = self.prefs.get_string("wallet_type")
+        if wt == "lnbits":
+            return (wt,
+                    self.prefs.get_string("lnbits_url"),
+                    self.prefs.get_string("lnbits_readkey"))
+        if wt == "nwc":
+            return (wt, self.prefs.get_string("nwc_url"))
+        return (wt,)
 
     def onPause(self, main_screen):
         leaving_app = self.destination not in (FullscreenQR, MainSettingsActivity)
@@ -635,6 +708,8 @@ class DisplayWallet(Activity):
         else:
             self.error_cb(f"No or unsupported wallet type configured: '{wallet_type}'")
             return
+        # Stamp the config key so onResume can detect future changes.
+        self._active_wallet_key = self._wallet_config_key()
         if not (hasattr(self, '_last_balance') and self._last_balance):
             self.balance_label.set_text(lv.SYMBOL.REFRESH)
             self.payments_label.set_text(f"\nConnecting to {wallet_type} backend.\n\nIf this takes too long, it might be down or something's wrong with the settings.")
@@ -662,34 +737,31 @@ class DisplayWallet(Activity):
         """Hide welcome container, show wallet widgets."""
         self.welcome_container.add_flag(lv.obj.FLAG.HIDDEN)
         for w in self.wallet_container_widgets:
+            # Leave the receive-QR hidden if we don't yet have data for it —
+            # otherwise a wallet restart (NWC → LNBits or vice versa) would
+            # un-hide the QR widget with the PREVIOUS wallet's pixels still
+            # rendered, showing the old QR for however long it takes the new
+            # wallet to emit its own static_receive_code. redraw_static_receive_code_cb
+            # will un-hide it when fresh data arrives.
+            if w is self.receive_qr and not self.receive_qr_data:
+                continue
             w.remove_flag(lv.obj.FLAG.HIDDEN)
 
     def _splash_done(self, timer):
         """Called after splash duration. Fade out splash and show appropriate screen."""
         WidgetAnimator.hide_widget(self.splash_container, duration=500)
-        # Show cached data immediately while waiting for network
-        self._load_and_display_cache()
+        # Intentionally NOT replaying the on-disk cache here: the single-
+        # slot cache on v0.3.0 isn't wallet-type-aware, so if the user
+        # switched wallet_type in Settings then rebooted, the cache would
+        # paint the PREVIOUS wallet's balance/payments on screen while
+        # the NEW wallet's receive code is pulled from prefs — a
+        # confusing mismatch ("NWC QR with LNBits balance"). Per-wallet-
+        # type caching lands with the v1 multi-slot work; until then we
+        # boot into a spinner and show only fresh data from the
+        # configured wallet's async fetch.
         cm = ConnectivityManager.get()
         self.network_changed(cm.is_online())
 
-    def _load_and_display_cache(self):
-        """Load cached wallet data and display it immediately."""
-        if not self.prefs.get_string("wallet_type"):
-            return  # no wallet configured, nothing to show
-        self.show_wallet_screen()
-        cached_balance = wallet_cache.load_cached_balance()
-        if cached_balance is not None:
-            print(f"Cache: displaying cached balance {cached_balance}")
-            self.display_balance(cached_balance)
-        cached_payments = wallet_cache.load_cached_payments()
-        if cached_payments is not None and len(cached_payments) > 0:
-            print(f"Cache: displaying {len(cached_payments)} cached payments")
-            self.payments_label.set_text(str(cached_payments))
-        cached_receive_code = wallet_cache.load_cached_static_receive_code()
-        if cached_receive_code:
-            print(f"Cache: displaying cached QR code")
-            self.receive_qr_data = cached_receive_code
-            self.receive_qr.update(cached_receive_code, len(cached_receive_code))
 
     def _icon_color(self):
         """Return icon color based on current theme."""
@@ -815,12 +887,13 @@ class DisplayWallet(Activity):
         # Mark as connected even if balance == 0
         if getattr(self.wallet, "payment_list", None) is not None:
             if len(self.wallet.payment_list) == 0:
-                # Don't overwrite cached payments with "no payments" message
-                cached = wallet_cache.load_cached_payments()
-                if cached and len(cached) > 0:
-                    self.payments_label.set_text(str(cached))
-                else:
-                    self.payments_label.set_text("Connected.\nNo payments yet.")
+                # The single-slot wallet_cache isn't wallet-type-aware on
+                # v0.3.0, so falling back to cached payments here would show
+                # the PREVIOUS wallet's transactions after a wallet-type
+                # switch. Show "Connected." instead; the current wallet's
+                # fetch_payments will populate real data shortly. Per-slot
+                # cache (which resolves this) lands with v1 multi-wallet.
+                self.payments_label.set_text("Connected.\nNo payments yet.")
             else:
                 self.payments_label.set_text(str(self.wallet.payment_list))
         else:
@@ -837,7 +910,9 @@ class DisplayWallet(Activity):
         )
     
     def redraw_payments_cb(self):
-        # this gets called from another thread (the wallet) so make sure it happens in the LVGL thread using lv.async_call():
+        # Called from the wallet's polling task. MicroPython asyncio is
+        # single-threaded and cooperative, so this runs on the same event
+        # loop as LVGL — direct widget writes are safe between awaits.
         self.payments_label.set_text(str(self.wallet.payment_list))
 
     def redraw_static_receive_code_cb(self):
@@ -854,6 +929,9 @@ class DisplayWallet(Activity):
             print("Warning: redraw_static_receive_code_cb() did not find one in the settings or the wallet, nothing to show")
             return
         self.receive_qr.update(self.receive_qr_data, len(self.receive_qr_data))
+        # Un-hide the QR widget (it's hidden during wallet-switch resets in
+        # onResume so the previous wallet's QR doesn't linger on screen).
+        self.receive_qr.remove_flag(lv.obj.FLAG.HIDDEN)
 
     def error_cb(self, error):
         if self.wallet and self.wallet.is_running():
@@ -862,10 +940,6 @@ class DisplayWallet(Activity):
                 print(f"WARNING: {error} (keeping cached data on screen)")
             else:
                 self.payments_label.set_text(str(error))
-
-    def send_button_tap(self, event):
-        print("send_button clicked")
-        self.confetti.start() # for testing the receive animation
 
     def settings_button_tap(self, event):
         self.destination = MainSettingsActivity  # prevent wallet.stop() in onPause

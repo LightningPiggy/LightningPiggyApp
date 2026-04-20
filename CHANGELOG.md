@@ -2,6 +2,10 @@
 =====
 - Light/Dark theme toggle in Customise settings — app-local override that doesn't touch the OS-level theme; other apps and the launcher keep the user's OS preference
 - Dark mode uses pure black (#000) for the main display, settings screens, and the fullscreen QR view (previously a dark charcoal); keeps all surfaces consistent with the QR code backdrop
+- Editing wallet config in Settings now actually switches the running wallet. Previous behaviour kept the old wallet polling silently; balance/transactions/QR on screen wouldn't match the edited credentials until an app restart
+- Switching wallets no longer shows stale data for a few seconds — previously the old balance (re-animated for 15 s), old transactions (from cached previous-wallet data), and old QR code (widget not hidden on swap) would linger before the new wallet's fetch completed
+- Switching wallets no longer exhausts the ESP32 TCP socket pool: `NWCWallet.stop()` and `LNBitsWallet.stop()` now eagerly close relay websockets / payment-notification websockets, and the new wallet's startup waits for the old one's sockets to release before opening its own (fixes "Could not connect to any Nostr Wallet Connect relays" on quick swaps)
+- Scrub three more secret-leak paths: the `wallet config changed` log line (leaked URLs/secret/readkey during restarts) and three `RuntimeError` messages in `LNBitsWallet.fetch_*` methods (leaked the readkey to the on-screen error label when a fetch failed)
 
 0.2.6
 =====
