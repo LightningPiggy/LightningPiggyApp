@@ -6,6 +6,10 @@
 - Switching wallets no longer shows stale data for a few seconds — previously the old balance (re-animated for 15 s), old transactions (from cached previous-wallet data), and old QR code (widget not hidden on swap) would linger before the new wallet's fetch completed
 - Switching wallets no longer exhausts the ESP32 TCP socket pool: `NWCWallet.stop()` and `LNBitsWallet.stop()` now eagerly close relay websockets / payment-notification websockets, and the new wallet's startup waits for the old one's sockets to release before opening its own (fixes "Could not connect to any Nostr Wallet Connect relays" on quick swaps)
 - Scrub three more secret-leak paths: the `wallet config changed` log line (leaked URLs/secret/readkey during restarts) and three `RuntimeError` messages in `LNBitsWallet.fetch_*` methods (leaked the readkey to the on-screen error label when a fetch failed)
+- Remove dead send_button code (pre-multi-wallet placeholder that never shipped) and its orphan tap handler
+- Guard the payments_updated_cb callback against a missing assignment (consistency with the peer callbacks)
+- Correct a misleading comment that claimed wallet callbacks run "on another thread" — they actually run on the same event loop as LVGL via TaskManager.create_task
+- Security: scrub NWC URL, secret, and pubkey from debug logs. The Nostr Wallet Connect secret authorises spending; prior builds printed it to serial/REPL during `parse_nwc_url()`, so any shared debug output exposed wallet control. Redacted eight leak points (full URL, post-prefix URL, url-decoded URL, raw query string containing `secret=`, extracted secret, extracted pubkey, parsed-summary line, and RuntimeError message).
 
 0.2.6
 =====
