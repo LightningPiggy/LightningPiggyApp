@@ -12,7 +12,12 @@ class Wallet:
 
     # Variables
     keep_running = True
-    
+    # Whether the wallet's async resources (sockets, etc.) have finished
+    # releasing. True by default because the base class holds no resources;
+    # subclasses with network state (e.g. NWCWallet) set this False while a
+    # teardown task is in flight and back to True when it completes.
+    _cleanup_done = True
+
     # Callbacks:
     balance_updated_cb = None
     payments_updated_cb = None
@@ -109,11 +114,20 @@ class Wallet:
         TaskManager.create_task(self.async_wallet_manager_task())
 
     def stop(self):
+        """Signal the wallet to stop. Subclasses with async resources should
+        override to schedule their teardown (see NWCWallet.stop)."""
         self.keep_running = False
-        # idea: do a "close connections" call here instead of waiting for polling sub-tasks to notice the change
 
     def is_running(self):
         return self.keep_running
+
+    def is_stopped(self):
+        """True once stop() has been called AND any async teardown has
+        completed (sockets released, etc.). Callers about to start a
+        replacement wallet should poll this before doing so — on ESP32 the
+        TCP socket pool is small and opening new relays before the old ones
+        fully close can fail with socket exhaustion."""
+        return (not self.keep_running) and self._cleanup_done
 
     # Decode something like:
     # {"id": "d410....6e9", "content": "zap zap emoji", "pubkey":"e9f...f50", "created_at": 1767713767, "kind": 9734, "tags":[["p","06ff...4f42"], ["amount", "21000"], ["e", "c1c9...0e92"], ["relays", "wss://relay.nostr.band"]], "sig": "48a...4fd"}

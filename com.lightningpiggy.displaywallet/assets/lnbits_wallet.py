@@ -17,6 +17,9 @@ class LNBitsWallet(Wallet):
 
     def __init__(self, lnbits_url, lnbits_readkey):
         super().__init__()
+        # Per-instance cleanup flag (base class defaults to True; we flip it
+        # during stop() while the async ws.close() is in flight).
+        self._cleanup_done = True
         if not lnbits_url:
             raise ValueError('LNBits URL is not set.')
         elif not lnbits_readkey:
@@ -24,6 +27,25 @@ class LNBitsWallet(Wallet):
         self.lnbits_url = lnbits_url.rstrip('/')
         self.lnbits_readkey = lnbits_readkey
 
+    def stop(self):
+        """Stop the wallet AND eagerly close the payment-notification
+        websocket so a quick restart (e.g. user switched wallet_type in
+        Settings → came back) doesn't race against a still-open socket.
+        The base Wallet.stop() just flips keep_running=False and relies on
+        the main loop to notice on its next 100ms sleep tick — too slow on
+        ESP32 where the TCP socket pool is small and the new wallet's
+        connections fail if the old ws is still open."""
+        super().stop()  # sets keep_running = False
+        if self.ws is not None and self._cleanup_done:
+            self._cleanup_done = False
+            TaskManager.create_task(self._close_ws())
+
+    async def _close_ws(self):
+        try:
+            await self.ws.close()
+        except Exception as e:
+            print("LNBitsWallet: error closing websocket: {}".format(e))
+        self._cleanup_done = True
 
     def parseLNBitsPayment(self, transaction):
         amount = transaction["amount"]
@@ -92,10 +114,9 @@ class LNBitsWallet(Wallet):
                 await TaskManager.sleep(0.1)
                 if not self.keep_running:
                     break
-        print("LNBitsWallet main() stopping...")
-        if self.ws:
-            print("LNBitsWallet main() closing websocket connection...")
-            await self.ws.close()
+        # Websocket is closed by stop() via _close_ws(), scheduled the
+        # moment stop() was called. No redundant close here.
+        print("LNBitsWallet main() stopping")
 
     async def fetch_balance(self):
         walleturl = self.lnbits_url + "/api/v1/wallet"
@@ -106,7 +127,10 @@ class LNBitsWallet(Wallet):
             print(f"Fetching balance with GET to {walleturl}")
             response_bytes = await DownloadManager.download_url(walleturl, headers=headers)
         except Exception as e:
-            raise RuntimeError(f"fetch_balance: GET request to {walleturl} with header 'X-Api-Key: {self.lnbits_readkey} failed: {e}")
+            # Don't include the readkey in the error — error_cb renders this
+            # string on the payments label, so a failed fetch would display
+            # the API key on-device.
+            raise RuntimeError(f"fetch_balance: GET {walleturl} failed: {e}")
         if response_bytes and self.keep_running:
             response_text = response_bytes.decode('utf-8')
             print(f"Got response text: {response_text}")
@@ -136,7 +160,8 @@ class LNBitsWallet(Wallet):
             print(f"Fetching payments with GET to {paymentsurl}")
             response_bytes = await DownloadManager.download_url(paymentsurl, headers=headers)
         except Exception as e:
-            raise RuntimeError(f"fetch_payments: GET request to {paymentsurl} with header 'X-Api-Key: {self.lnbits_readkey} failed: {e}")
+            # See fetch_balance: scrub readkey from user-visible error.
+            raise RuntimeError(f"fetch_payments: GET {paymentsurl} failed: {e}")
         if response_bytes and self.keep_running:
             response_text = response_bytes.decode('utf-8')
             #print(f"Got response text: {response_text}")
@@ -164,7 +189,8 @@ class LNBitsWallet(Wallet):
             print(f"Fetching static_receive_code with GET to {url}")
             response_bytes = await DownloadManager.download_url(url, headers=headers)
         except Exception as e:
-            raise RuntimeError(f"fetch_static_receive_code: GET request to {url} with header 'X-Api-Key: {self.lnbits_readkey} failed: {e}")
+            # See fetch_balance: scrub readkey from user-visible error.
+            raise RuntimeError(f"fetch_static_receive_code: GET {url} failed: {e}")
         if response_bytes and self.keep_running:
             response_text = response_bytes.decode('utf-8')
             print(f"Got response text: {response_text}")

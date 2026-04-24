@@ -26,6 +26,10 @@ class NWCWallet(Wallet):
 
     def __init__(self, nwc_url):
         super().__init__()
+        # Per-instance cleanup flag (base class defaults to True; we flip it
+        # during stop() while the async close_connections task is in flight).
+        self._cleanup_done = True
+        self.relay_manager = None
         self.nwc_url = nwc_url
         if not nwc_url:
             raise ValueError('NWC URL is not set.')
@@ -39,6 +43,28 @@ class NWCWallet(Wallet):
             raise ValueError('Missing "secret" in NWC URL.')
         #if not self.lud16:
         #    raise ValueError('Missing lud16 (= lightning address) in NWC URL.')
+
+    def stop(self):
+        """Stop the wallet AND eagerly close relay websockets so a quick
+        restart (e.g. user changed NWC URL in Settings → came back) doesn't
+        race against the old sockets still holding ESP32's limited TCP
+        pool. The base Wallet.stop() just flips keep_running=False and
+        relies on the main loop to notice and clean up on its next 100ms
+        sleep tick, which is too slow — the new wallet can try to open new
+        connections before the old ones close, exhausting the socket pool
+        and producing 'Could not connect to any Nostr Wallet Connect
+        relays' even when the network is fine."""
+        super().stop()  # sets keep_running = False
+        if self.relay_manager is not None and self._cleanup_done:
+            self._cleanup_done = False
+            TaskManager.create_task(self._close_relays())
+
+    async def _close_relays(self):
+        try:
+            await self.relay_manager.close_connections()
+        except Exception as e:
+            print("NWCWallet: error closing relay connections: {}".format(e))
+        self._cleanup_done = True
 
     def getCommentFromTransaction(self, transaction):
         comment = ""
@@ -109,8 +135,10 @@ class NWCWallet(Wallet):
             #print(f"checking for incoming events...")
             await TaskManager.sleep(0.1)
             if not self.keep_running:
-                print("NWCWallet: not keep_running, closing connections...")
-                await self.relay_manager.close_connections()
+                # Connections are closed by stop() via _close_relays(),
+                # which was scheduled the moment stop() was called. Just
+                # exit the loop here.
+                print("NWCWallet: not keep_running, exiting main loop")
                 break
 
             if time.time() - last_fetch_balance >= self.PERIODIC_FETCH_BALANCE_SECONDS:
@@ -248,8 +276,7 @@ class NWCWallet(Wallet):
             parts = nwc_url.split('?')
             pubkey = parts[0]
             # Pubkey is semi-public (identifies the wallet service) but
-            # logging its raw value still fingerprints the user's setup.
-            # Log only that extraction happened, not the value.
+            # sharing it is still a fingerprint. Don't log the raw value.
             print("DEBUG: Extracted pubkey (content redacted)")
             # Validate pubkey (should be 64 hex characters)
             if len(pubkey) != 64 or not all(c in '0123456789abcdef' for c in pubkey):
@@ -259,7 +286,7 @@ class NWCWallet(Wallet):
             lud16 = None
             secret = None
             if len(parts) > 1:
-                # The query string contains `secret=…`; don't log its raw
+                # The query string contains secret=...; don't log its raw
                 # value — only that query params were found.
                 print("DEBUG: Query parameters found")
                 params = parts[1].split('&')
