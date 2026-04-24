@@ -1,3 +1,7 @@
+0.2.7
+=====
+- Security: scrub NWC URL, secret, and pubkey from debug logs. The Nostr Wallet Connect secret authorises spending; prior builds printed it to serial/REPL during `parse_nwc_url()`, so any shared debug output exposed wallet control. Redacted eight leak points (full URL, post-prefix URL, url-decoded URL, raw query string containing `secret=`, extracted secret, extracted pubkey, parsed-summary line, and RuntimeError message).
+
 0.2.6
 =====
 - Use native ₿ font glyph for balance and transaction amounts (replaces PNG images)
