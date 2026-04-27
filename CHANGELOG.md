@@ -1,3 +1,7 @@
+0.3.1
+=====
+- Fix LNBits wallet silently dying after a single `fetch_static_receive_code` network error. The call sits in the main poll loop but was not guarded by a try/except like `fetch_balance` — any 5xx / timeout / DNS glitch tore the task out of its `while self.keep_running:` and no code restarted it, so the wallet appeared frozen until the user reopened the app. Now wraps the fetch the same way as the balance path, surfaces the error via `handle_error`, and continues on the next cycle
+
 0.3.0
 =====
 - Light/Dark theme toggle in Customise settings — app-local override that doesn't touch the OS-level theme; other apps and the launcher keep the user's OS preference

@@ -92,9 +92,24 @@ class LNBitsWallet(Wallet):
                 sys.print_exception(e)
                 self.handle_error(e)
             if not self.static_receive_code:
-                static_receive_code = await self.fetch_static_receive_code()
-                if static_receive_code:
-                    self.handle_new_static_receive_code(static_receive_code)
+                # Guard this fetch the same way as fetch_balance above.
+                # fetch_static_receive_code raises RuntimeError on any network
+                # error (5xx, timeout, DNS glitch) — without this try/except a
+                # single bad response tears the main poll loop out of its
+                # `while self.keep_running:` guard and the task exits. Nothing
+                # restarts it, so the wallet appears frozen until the user
+                # reopens the app (or the device reboots). Caught errors are
+                # surfaced via handle_error like the balance path; the loop
+                # then continues to the sleep tick and tries again next cycle.
+                try:
+                    static_receive_code = await self.fetch_static_receive_code()
+                    if static_receive_code:
+                        self.handle_new_static_receive_code(static_receive_code)
+                except Exception as e:
+                    print(f"WARNING: wallet_manager_thread fetch_static_receive_code got exception: {e}")
+                    import sys
+                    sys.print_exception(e)
+                    self.handle_error(e)
             if not websocket_running and self.keep_running: # after the other things, listen for incoming payments
                 websocket_running = True
                 print("Opening websocket for payment notifications...")
