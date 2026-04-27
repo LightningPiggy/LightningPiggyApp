@@ -147,6 +147,18 @@ class NWCWallet(Wallet):
                     await self.fetch_balance()
                 except Exception as e:
                     print(f"fetch_balance got exception {e}") # fetch_balance got exception 'NoneType' object isn't iterable?!
+                # Also poll list_transactions every cycle. handle_new_balance
+                # only triggers fetch_payments when the balance changes,
+                # which never happens on budgeted NWC connections (e.g.
+                # Primal/Spark, where get_balance returns the connection
+                # budget — locked at the value chosen during setup). Without
+                # this independent poll, list_transactions is fetched once
+                # on initial connect and the displayed payments list goes
+                # stale forever for that class of wallet.
+                try:
+                    await self.fetch_payments()
+                except Exception as e:
+                    print(f"fetch_payments got exception {e}")
 
             start_time = time.ticks_ms()
             if self.relay_manager.message_pool.has_events():

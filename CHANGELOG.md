@@ -1,3 +1,7 @@
+0.3.2
+=====
+- Fix payment list never refreshing on budgeted NWC connections (e.g. Primal/Spark, Alby with a spend budget). The NWC main loop only triggered `fetch_payments` when `handle_new_balance` saw the balance change — but on budgeted connections `get_balance` returns the connection's spend budget (locked at the value chosen during NWC setup), so the balance never moves and the transaction list was fetched only once on initial connect and then frozen forever. Now polls `list_transactions` every cycle alongside `fetch_balance`, so newly received payments appear within ≤120 s regardless of whether the displayed balance moves
+
 0.3.0
 =====
 - Light/Dark theme toggle in Customise settings — app-local override that doesn't touch the OS-level theme; other apps and the launcher keep the user's OS preference
