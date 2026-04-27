@@ -1,6 +1,36 @@
+import time
+
 import lvgl as lv
 
 from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, DisplayMetrics, SharedPreferences, SettingsActivity, TaskManager, WidgetAnimator
+
+# TEMPORARY DIAGNOSTIC / UX FIX — the stock mpos SettingActivity.radio_event_handler
+# lets a user click an already-selected radio button to UN-select it, saving an
+# empty string (e.g. wallet_type=""). That breaks the invariant "exactly one
+# wallet is always configured" — after save, the app falls back to the welcome
+# screen even though the user just wanted to bounce off the settings page.
+# Upstream MicroPythonOS fix is ready but not yet shipping in a firmware release;
+# we patch Relay's class method at import time here so our app enforces the
+# one-selection invariant locally. Remove once the upstream fix is in the
+# frozen firmware.
+try:
+    import mpos.ui.setting_activity as _mpos_sa
+    _orig_radio_event_handler = _mpos_sa.SettingActivity.radio_event_handler
+    def _patched_radio_event_handler(self, event):
+        target_obj = event.get_target_obj()
+        target_obj_state = target_obj.get_state()
+        checked = target_obj_state & lv.STATE.CHECKED
+        current_checkbox_index = target_obj.get_index()
+        if not checked and getattr(self, 'active_radio_index', -1) == current_checkbox_index:
+            # User clicked the already-selected option — re-check it so
+            # radio-group invariant (exactly one selected) holds.
+            print("radio: ignoring un-check of active option (radios require exactly one)")
+            target_obj.add_state(lv.STATE.CHECKED)
+            return
+        return _orig_radio_event_handler(self, event)
+    _mpos_sa.SettingActivity.radio_event_handler = _patched_radio_event_handler
+except Exception as _e:
+    print("Failed to patch SettingActivity.radio_event_handler:", _e)
 try:
     from mpos import NumberFormat
     _has_number_format = True
@@ -373,6 +403,17 @@ class DisplayWallet(Activity):
     ASSET_PATH = "M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/"
     ICON_PATH = "M:apps/com.lightningpiggy.displaywallet/res/mipmap-mdpi/"
 
+    # Stale-data indicator — if the wallet has been producing only errors
+    # (no successful balance/payments refresh) for this long, surface a
+    # coloured dot under the mascot. Two tiers so the user can tell the
+    # difference between "might be slightly behind" and "definitely old":
+    #   WARN  (orange) after 10 minutes of error streak
+    #   ERROR (red)    after 60 minutes of error streak
+    # Thresholds are deliberately generous so transient blips (WiFi hiccup,
+    # TLS retry, one failed poll) don't flash the indicator.
+    STALE_WARN_THRESHOLD_S = 600   # 10 minutes → orange
+    STALE_ERROR_THRESHOLD_S = 3600 # 60 minutes → red
+
     # activities
     fullscreenqr = FullscreenQR() # need a reference to be able to finish() it
 
@@ -423,6 +464,50 @@ class DisplayWallet(Activity):
         self.hero_image = lv.image(self.hero_container)
         self.hero_image.center()
         self._update_hero_image()
+
+        # Stale indicator — a small dot that appears beneath the mascot
+        # when the wallet has been failing to refresh. Colour tiers the
+        # severity: orange after STALE_WARN_THRESHOLD_S, red after
+        # STALE_ERROR_THRESHOLD_S. Purely a visual cue that the
+        # balance/payments currently showing may be out of date. Hidden
+        # by default; toggled by _set_stale_indicator. Positioned relative
+        # to the hero container in _update_hero_image so it follows the
+        # mascot if the hero image is changed.
+        # Parent the dot on main_screen. Earlier versions of this widget
+        # were positioned on the mascot and needed lv.layer_top() to draw
+        # over the hero image — but the current position (end of the
+        # balance underline) is in a clear area, so parent-level z-order
+        # suffices. Using main_screen also means the dot is automatically
+        # hidden when another Activity (Settings, FullscreenQR) covers this
+        # screen; lv.layer_top() is a global overlay that would leak the
+        # dot onto those screens.
+        self.stale_indicator_dot = lv.obj(self.main_screen)
+        # 8-pixel diameter circle. lv.obj has non-zero default padding that
+        # eats into the drawn area, so explicitly zero it out — without
+        # `set_style_pad_all(0)` a 10x10 widget renders as a ~2-pixel sliver.
+        self.stale_indicator_dot.set_size(8, 8)
+        self.stale_indicator_dot.set_style_pad_all(0, lv.PART.MAIN)
+        self.stale_indicator_dot.set_style_border_width(0, lv.PART.MAIN)
+        # Explicit default colour so the widget isn't relying on a theme-
+        # inherited bg (which can be transparent or match the screen bg and
+        # render invisibly). `_set_stale_indicator` overrides this for the
+        # warn/error tiers; this value is what would render if we ever un-
+        # hid without setting a colour first.
+        self.stale_indicator_dot.set_style_bg_color(lv.color_hex(0xDD2222), lv.PART.MAIN)
+        self.stale_indicator_dot.set_style_bg_opa(lv.OPA.COVER, lv.PART.MAIN)
+        self.stale_indicator_dot.set_style_radius(lv.RADIUS_CIRCLE, lv.PART.MAIN)
+        self.stale_indicator_dot.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
+        # Float the dot so it renders over whatever happens to be below it
+        # in the stack (the mascot image, in particular). Without FLOATING
+        # the dot's screen position can end up occluded by the hero image
+        # or clipped by the screen edge on some displays.
+        self.stale_indicator_dot.add_flag(lv.obj.FLAG.FLOATING)
+        self.stale_indicator_dot.add_flag(lv.obj.FLAG.HIDDEN)
+        # Dot position is a fixed offset (end of the balance underline),
+        # not dependent on runtime layout — safe to compute and apply
+        # immediately.
+        self._reposition_stale_indicator()
+
         settings_button = lv.obj(self.main_screen)
         settings_button.set_size(40, 40)
         settings_button.align(lv.ALIGN.BOTTOM_RIGHT, 0, 0)
@@ -546,6 +631,13 @@ class DisplayWallet(Activity):
         # Initialize Confetti
         self.confetti = Confetti(main_screen, self.ICON_PATH, self.ASSET_PATH, self.confetti_duration)
 
+        # Periodic stale-indicator check — runs every 60 s so the dot
+        # appears even across periods with no wallet events (e.g. WiFi
+        # offline with cached data on screen). Idempotent: fires
+        # _refresh_stale_indicator which also runs on every success and
+        # every error, so this is purely a safety net.
+        self._stale_timer = lv.timer_create(self._stale_timer_tick, 60000, None)
+
     def onResume(self, main_screen):
         super().onResume(main_screen)
         # Ensure the app's effective theme (local override or OS) is applied.
@@ -595,6 +687,10 @@ class DisplayWallet(Activity):
                 # self.receive_qr_data is empty, so this hide persists
                 # across went_online → show_wallet_screen.
                 self.receive_qr.add_flag(lv.obj.FLAG.HIDDEN)
+                # Config-change restart implies the previous error streak
+                # (if any) is no longer meaningful for the new wallet —
+                # reset so the red dot doesn't persist past the swap.
+                self._reset_stale_tracking()
         # Re-apply theme-dependent styles (screen bg, QR colors) right away —
         # onCreate set these based on is_light_mode at construction time, before
         # our app-local override had a chance to flip it. On first launch after
@@ -676,7 +772,15 @@ class DisplayWallet(Activity):
         cm.unregister_callback(self.network_changed)
 
     def onDestroy(self, main_screen):
-        pass # would be good to cleanup lv.layer_top() of those confetti images
+        # Stop the periodic stale-indicator timer so it doesn't fire on a
+        # dead Activity instance.
+        if getattr(self, '_stale_timer', None) is not None:
+            try:
+                self._stale_timer.delete()
+            except Exception:
+                pass
+            self._stale_timer = None
+        # would be good to cleanup lv.layer_top() of those confetti images
 
     def network_changed(self, online):
         print("displaywallet.py network_changed, now:", "ONLINE" if online else "OFFLINE")
@@ -684,6 +788,138 @@ class DisplayWallet(Activity):
             self.went_online()
         else:
             self.went_offline()
+
+    def _paint_from_cache(self, wallet_type):
+        """Paint balance, payments and QR from the on-disk cache slot for
+        `wallet_type`, if the cached fingerprints still match the current
+        prefs. Returns True if anything was painted.
+
+        Called from went_online() before wallet.start() so the UI shows
+        the last-known data instantly while the network fetch is in
+        flight. Any field whose fingerprint doesn't match comes back None
+        and is left in its default (spinner / Connecting... text)."""
+        creds_fp, qr_fp = wallet_cache.compute_fingerprints(wallet_type, self.prefs)
+        cached = wallet_cache.load_slot(wallet_type, creds_fp, qr_fp)
+        painted_anything = False
+        if cached["balance"] is not None:
+            self.display_balance(cached["balance"])
+            painted_anything = True
+        if cached["payments"] is not None:
+            self.payments_label.set_text(str(cached["payments"]))
+            painted_anything = True
+        if cached["static_receive_code"] is not None:
+            self.receive_qr_data = cached["static_receive_code"]
+            self.receive_qr.update(self.receive_qr_data, len(self.receive_qr_data))
+            self.receive_qr.remove_flag(lv.obj.FLAG.HIDDEN)
+            painted_anything = True
+        if painted_anything:
+            print("Cache: painted slot '{}' from disk".format(wallet_type))
+            # Seed the stale-tracking timer from the cache's last_updated so
+            # the indicator reflects true age of the painted data, across
+            # app restarts. If the slot is weeks old, the user sees an
+            # orange/red dot the moment the app opens.
+            #
+            # Fallback: slots written by older builds (pre last_updated
+            # support) don't have a timestamp. Treat those as "fresh right
+            # now" so the dot doesn't appear immediately on cached data we
+            # can't date — the next successful refresh will stamp a real
+            # last_updated and future paints will use it.
+            lu = cached.get("last_updated")
+            if lu is None:
+                lu = int(time.time())
+                print("Cache: slot has no last_updated, seeding as now")
+            self._last_success_ts = lu
+            self._refresh_stale_indicator()
+        return painted_anything
+
+    # Colour palette for the stale indicator.
+    _STALE_COLOR_WARN = 0xE69B1F   # amber / Bitcoin-orange
+    _STALE_COLOR_ERROR = 0xDD2222  # red
+
+    def _reposition_stale_indicator(self, timer=None):
+        """Place the dot at the right end of the balance underline,
+        centered vertically on it. That's the line drawn at y=35 from x=2
+        to x=pct_of_width(100 - receive_qr_pct_of_display * 1.2), i.e. the
+        visible separator under the balance text. Dot is 8x8 so we subtract
+        half-size to centre it on the line endpoint."""
+        if not hasattr(self, 'stale_indicator_dot'):
+            return
+        try:
+            line_end_x = DisplayMetrics.pct_of_width(
+                100 - self.receive_qr_pct_of_display * 1.2)
+            line_y = 35
+            dot_half = 4
+            # Nudge 6px up from the line centre so the dot sits cleanly in
+            # the gap above the line, not overlapping the stroke.
+            self.stale_indicator_dot.set_pos(
+                line_end_x - dot_half, line_y - dot_half - 6)
+        except Exception as e:
+            print("stale_indicator: reposition exception:", e)
+
+    def _set_stale_indicator(self, level):
+        """Toggle the stale-indicator dot beneath the mascot.
+
+        `level` is one of:
+            None / False / ''  — hide the dot
+            'warn'             — show orange (>= 10 min since last update)
+            'error'            — show red  (>= 60 min since last update)
+        """
+        if not hasattr(self, 'stale_indicator_dot'):
+            return
+        try:
+            if level == 'error':
+                self.stale_indicator_dot.set_style_bg_color(
+                    lv.color_hex(self._STALE_COLOR_ERROR), lv.PART.MAIN)
+                self.stale_indicator_dot.set_style_bg_opa(lv.OPA.COVER, lv.PART.MAIN)
+                self.stale_indicator_dot.remove_flag(lv.obj.FLAG.HIDDEN)
+                self.stale_indicator_dot.move_foreground()
+            elif level == 'warn':
+                self.stale_indicator_dot.set_style_bg_color(
+                    lv.color_hex(self._STALE_COLOR_WARN), lv.PART.MAIN)
+                self.stale_indicator_dot.set_style_bg_opa(lv.OPA.COVER, lv.PART.MAIN)
+                self.stale_indicator_dot.remove_flag(lv.obj.FLAG.HIDDEN)
+                self.stale_indicator_dot.move_foreground()
+            else:
+                self.stale_indicator_dot.add_flag(lv.obj.FLAG.HIDDEN)
+        except Exception as e:
+            print("stale_indicator: exception:", e)
+
+    def _note_successful_update(self):
+        """Called whenever a balance or payments refresh lands successfully
+        (including after a paint-from-cache with a fresh `last_updated`).
+        Bumps _last_success_ts and refreshes the indicator."""
+        self._last_success_ts = time.time()
+        self._refresh_stale_indicator()
+
+    def _reset_stale_tracking(self):
+        """Called on a fresh wallet construction. Treats the construction
+        itself as a reset point; the indicator stays hidden until
+        STALE_WARN_THRESHOLD_S has elapsed with no successful update."""
+        self._note_successful_update()
+
+    def _refresh_stale_indicator(self):
+        """Compute stale tier from time-since-last-successful-update and
+        paint the dot. Called on every success, every error, and from a
+        periodic lv.timer so the dot appears even while the wallet is
+        stopped (e.g. offline with cached data on screen)."""
+        last = getattr(self, '_last_success_ts', None)
+        if last is None:
+            # Never had a successful update or a cache hit this session —
+            # don't show the dot; the spinner/"Connecting..." messaging
+            # is already communicating state.
+            self._set_stale_indicator(None)
+            return
+        elapsed = time.time() - last
+        if elapsed >= self.STALE_ERROR_THRESHOLD_S:
+            tier = 'error'
+        elif elapsed >= self.STALE_WARN_THRESHOLD_S:
+            tier = 'warn'
+        else:
+            tier = None
+        self._set_stale_indicator(tier)
+
+    def _stale_timer_tick(self, timer):
+        self._refresh_stale_indicator()
 
     def went_online(self):
         if self.wallet and self.wallet.is_running():
@@ -694,6 +930,10 @@ class DisplayWallet(Activity):
             self.show_welcome_screen()
             return # nothing is configured, nothing to do
         self.show_wallet_screen()
+        # Paint from cache before constructing the wallet, so the user sees
+        # last-known data immediately. Fingerprint mismatch (config change)
+        # returns nothing painted and we fall through to the spinner.
+        painted_from_cache = self._paint_from_cache(wallet_type)
         if wallet_type == "lnbits":
             try:
                 self.wallet = LNBitsWallet(self.prefs.get_string("lnbits_url"), self.prefs.get_string("lnbits_readkey"))
@@ -713,20 +953,38 @@ class DisplayWallet(Activity):
         else:
             self.error_cb(f"No or unsupported wallet type configured: '{wallet_type}'")
             return
+        # Stamp the cache fingerprints onto the wallet so its handle_new_*
+        # writes land in the correct slot with a matching fingerprint.
+        self.wallet.creds_fingerprint, self.wallet.qr_fingerprint = \
+            wallet_cache.compute_fingerprints(wallet_type, self.prefs)
         # Stamp the config key so onResume can detect future changes.
         self._active_wallet_key = self._wallet_config_key()
-        if not (hasattr(self, '_last_balance') and self._last_balance):
+        # Fresh wallet session — reset stale tracking.
+        self._reset_stale_tracking()
+        if not painted_from_cache and not (hasattr(self, '_last_balance') and self._last_balance):
             self.balance_label.set_text(lv.SYMBOL.REFRESH)
             self.payments_label.set_text(f"\nConnecting to {wallet_type} backend.\n\nIf this takes too long, it might be down or something's wrong with the settings.")
         # by now, self.wallet can be assumed
         self.wallet.start(self.balance_updated_cb, self.redraw_payments_cb, self.redraw_static_receive_code_cb, self.error_cb)
+        # Hook the per-poll success signal so the stale indicator resets
+        # even when balance/payments don't change across polls. `start()`
+        # doesn't take this as a positional arg to keep the signature
+        # stable for existing callers; DisplayWallet attaches it after.
+        self.wallet.poll_success_cb = self._note_successful_update
 
     def went_offline(self):
-        if not self.prefs.get_string("wallet_type"):
+        wallet_type = self.prefs.get_string("wallet_type")
+        if not wallet_type:
             self.show_welcome_screen()
             return
         if self.wallet:
             self.wallet.stop()
+        # Cold-boot-offline path: the app just launched and WiFi isn't up
+        # yet, so went_online hasn't run. Paint from cache here too so the
+        # user still sees their last-known balance/QR while offline.
+        if not (hasattr(self, '_last_balance') and self._last_balance):
+            self.show_wallet_screen()
+            self._paint_from_cache(wallet_type)
         # Don't overwrite cached data with offline message
         if not (hasattr(self, '_last_balance') and self._last_balance):
             self.payments_label.set_text(f"WiFi is not connected, can't talk to wallet...")
@@ -735,6 +993,12 @@ class DisplayWallet(Activity):
         """Hide wallet widgets, show welcome container."""
         for w in self.wallet_container_widgets:
             w.add_flag(lv.obj.FLAG.HIDDEN)
+        # Hide the stale-indicator dot too — it lives outside
+        # wallet_container_widgets so it isn't auto-shown when we return
+        # to the wallet screen, but when we go to the welcome screen it
+        # must explicitly hide.
+        if hasattr(self, 'stale_indicator_dot'):
+            self.stale_indicator_dot.add_flag(lv.obj.FLAG.HIDDEN)
         self.welcome_container.remove_flag(lv.obj.FLAG.HIDDEN)
         WidgetAnimator.show_widget(self.welcome_container)
 
@@ -753,17 +1017,16 @@ class DisplayWallet(Activity):
             w.remove_flag(lv.obj.FLAG.HIDDEN)
 
     def _splash_done(self, timer):
-        """Called after splash duration. Fade out splash and show appropriate screen."""
+        """Called after splash duration. Fade out splash and show appropriate screen.
+
+        network_changed → went_online/went_offline both call
+        _paint_from_cache, so the on-disk cache is replayed instantly
+        for the currently-configured wallet type before (or in place of)
+        the network fetch. Per-slot caching + fingerprint invalidation
+        means there's no cross-wallet leakage: if the user switched
+        wallet_type or changed credentials since the last run, the
+        fingerprint won't match and the cache returns empty."""
         WidgetAnimator.hide_widget(self.splash_container, duration=500)
-        # Intentionally NOT replaying the on-disk cache here: the single-
-        # slot cache on v0.3.0 isn't wallet-type-aware, so if the user
-        # switched wallet_type in Settings then rebooted, the cache would
-        # paint the PREVIOUS wallet's balance/payments on screen while
-        # the NEW wallet's receive code is pulled from prefs — a
-        # confusing mismatch ("NWC QR with LNBits balance"). Per-wallet-
-        # type caching lands with the v1 multi-slot work; until then we
-        # boot into a spinner and show only fresh data from the
-        # configured wallet's async fetch.
         cm = ConnectivityManager.get()
         self.network_changed(cm.is_online())
 
@@ -790,6 +1053,10 @@ class DisplayWallet(Activity):
             self.hero_image.remove_flag(lv.obj.FLAG.HIDDEN)
         else:
             self.hero_image.add_flag(lv.obj.FLAG.HIDDEN)
+        # Re-anchor the stale-indicator dot on the (new) mascot position.
+        # Go through _reposition_stale_indicator so the layout-flush +
+        # coord read logic is shared between onCreate and hero-image swaps.
+        self._reposition_stale_indicator()
 
     def _on_hero_image_changed(self, new_value):
         """Called when hero image setting changes."""
@@ -889,21 +1156,40 @@ class DisplayWallet(Activity):
             print("Not drawing balance because it's None")
             return
 
+        # Successful refresh — bump last-success timestamp and re-evaluate
+        # the stale indicator (usually hides the dot).
+        self._note_successful_update()
+
         # Mark as connected even if balance == 0
         if getattr(self.wallet, "payment_list", None) is not None:
             if len(self.wallet.payment_list) == 0:
-                # The single-slot wallet_cache isn't wallet-type-aware on
-                # v0.3.0, so falling back to cached payments here would show
-                # the PREVIOUS wallet's transactions after a wallet-type
-                # switch. Show "Connected." instead; the current wallet's
-                # fetch_payments will populate real data shortly. Per-slot
-                # cache (which resolves this) lands with v1 multi-wallet.
-                self.payments_label.set_text("Connected.\nNo payments yet.")
+                # Wallet reports empty — but if we previously painted
+                # payments from cache they're still on-screen and accurate
+                # for the last session; don't overwrite with "Connected."
+                # until fetch_payments has actually run and confirmed.
+                # A freshly-constructed wallet has payment_list == [] before
+                # its first fetch, so we rely on the fetch_payments triggered
+                # inside handle_new_balance to repaint.
+                if not (hasattr(self, '_last_balance') and self._last_balance):
+                    self.payments_label.set_text("Connected.\nNo payments yet.")
             else:
                 self.payments_label.set_text(str(self.wallet.payment_list))
         else:
             self.payments_label.set_text("Connected.")
 
+        # Paint the final balance synchronously before handing off to the
+        # animator. Two edge cases were leaving the screen blank until the
+        # user left the app and came back:
+        #   1. Zero-delta animations (sats_added == 0) don't always tick
+        #      display_change, so the label kept whatever stale text it had.
+        #   2. WidgetAnimator wraps display_change in _safe_widget_access,
+        #      which silently swallows LvReferenceError — if the label was
+        #      briefly orphaned during a wallet swap, the animator's ticks
+        #      would no-op and the balance would never render.
+        # Calling display_balance directly first guarantees the label shows
+        # the current balance; the animator then rolls from begin -> end
+        # over the confetti duration as usual.
+        self.display_balance(balance)
         WidgetAnimator.change_widget(
             self.balance_label,
             anim_type="interpolate",
@@ -919,17 +1205,29 @@ class DisplayWallet(Activity):
         # single-threaded and cooperative, so this runs on the same event
         # loop as LVGL — direct widget writes are safe between awaits.
         self.payments_label.set_text(str(self.wallet.payment_list))
+        # Successful payments refresh — bump last-success timestamp.
+        self._note_successful_update()
 
     def redraw_static_receive_code_cb(self):
-        # static receive code from settings takes priority:
+        # Settings override wins if present.
         wallet_type = self.prefs.get_string("wallet_type")
+        override = None
         if wallet_type == "nwc":
-            self.receive_qr_data = self.prefs.get_string("nwc_static_receive_code")
+            override = self.prefs.get_string("nwc_static_receive_code")
         elif wallet_type == "lnbits":
-            self.receive_qr_data = self.prefs.get_string("lnbits_static_receive_code")
-        # otherwise, see if the wallet has a static receive code:
-        if not self.receive_qr_data:
-            self.receive_qr_data = self.wallet.static_receive_code
+            override = self.prefs.get_string("lnbits_static_receive_code")
+        # Next, the wallet's own discovered receive code (from backend / NWC lud16).
+        wallet_code = self.wallet.static_receive_code if self.wallet else None
+        # Pick the first non-empty source; fall through to whatever's already
+        # set (e.g. painted from the cache by _paint_from_cache) so we don't
+        # wipe a valid QR when neither override nor wallet-side code is
+        # populated yet — typical right after went_online, before the wallet
+        # has had a chance to fetch_static_receive_code.
+        if override:
+            self.receive_qr_data = override
+        elif wallet_code:
+            self.receive_qr_data = wallet_code
+        # else: keep self.receive_qr_data as-is
         if not self.receive_qr_data:
             print("Warning: redraw_static_receive_code_cb() did not find one in the settings or the wallet, nothing to show")
             return
@@ -945,6 +1243,12 @@ class DisplayWallet(Activity):
                 print(f"WARNING: {error} (keeping cached data on screen)")
             else:
                 self.payments_label.set_text(str(error))
+        # An error means time-since-last-success keeps growing. Recompute
+        # the tier opportunistically so the dot updates without waiting
+        # for the next timer tick. The timer still runs in the background
+        # as a safety net for periods with no events (e.g. wallet stopped
+        # while WiFi is down).
+        self._refresh_stale_indicator()
 
     def settings_button_tap(self, event):
         self.destination = MainSettingsActivity  # prevent wallet.stop() in onPause

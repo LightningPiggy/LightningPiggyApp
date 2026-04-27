@@ -1,3 +1,10 @@
+0.4.0
+=====
+- Per-wallet-type cache: balance, transactions, and receive QR paint instantly on app open / re-entry for each configured wallet (LNBits and NWC each get their own cached slot). Previously the cache was write-only and the screen started blank on every launch until the first network fetch landed
+- Fingerprint-guarded cache invalidation: changing credential settings (LNBits URL / read key, NWC URL) wipes that slot's cached data so the next paint waits for fresh fetches. Changing just the optional LN-address override invalidates only the cached QR, keeping cached balance and transactions on-screen
+- Stale-data indicator: a small dot appears beneath the mascot when the wallet has produced only errors for a sustained period. Two tiers — orange after 10 minutes of failures (data might be slightly behind) and red after 60 minutes (definitely old). Cleared automatically on the next successful refresh
+- Cache file format bumped to v2; any existing v1 cache file is silently discarded on first launch
+
 0.3.0
 =====
 - Light/Dark theme toggle in Customise settings — app-local override that doesn't touch the OS-level theme; other apps and the launcher keep the user's OS preference
