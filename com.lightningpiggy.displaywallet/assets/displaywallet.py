@@ -97,53 +97,98 @@ def _migrate_legacy_symbol_denom(prefs):
     This helper is idempotent: a no-op for users already on the new value,
     for users who never used the symbol mode, and on every boot after the
     first migration. Returns True iff something was migrated (for tests).
+
+    Multi-wallet: also migrates `balance_denomination_2` for symmetry —
+    slot 2 is a post-0.4.1 feature so its pref couldn't have come from the
+    old picker, but covering both keys keeps the migration robust to any
+    future code path that might propagate the legacy value into slot 2.
     """
-    if prefs.get_string("balance_denomination") == "symbol":
-        editor = prefs.edit()
-        editor.put_string("balance_denomination", "₿ symbol")
+    editor = prefs.edit()
+    migrated = False
+    for key in ("balance_denomination", "balance_denomination_2"):
+        if prefs.get_string(key) == "symbol":
+            editor.put_string(key, "₿ symbol")
+            migrated = True
+            print("displaywallet: migrated {} 'symbol' -> '₿ symbol'".format(key))
+    if migrated:
         editor.commit()
-        print("displaywallet: migrated balance_denomination 'symbol' -> '₿ symbol'")
-        return True
-    return False
+    return migrated
+
+
+def _slot_suffix(slot):
+    """Suffix appended to per-slot pref keys: '' for slot 1 (preserves
+    backward-compat with single-wallet builds — slot 1 keeps using
+    `wallet_type`, `lnbits_url`, etc.) and '_2' for slot 2."""
+    return "_2" if str(slot) == "2" else ""
+
+
+def _resolve_denom_key(setting, default="balance_denomination"):
+    """Pick the slot-aware balance-denomination pref key out of a setting
+    dict. `CustomiseSettingsActivity` populates `setting["key"]` with the
+    slot-aware key (`balance_denomination` for slot 1,
+    `balance_denomination_2` for slot 2). `DenominationSettingsActivity`
+    routes its read/write through this so it doesn't accidentally hardcode
+    slot 1 — that bug (slot-2 saves landing in slot 1's key) shipped in
+    an early multi-wallet draft and was caught on-device.
+
+    Falls back to the unsuffixed key when no setting is passed (legacy
+    callers / tests of bare instances)."""
+    return (setting or {}).get("key") or default
 
 
 def _should_show_wallet_setting(setting):
-    """Conditionally show wallet-specific settings based on selected wallet type."""
+    """Conditionally show wallet-specific settings based on this slot's
+    wallet_type. The slot comes from the setting dict (parent populates
+    `_slot` when constructing a slot-specific WalletSettingsActivity)."""
+    slot = setting.get("_slot", 1)
+    suffix = _slot_suffix(slot)
     prefs = SharedPreferences("com.lightningpiggy.displaywallet")
-    wallet_type = prefs.get_string("wallet_type")
-    if wallet_type != "lnbits" and setting["key"].startswith("lnbits_"):
+    wallet_type = prefs.get_string("wallet_type" + suffix)
+    # Strip the slot suffix from the key for prefix-matching against the
+    # wallet-type branches (so `lnbits_url_2` still matches `lnbits_`).
+    key = setting["key"]
+    if suffix and key.endswith(suffix):
+        key_base = key[:-len(suffix)]
+    else:
+        key_base = key
+    if wallet_type != "lnbits" and key_base.startswith("lnbits_"):
         return False
-    if wallet_type != "nwc" and setting["key"].startswith("nwc_"):
+    if wallet_type != "nwc" and key_base.startswith("nwc_"):
         return False
-    if wallet_type != "onchain" and setting["key"].startswith("onchain_"):
+    if wallet_type != "onchain" and key_base.startswith("onchain_"):
         return False
     return True
 
 
 class WalletSettingsActivity(SettingsActivity):
-    """Sub-settings screen for wallet configuration."""
+    """Sub-settings screen for wallet configuration. `_slot` in the parent's
+    setting dict selects slot 1 (default, unsuffixed keys) or slot 2 (_2)."""
     def onCreate(self):
         extras = self.getIntent().extras or {}
         self.prefs = extras.get("prefs")
+        parent_setting = extras.get("setting") or {}
+        self.slot = parent_setting.get("_slot", 1)
+        s = _slot_suffix(self.slot)
         self.settings = [
-            {"title": "Wallet Type", "key": "wallet_type", "ui": "radiobuttons",
-             "ui_options": [("LNBits", "lnbits"), ("Nostr Wallet Connect", "nwc"), ("On-chain (xpub)", "onchain")]},
-            {"title": "LNBits URL", "key": "lnbits_url",
-             "placeholder": "https://demo.lnpiggy.com", "should_show": _should_show_wallet_setting},
-            {"title": "LNBits Read Key", "key": "lnbits_readkey",
-             "placeholder": "fd92e3f8168ba314dc22e54182784045", "should_show": _should_show_wallet_setting},
-            {"title": "Optional LN Address", "key": "lnbits_static_receive_code",
-             "placeholder": "Will be fetched if empty.", "should_show": _should_show_wallet_setting},
-            {"title": "Nostr Wallet Connect", "key": "nwc_url",
-             "placeholder": "nostr+walletconnect://69effe7b...", "should_show": _should_show_wallet_setting},
-            {"title": "Optional LN Address", "key": "nwc_static_receive_code",
-             "placeholder": "Optional if present in NWC URL.", "should_show": _should_show_wallet_setting},
-            {"title": "xpub / ypub / zpub", "key": "onchain_xpub",
-             "placeholder": "zpub6rF...", "should_show": _should_show_wallet_setting},
-            {"title": "Blockbook URL", "key": "onchain_blockbook_url",
-             "placeholder": "https://btc1.trezor.io", "should_show": _should_show_wallet_setting},
-            {"title": "Optional Receive Address", "key": "onchain_static_receive_code",
-             "placeholder": "Auto-rotates if empty.", "should_show": _should_show_wallet_setting},
+            {"title": "Wallet Type", "key": "wallet_type" + s, "ui": "radiobuttons",
+             "ui_options": [("LNBits", "lnbits"), ("Nostr Wallet Connect", "nwc"), ("On-chain (xpub)", "onchain")],
+             "_slot": self.slot},
+            {"title": "LNBits URL", "key": "lnbits_url" + s,
+             "placeholder": "https://demo.lnpiggy.com", "should_show": _should_show_wallet_setting, "_slot": self.slot},
+            {"title": "LNBits Read Key", "key": "lnbits_readkey" + s,
+             "placeholder": "fd92e3f8168ba314dc22e54182784045", "should_show": _should_show_wallet_setting, "_slot": self.slot},
+            {"title": "Optional LN Address", "key": "lnbits_static_receive_code" + s,
+             "placeholder": "Will be fetched if empty.", "should_show": _should_show_wallet_setting, "_slot": self.slot},
+            {"title": "Nostr Wallet Connect", "key": "nwc_url" + s,
+             "placeholder": "nostr+walletconnect://69effe7b...", "should_show": _should_show_wallet_setting, "_slot": self.slot},
+            {"title": "Optional LN Address", "key": "nwc_static_receive_code" + s,
+             "placeholder": "Optional if present in NWC URL.", "should_show": _should_show_wallet_setting, "_slot": self.slot},
+            {"title": "xpub / ypub / zpub", "key": "onchain_xpub" + s,
+             "placeholder": "zpub6rF...", "should_show": _should_show_wallet_setting, "_slot": self.slot},
+            {"title": "Blockbook URL", "key": "onchain_blockbook_url" + s,
+             "placeholder": "https://btc1.trezor.io", "should_show": _should_show_wallet_setting, "_slot": self.slot},
+            {"title": "Optional Receive Address", "key": "onchain_static_receive_code" + s,
+             "placeholder": "Auto-rotates if empty.", "should_show": _should_show_wallet_setting, "_slot": self.slot},
         ]
         screen = lv.obj()
         screen.set_style_pad_all(DisplayMetrics.pct_of_width(2), lv.PART.MAIN)
@@ -205,15 +250,34 @@ class CustomiseSettingsActivity(SettingsActivity):
             theme_label = theme_display[override]
         else:
             theme_label = "Light" if AppearanceManager.is_light_mode() else "Dark"
+        # Hero image and balance denomination are per-wallet-slot so the user
+        # can keep their savings wallet on "₿" + Penguin while spending wallet
+        # is "sats" + Piggy without one overwriting the other.
+        active_slot = self.prefs.get_string("active_wallet_slot", "1")
+        s = _slot_suffix(active_slot)
+        hero_key = "hero_image" + s
+        denom_key = "balance_denomination" + s
+        hero_options = [
+            ("Lightning Piggy", "lightningpiggy"),
+            ("Lightning Penguin", "lightningpenguin"),
+            ("None", "none"),
+        ]
+        # MPOS 0.9.6+ renders the human-readable label from `ui_options` in
+        # the settings row (both initial render and post-save), so the
+        # earlier stopgap closure that hand-patched the value_label after
+        # a save is no longer needed — the framework handles it.
+        hero_setting = {
+            "title": "Hero Image", "key": hero_key, "ui": "radiobuttons",
+            "ui_options": hero_options,
+            "default_value": "lightningpiggy",
+            "changed_callback": callbacks.get("hero_image"),
+        }
         self.settings = [
-            {"title": "Balance Denomination", "key": "balance_denomination", "ui": "activity",
+            {"title": "Balance Denomination", "key": denom_key, "ui": "activity",
              "activity_class": DenominationSettingsActivity,
-             "placeholder": self.prefs.get_string("balance_denomination", "sats"),
+             "placeholder": self.prefs.get_string(denom_key, "sats"),
              "changed_callback": callbacks.get("denomination")},
-            {"title": "Hero Image", "key": "hero_image", "ui": "radiobuttons",
-             "ui_options": [("Lightning Piggy", "lightningpiggy"), ("Lightning Penguin", "lightningpenguin"), ("None", "none")],
-             "default_value": "lightningpiggy",
-             "changed_callback": callbacks.get("hero_image")},
+            hero_setting,
             {"title": "Theme", "key": "theme_override", "activity_class": True,
              "placeholder": theme_label},
         ]
@@ -270,8 +334,10 @@ class MainSettingsActivity(SettingsActivity):
         _add_floating_back_button(screen, self.finish)
 
     def startSettingActivity(self, setting):
-        """Override to handle screen lock toggle inline."""
-        if setting.get("key") == "screen_lock":
+        """Override to handle inline-toggle settings (screen lock,
+        switch-active-wallet)."""
+        key = setting.get("key")
+        if key == "screen_lock":
             current = self.prefs.get_string("screen_lock", "off")
             new_value = "on" if current == "off" else "off"
             editor = self.prefs.edit()
@@ -280,6 +346,17 @@ class MainSettingsActivity(SettingsActivity):
             value_label = setting.get("value_label")
             if value_label:
                 value_label.set_text("On - tapping disabled" if new_value == "on" else "Off - tapping changes display")
+        elif key == "__switch_active_wallet":
+            # Flip the active wallet slot and drop back to the main display so
+            # the user sees the switch happen. The actual wallet swap is
+            # handled in DisplayWallet.onResume (which detects the
+            # (wallet_type, slot) change and restarts the wallet cleanly).
+            current = self.prefs.get_string("active_wallet_slot", "1")
+            new_value = "2" if current == "1" else "1"
+            editor = self.prefs.edit()
+            editor.put_string("active_wallet_slot", new_value)
+            editor.commit()
+            self.finish()
         else:
             super().startSettingActivity(setting)
 
@@ -304,7 +381,11 @@ class DenominationSettingsActivity(Activity):
         extras = self.getIntent().extras or {}
         self.prefs = extras.get("prefs")
         self.setting = extras.get("setting")
-        current = self.prefs.get_string("balance_denomination", "sats")
+        # Use the slot-aware key passed by CustomiseSettingsActivity
+        # (e.g. "balance_denomination_2" for slot 2) — see _resolve_denom_key
+        # for the contract.
+        self._denom_key = _resolve_denom_key(self.setting)
+        current = self.prefs.get_string(self._denom_key, "sats")
 
         screen = lv.obj()
         screen.set_style_pad_all(DisplayMetrics.pct_of_width(2), lv.PART.MAIN)
@@ -386,9 +467,9 @@ class DenominationSettingsActivity(Activity):
     def _save(self):
         if self.active_index >= 0:
             new_value = self.DENOMINATIONS[self.active_index][1]
-            old_value = self.prefs.get_string("balance_denomination")
+            old_value = self.prefs.get_string(self._denom_key)
             editor = self.prefs.edit()
-            editor.put_string("balance_denomination", new_value)
+            editor.put_string(self._denom_key, new_value)
             editor.commit()
             # Update the value label on the parent settings screen
             value_label = self.setting.get("value_label") if self.setting else None
@@ -470,7 +551,10 @@ class DisplayWallet(Activity):
     def onCreate(self):
         self.prefs = SharedPreferences("com.lightningpiggy.displaywallet")
         # Run any required pref migrations before any code path reads
-        # `balance_denomination` (display_balance / DENOMINATION_CYCLE).
+        # `balance_denomination` / `balance_denomination_2`. The helper
+        # covers both slot keys (slot 2's pref couldn't have been the
+        # legacy "symbol" value in practice, but the helper handles both
+        # for symmetry).
         _migrate_legacy_symbol_denom(self.prefs)
         self.main_screen = lv.obj()
         # Disable scrolling on the screen itself — overflowing widgets are
@@ -481,8 +565,13 @@ class DisplayWallet(Activity):
         self.main_screen.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
         # Track the timestamp of the most recent screen contact (any touch
         # on any interactive widget). Drives the auto-scroll-to-top
-        # behaviour for the payments area after
-        # AUTO_SCROLL_PAYMENTS_INACTIVITY_MS of no user input.
+        # behaviour for the payments area after AUTO_SCROLL_PAYMENTS_INACTIVITY_MS
+        # of no user input. NB: in LVGL 9 events DON'T bubble to ancestors
+        # by default — a PRESSED on a child widget never reaches the screen
+        # unless we either set the EVENT_BUBBLE flag on the child OR
+        # register a listener on the child directly. Going with direct
+        # registration (in _install_contact_tracker) since it's robust
+        # against any widget that lacks EVENT_BUBBLE.
         self._last_screen_contact_ms = None
         if not AppearanceManager.is_light_mode():
             self.main_screen.set_style_bg_color(lv.color_black(), lv.PART.MAIN)
@@ -543,15 +632,38 @@ class DisplayWallet(Activity):
         self.receive_qr.set_style_border_width(8, lv.PART.MAIN);
         self.receive_qr.add_flag(lv.obj.FLAG.CLICKABLE)
         self.receive_qr.add_event_cb(self.qr_clicked_cb,lv.EVENT.CLICKED,None)
+        # Wallet-type indicator on the right side of the balance area, rendered
+        # behind the balance text: yellow ⚡ for Lightning (LNBits, NWC),
+        # pink chain link for on-chain. Exactly one is visible at a time;
+        # _update_wallet_type_indicator() flips them based on active slot.
+        # Sits behind the balance label so the split big-number + small-unit
+        # typography (0.4.1) can flow over the indicator if the balance
+        # string is long.
+        self.lightning_bolt = lv.label(self.main_screen)
+        self.lightning_bolt.set_text(lv.SYMBOL.CHARGE)
+        self.lightning_bolt.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
+        self.lightning_bolt.set_style_text_color(lv.color_hex(0xFFD700), lv.PART.MAIN)
+        self.lightning_bolt.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, -4, 4)
+        self.lightning_bolt.move_background()
+        self.lightning_bolt.add_flag(lv.obj.FLAG.HIDDEN)
+        self.chain_link = lv.image(self.main_screen)
+        self.chain_link.set_src(f"{self.ASSET_PATH}chain_link.png")
+        self.chain_link.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, -4, 2)
+        self.chain_link.move_background()
+        self.chain_link.add_flag(lv.obj.FLAG.HIDDEN)
         # Payments live inside a fixed-height container that scrolls
         # vertically when the text overflows. Without this wrapper, a
-        # long zap comment or a long list of payments would push the
+        # long zap comment or many on-chain tx lines would push the
         # payments_label past the bottom of the screen and the whole
         # main_screen would gain a scrollbar — disorienting because
         # the balance + QR + hero would all scroll along with the
         # transactions list. With the wrapper, ONLY the transactions
         # area scrolls and the rest of the screen stays put.
-        payments_container_width = DisplayMetrics.pct_of_width(100-self.receive_qr_pct_of_display)
+        # Width is slightly narrower than 100% - QR (the *1.1) to leave
+        # room for the wallet-type indicator icon that sits just left of
+        # the QR; without that nudge the indicator would visually crowd
+        # the right edge of long transaction lines.
+        payments_container_width = DisplayMetrics.pct_of_width(100-self.receive_qr_pct_of_display*1.1)
         payments_container_height = DisplayMetrics.height() - 50
         self.payments_container = lv.obj(self.main_screen)
         self.payments_container.align_to(balance_line, lv.ALIGN.OUT_BOTTOM_LEFT, 2, 10)
@@ -560,17 +672,22 @@ class DisplayWallet(Activity):
         self.payments_container.set_style_pad_all(0, lv.PART.MAIN)
         self.payments_container.set_style_bg_opa(lv.OPA.TRANSP, lv.PART.MAIN)
         # Vertical scroll only — horizontal would clash with the wrap.
-        # SCROLLBAR_MODE.OFF hides the bar entirely (container is still
-        # scrollable via touch drag), reclaiming the pixels AUTO mode
-        # would have reserved.
+        # SCROLLBAR_MODE.OFF hides the bar entirely (the container is still
+        # scrollable via touch drag) so the few pixels the AUTO scrollbar
+        # used to reserve on the right edge are reclaimed for transaction
+        # text. The bar would also have been visually distracting on a
+        # 320×240 display.
         self.payments_container.set_scroll_dir(lv.DIR.VER)
         self.payments_container.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
         self.payments_label = lv.label(self.payments_container)
         self.payments_label.set_text("")
+        # Label width follows its container (the 1.1× narrowing now
+        # lives on the container; the label fills it).
         self.payments_label.set_width(lv.pct(100))
         self.update_payments_label_font()
-        # Force word-wrap as a belt-and-braces against long zap comments
-        # or unusually long payment memos.
+        # Force word-wrap as a belt-and-braces against any line that does
+        # exceed the label width (long zap comments, long Bitcoin tx labels
+        # in future).
         self.payments_label.set_long_mode(lv.label.LONG_MODE.WRAP)
         self.payments_label.add_flag(lv.obj.FLAG.CLICKABLE)
         self.payments_label.add_event_cb(self.payments_label_clicked,lv.EVENT.CLICKED,None)
@@ -648,14 +765,17 @@ class DisplayWallet(Activity):
             focusgroup.add_obj(settings_button)
 
         # Track wallet-mode widgets so they can be hidden/shown as a group
-        self.wallet_container_widgets = [balance_line, self.balance_label, self.balance_unit_label, self.receive_qr, self.payments_container, self.hero_container, settings_button]
+        self.wallet_container_widgets = [balance_line, self.balance_label, self.balance_unit_label, self.receive_qr, self.lightning_bolt, self.chain_link, self.payments_container, self.hero_container, settings_button]
         # Install the screen-contact tracker on every interactive widget.
-        # LVGL 9 doesn't bubble events to ancestors by default, so a
-        # single listener on main_screen would miss touches on child
-        # widgets — confirmed empirically on hardware. Registering on
-        # each widget directly is robust against the lack of EVENT_BUBBLE.
+        # LVGL 9 doesn't bubble events to ancestors by default, so a single
+        # listener on main_screen would miss touches that originate on
+        # child widgets (the empirical observation: monitor showed
+        # "no contact recorded" even after the user scrolled the payments
+        # container twice). Registering on each widget directly is robust
+        # against the lack of EVENT_BUBBLE.
         for _w in (self.main_screen, balance_line, self.balance_label, self.balance_unit_label,
-                   self.receive_qr, self.payments_container, self.payments_label,
+                   self.receive_qr, self.lightning_bolt, self.chain_link,
+                   self.payments_container, self.payments_label,
                    self.hero_container, self.hero_image, settings_button):
             try:
                 _w.add_event_cb(self._on_screen_contact, lv.EVENT.PRESSED, None)
@@ -764,6 +884,10 @@ class DisplayWallet(Activity):
 
         # Initialize Confetti
         self.confetti = Confetti(main_screen, self.ICON_PATH, self.ASSET_PATH, self.confetti_duration)
+
+        # ESP32 BOOT button (GPIO0) — short press swaps active wallet, long
+        # press opens Settings. No-op on the desktop build (no machine.Pin).
+        self._start_boot_button_watcher()
 
         # Periodic stale-indicator check — runs every 60 s so the dot
         # appears even across periods with no wallet events (e.g. WiFi
@@ -877,24 +1001,40 @@ class DisplayWallet(Activity):
         cm = ConnectivityManager.get()
         self.network_changed(cm.is_online())
 
+    def _active_slot_and_suffix(self):
+        """Return (slot_str, suffix) for the currently active wallet slot.
+        Falls back to slot 1 if slot 2 is set active but unconfigured —
+        e.g. user deleted slot 2's wallet_type without flipping the active
+        slot back."""
+        slot = self.prefs.get_string("active_wallet_slot", "1")
+        if slot == "2" and not self.prefs.get_string("wallet_type_2"):
+            print("Active slot 2 not configured, falling back to slot 1")
+            editor = self.prefs.edit()
+            editor.put_string("active_wallet_slot", "1")
+            editor.commit()
+            slot = "1"
+        return slot, _slot_suffix(slot)
+
     def _wallet_config_key(self):
-        """Tuple that uniquely identifies the current wallet config. Changes
+        """Tuple uniquely identifying the active wallet's config. Changes
         to any of these prefs invalidate the running wallet — onResume uses
-        this to detect when the user changed settings and restart."""
-        wt = self.prefs.get_string("wallet_type")
+        this to detect when the user changed settings (or flipped the active
+        slot) and restart cleanly."""
+        slot, s = self._active_slot_and_suffix()
+        wt = self.prefs.get_string("wallet_type" + s)
         if wt == "lnbits":
-            return (wt,
-                    self.prefs.get_string("lnbits_url"),
-                    self.prefs.get_string("lnbits_readkey"))
+            return (wt, slot,
+                    self.prefs.get_string("lnbits_url" + s),
+                    self.prefs.get_string("lnbits_readkey" + s))
         if wt == "nwc":
-            return (wt, self.prefs.get_string("nwc_url"))
+            return (wt, slot, self.prefs.get_string("nwc_url" + s))
         if wt == "onchain":
             # Pointing the same xpub at a different Blockbook is a real
             # config change — must trigger a wallet restart.
-            return (wt,
-                    self.prefs.get_string("onchain_xpub"),
-                    self.prefs.get_string("onchain_blockbook_url"))
-        return (wt,)
+            return (wt, slot,
+                    self.prefs.get_string("onchain_xpub" + s),
+                    self.prefs.get_string("onchain_blockbook_url" + s))
+        return (wt, slot)
 
     def onPause(self, main_screen):
         leaving_app = self.destination not in (FullscreenQR, MainSettingsActivity)
@@ -913,6 +1053,10 @@ class DisplayWallet(Activity):
         cm.unregister_callback(self.network_changed)
 
     def onDestroy(self, main_screen):
+        # Stop the BOOT button watcher (its task checks
+        # self._boot_button_keep_running every 50 ms, so this will exit on
+        # the next tick — no hard kill needed).
+        self._boot_button_keep_running = False
         # Stop the periodic stale-indicator timer so it doesn't fire on a
         # dead Activity instance.
         if getattr(self, '_stale_timer', None) is not None:
@@ -923,6 +1067,118 @@ class DisplayWallet(Activity):
             self._stale_timer = None
         # would be good to cleanup lv.layer_top() of those confetti images
 
+    # ---- ESP32 BOOT button (GPIO0) handling ----------------------------------
+
+    _BOOT_LONG_PRESS_MS = 800
+    _BOOT_DEBOUNCE_MS = 30
+
+    def _start_boot_button_watcher(self):
+        """Wire up GPIO0 (BOOT button) for short/long press detection. Silent
+        no-op on desktop builds without machine.Pin."""
+        try:
+            from machine import Pin
+        except ImportError:
+            # Desktop build — no GPIO. Silently skip.
+            self._boot_button_keep_running = False
+            return
+        try:
+            self._boot_button_pin = Pin(0, Pin.IN, Pin.PULL_UP)
+        except Exception as e:
+            print("BOOT button: could not init GPIO0: {}".format(e))
+            self._boot_button_keep_running = False
+            return
+        self._boot_button_keep_running = True
+        TaskManager.create_task(self._boot_button_watcher_task())
+
+    async def _boot_button_watcher_task(self):
+        """Polling watcher with short/long press detection. Runs until onDestroy.
+
+        Wrapped in try/except so any transient exception inside a press-handler
+        (e.g. a prefs read failing during the first ~second of boot, an
+        `lv.async_call` from a not-yet-attached widget, etc.) gets logged +
+        skipped rather than silently killing the task. Earlier observation:
+        on the very first cold boot the task occasionally showed up as
+        `done:True` in `TaskManager.list_tasks()` with no visible error — most
+        likely an unhandled exception in `_on_boot_button_*_press` firing
+        during early startup. Hardening so even if the cause recurs the
+        button keeps working.
+        """
+        pin = self._boot_button_pin
+        debounce_s = self._BOOT_DEBOUNCE_MS / 1000
+        while self._boot_button_keep_running:
+            try:
+                if pin.value() == 0:  # active LOW: pressed
+                    await TaskManager.sleep(debounce_s)
+                    if pin.value() != 0:
+                        # bounce — released too fast
+                        continue
+                    t0 = time.ticks_ms()
+                    # Wait for release
+                    while pin.value() == 0 and self._boot_button_keep_running:
+                        await TaskManager.sleep(0.02)
+                    duration = time.ticks_diff(time.ticks_ms(), t0)
+                    if duration >= self._BOOT_LONG_PRESS_MS:
+                        self._on_boot_button_long_press()
+                    else:
+                        self._on_boot_button_short_press()
+            except Exception as e:
+                # Don't let one bad press tear out the whole watcher — log
+                # and continue. The next iteration polls the pin again.
+                print("BOOT watcher: caught exception, continuing: {}".format(e))
+                import sys
+                sys.print_exception(e)
+            await TaskManager.sleep(0.05)
+        # Helpful log if the loop ever exits cleanly (= onDestroy fired
+        # or keep_running was flipped). Without this an unexpected exit
+        # looked indistinguishable from a silent crash.
+        print("BOOT watcher: loop exited (keep_running={})".format(
+            self._boot_button_keep_running))
+
+    def _on_boot_button_short_press(self):
+        """Short press: switch active wallet, but only if a second wallet is configured."""
+        if not self.prefs.get_string("wallet_type_2"):
+            print("BOOT short press: no second wallet configured, ignoring")
+            return
+        current = self.prefs.get_string("active_wallet_slot", "1")
+        new_value = "2" if current == "1" else "1"
+        editor = self.prefs.edit()
+        editor.put_string("active_wallet_slot", new_value)
+        editor.commit()
+        print("BOOT short press: switching active wallet {} -> {}".format(current, new_value))
+        # UI work must run on the LVGL thread
+        lv.async_call(self._restart_active_wallet, None)
+
+    def _on_boot_button_long_press(self):
+        """Long press: open Settings (same as tapping the cog)."""
+        print("BOOT long press: opening Settings")
+        lv.async_call(lambda *args: self.settings_button_tap(None), None)
+
+    def _restart_active_wallet(self, *args):
+        """Stop current wallet, repaint with the new slot's cached data,
+        fire network_changed to start the new wallet. Mirrors the swap path
+        in onResume — used when the swap is triggered from outside the
+        Settings round-trip (e.g. by the BOOT button)."""
+        if self.wallet:
+            self.wallet.stop()
+        self.wallet = None
+        self._active_wallet_key = None
+        if hasattr(self, '_last_balance'):
+            del self._last_balance
+        self.receive_qr_data = None
+        # Cancel any in-flight balance animation so the OLD wallet's animator
+        # doesn't keep ticking display_balance during the swap.
+        lv.anim_delete(self.balance_label, None)
+        self.balance_label.set_text(lv.SYMBOL.REFRESH)
+        self.payments_label.set_text("")
+        # Hide the previous wallet's QR until the new slot's static_receive_code
+        # is loaded (from cache or fresh fetch).
+        self.receive_qr.add_flag(lv.obj.FLAG.HIDDEN)
+        # New slot might have a different hero image / wallet type icon —
+        # repaint both via went_online (which calls _update_wallet_type_indicator).
+        self._update_hero_image()
+        cm = ConnectivityManager.get()
+        self.network_changed(cm.is_online())
+
     def network_changed(self, online):
         print("displaywallet.py network_changed, now:", "ONLINE" if online else "OFFLINE")
         if online:
@@ -930,17 +1186,23 @@ class DisplayWallet(Activity):
         else:
             self.went_offline()
 
-    def _paint_from_cache(self, wallet_type):
+    def _paint_from_cache(self, wallet_type, slot=None):
         """Paint balance, payments and QR from the on-disk cache slot for
-        `wallet_type`, if the cached fingerprints still match the current
-        prefs. Returns True if anything was painted.
+        the given (`wallet_type`, `slot`) pair, if the cached fingerprints
+        still match the current prefs. Returns True if anything was painted.
+
+        `slot` defaults to whatever `_active_slot_and_suffix()` returns,
+        so callers that don't care about cross-slot reads can omit it.
 
         Called from went_online() before wallet.start() so the UI shows
         the last-known data instantly while the network fetch is in
         flight. Any field whose fingerprint doesn't match comes back None
         and is left in its default (spinner / Connecting... text)."""
-        creds_fp, qr_fp = wallet_cache.compute_fingerprints(wallet_type, self.prefs)
-        cached = wallet_cache.load_slot(wallet_type, creds_fp, qr_fp)
+        if slot is None:
+            slot, _ = self._active_slot_and_suffix()
+        slot_key = wallet_cache.compute_slot_key(wallet_type, slot)
+        creds_fp, qr_fp = wallet_cache.compute_fingerprints(wallet_type, self.prefs, slot=slot)
+        cached = wallet_cache.load_slot(slot_key, creds_fp, qr_fp)
         painted_anything = False
         if cached["balance"] is not None:
             self.display_balance(cached["balance"])
@@ -954,7 +1216,7 @@ class DisplayWallet(Activity):
             self.receive_qr.remove_flag(lv.obj.FLAG.HIDDEN)
             painted_anything = True
         if painted_anything:
-            print("Cache: painted slot '{}' from disk".format(wallet_type))
+            print("Cache: painted slot '{}' from disk".format(slot_key))
             # Seed the stale-tracking timer from the cache's last_updated so
             # the indicator reflects true age of the painted data, across
             # app restarts. If the slot is weeks old, the user sees an
@@ -1107,7 +1369,8 @@ class DisplayWallet(Activity):
         if self.wallet and self.wallet.is_running():
             print("wallet is already running, nothing to do") # might have come from the QR activity
             return
-        wallet_type = self.prefs.get_string("wallet_type")
+        slot, s = self._active_slot_and_suffix()
+        wallet_type = self.prefs.get_string("wallet_type" + s)
         if not wallet_type:
             self.show_welcome_screen()
             return # nothing is configured, nothing to do
@@ -1115,33 +1378,35 @@ class DisplayWallet(Activity):
         # Paint from cache before constructing the wallet, so the user sees
         # last-known data immediately. Fingerprint mismatch (config change)
         # returns nothing painted and we fall through to the spinner.
-        painted_from_cache = self._paint_from_cache(wallet_type)
+        painted_from_cache = self._paint_from_cache(wallet_type, slot)
         if wallet_type == "lnbits":
             try:
-                self.wallet = LNBitsWallet(self.prefs.get_string("lnbits_url"), self.prefs.get_string("lnbits_readkey"))
-                self.wallet.static_receive_code = self.prefs.get_string("lnbits_static_receive_code")
+                self.wallet = LNBitsWallet(
+                    self.prefs.get_string("lnbits_url" + s),
+                    self.prefs.get_string("lnbits_readkey" + s))
+                self.wallet.static_receive_code = self.prefs.get_string("lnbits_static_receive_code" + s)
                 self.redraw_static_receive_code_cb()
             except Exception as e:
                 self.error_cb(f"Couldn't initialize LNBits wallet because: {e}")
                 return
         elif wallet_type == "nwc":
             try:
-                self.wallet = NWCWallet(self.prefs.get_string("nwc_url"))
-                self.wallet.static_receive_code = self.prefs.get_string("nwc_static_receive_code")
+                self.wallet = NWCWallet(self.prefs.get_string("nwc_url" + s))
+                self.wallet.static_receive_code = self.prefs.get_string("nwc_static_receive_code" + s)
                 self.redraw_static_receive_code_cb()
             except Exception as e:
                 self.error_cb(f"Couldn't initialize NWC Wallet because: {e}")
                 return
         elif wallet_type == "onchain":
             try:
-                blockbook_url = self.prefs.get_string("onchain_blockbook_url") or None
+                blockbook_url = self.prefs.get_string("onchain_blockbook_url" + s) or None
                 self.wallet = OnchainWallet(
-                    self.prefs.get_string("onchain_xpub"),
+                    self.prefs.get_string("onchain_xpub" + s),
                     blockbook_url=blockbook_url,
                 )
                 # Settings override (a user-supplied BIP21 URI / static address)
                 # wins; otherwise the wallet auto-rotates per-poll.
-                self.wallet.static_receive_code = self.prefs.get_string("onchain_static_receive_code")
+                self.wallet.static_receive_code = self.prefs.get_string("onchain_static_receive_code" + s)
                 self.redraw_static_receive_code_cb()
             except Exception as e:
                 self.error_cb(f"Couldn't initialize On-chain wallet because: {e}")
@@ -1149,14 +1414,20 @@ class DisplayWallet(Activity):
         else:
             self.error_cb(f"No or unsupported wallet type configured: '{wallet_type}'")
             return
-        # Stamp the cache fingerprints onto the wallet so its handle_new_*
-        # writes land in the correct slot with a matching fingerprint.
+        # Stamp the (per-wallet-type, per-slot) cache identity onto the wallet
+        # so its handle_new_* writes land in the correct slot with matching
+        # fingerprints. slot_key = "{type}_{slot}" → e.g. "lnbits_1", "onchain_2".
+        self.wallet.slot_key = wallet_cache.compute_slot_key(wallet_type, slot)
         self.wallet.creds_fingerprint, self.wallet.qr_fingerprint = \
-            wallet_cache.compute_fingerprints(wallet_type, self.prefs)
+            wallet_cache.compute_fingerprints(wallet_type, self.prefs, slot=slot)
         # Stamp the config key so onResume can detect future changes.
         self._active_wallet_key = self._wallet_config_key()
         # Fresh wallet session — reset stale tracking.
         self._reset_stale_tracking()
+        # Re-apply conditional wallet-type indicator visibility (was hidden
+        # during the cache-paint phase to avoid showing the previous
+        # wallet's icon during a slot/type switch).
+        self._update_wallet_type_indicator()
         if not painted_from_cache and not (hasattr(self, '_last_balance') and self._last_balance):
             self.balance_label.set_text(lv.SYMBOL.REFRESH)
             self.balance_unit_label.set_text("")
@@ -1170,7 +1441,11 @@ class DisplayWallet(Activity):
         self.wallet.poll_success_cb = self._note_successful_update
 
     def went_offline(self):
-        wallet_type = self.prefs.get_string("wallet_type")
+        # Check the ACTIVE slot's wallet_type, not slot 1's: a user with slot 2
+        # active but slot 1 unconfigured would otherwise see the welcome
+        # screen instead of the offline message. Mirrors went_online's pattern.
+        slot, s = self._active_slot_and_suffix()
+        wallet_type = self.prefs.get_string("wallet_type" + s)
         if not wallet_type:
             self.show_welcome_screen()
             return
@@ -1181,7 +1456,7 @@ class DisplayWallet(Activity):
         # user still sees their last-known balance/QR while offline.
         if not (hasattr(self, '_last_balance') and self._last_balance):
             self.show_wallet_screen()
-            self._paint_from_cache(wallet_type)
+            self._paint_from_cache(wallet_type, slot)
         # Don't overwrite cached data with offline message
         if not (hasattr(self, '_last_balance') and self._last_balance):
             self.payments_label.set_text(f"WiFi is not connected, can't talk to wallet...")
@@ -1211,7 +1486,33 @@ class DisplayWallet(Activity):
             # will un-hide it when fresh data arrives.
             if w is self.receive_qr and not self.receive_qr_data:
                 continue
+            # The wallet-type indicators are mutually exclusive — let
+            # _update_wallet_type_indicator() decide which one to show
+            # based on the active wallet, rather than un-hiding both here.
+            if w is self.lightning_bolt or w is self.chain_link:
+                continue
             w.remove_flag(lv.obj.FLAG.HIDDEN)
+        # Re-apply mutually-exclusive indicator visibility AFTER the blanket
+        # un-hide above (otherwise both would briefly appear together).
+        self._update_wallet_type_indicator()
+
+    def _update_wallet_type_indicator(self):
+        """Show exactly one wallet-type icon next to the QR area, based on
+        the active slot's wallet type. Lightning (LNBits/NWC) → yellow ⚡;
+        on-chain → pink chain-link. Anything else → both hidden."""
+        if not hasattr(self, 'lightning_bolt'):
+            return  # Called before onCreate completed (test path)
+        _, s = self._active_slot_and_suffix()
+        wt = self.prefs.get_string("wallet_type" + s)
+        if wt in ("lnbits", "nwc"):
+            self.lightning_bolt.remove_flag(lv.obj.FLAG.HIDDEN)
+            self.chain_link.add_flag(lv.obj.FLAG.HIDDEN)
+        elif wt == "onchain":
+            self.lightning_bolt.add_flag(lv.obj.FLAG.HIDDEN)
+            self.chain_link.remove_flag(lv.obj.FLAG.HIDDEN)
+        else:
+            self.lightning_bolt.add_flag(lv.obj.FLAG.HIDDEN)
+            self.chain_link.add_flag(lv.obj.FLAG.HIDDEN)
 
     def _splash_done(self, timer):
         """Called after splash duration. Fade out splash and show appropriate screen.
@@ -1235,8 +1536,9 @@ class DisplayWallet(Activity):
         return lv.color_black()
 
     def _update_hero_image(self):
-        """Show or hide the hero image based on settings."""
-        hero = self.prefs.get_string("hero_image", "lightningpiggy")
+        """Show or hide the hero image based on the active slot's settings."""
+        _, s = self._active_slot_and_suffix()
+        hero = self.prefs.get_string("hero_image" + s, "lightningpiggy")
         # Always position the container in the same spot
         qr_size = DisplayMetrics.pct_of_width(self.receive_qr_pct_of_display)
         qr_bottom_y = qr_size + 16
@@ -1311,7 +1613,10 @@ class DisplayWallet(Activity):
 
     def display_balance(self, balance):
          self._last_balance = balance
-         denom = self.prefs.get_string("balance_denomination", "sats")
+         # Slot-aware denom read: slot 1 uses `balance_denomination`,
+         # slot 2 uses `balance_denomination_2` (multi-wallet).
+         _, s = self._active_slot_and_suffix()
+         denom = self.prefs.get_string("balance_denomination" + s, "sats")
          Payment.use_symbol = (denom == "\u20bf symbol")
          self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
          # Split the balance into a big number + a smaller unit suffix.
@@ -1430,15 +1735,16 @@ class DisplayWallet(Activity):
         self._note_successful_update()
 
     def redraw_static_receive_code_cb(self):
-        # Settings override wins if present.
-        wallet_type = self.prefs.get_string("wallet_type")
+        # Settings override (for the active slot's wallet type) wins if present.
+        _, s = self._active_slot_and_suffix()
+        wallet_type = self.prefs.get_string("wallet_type" + s)
         override = None
         if wallet_type == "nwc":
-            override = self.prefs.get_string("nwc_static_receive_code")
+            override = self.prefs.get_string("nwc_static_receive_code" + s)
         elif wallet_type == "lnbits":
-            override = self.prefs.get_string("lnbits_static_receive_code")
+            override = self.prefs.get_string("lnbits_static_receive_code" + s)
         elif wallet_type == "onchain":
-            override = self.prefs.get_string("onchain_static_receive_code")
+            override = self.prefs.get_string("onchain_static_receive_code" + s)
         # Next, the wallet's own discovered receive code (from backend / NWC lud16).
         wallet_code = self.wallet.static_receive_code if self.wallet else None
         # Pick the first non-empty source; fall through to whatever's already
@@ -1477,17 +1783,50 @@ class DisplayWallet(Activity):
         self.destination = MainSettingsActivity  # prevent wallet.stop() in onPause
         intent = Intent(activity_class=MainSettingsActivity)
         intent.putExtra("prefs", self.prefs)
-        intent.putExtra("settings", [
+        # "Wallet" always points at the *active* slot (so editing this row
+        # changes the wallet the user is looking at). The bottom row is
+        # contextual: if no slot-2 wallet exists, show "Add wallet"
+        # (opens slot 2 in WalletSettingsActivity); once slot 2 is
+        # configured, show "Switch to <other-type>" which flips the
+        # active slot on tap and drops back to the main display.
+        active_slot, _ = self._active_slot_and_suffix()
+        active_slot_int = int(active_slot)
+        other_slot = 2 if active_slot_int == 1 else 1
+        other_suffix = _slot_suffix(other_slot)
+        other_wallet_type = self.prefs.get_string("wallet_type" + other_suffix)
+        settings_rows = [
             {"title": "Wallet", "key": "wallet_type", "ui": "activity",
              "activity_class": WalletSettingsActivity,
-             "placeholder": self.prefs.get_string("wallet_type", "not configured")},
+             "placeholder": self.prefs.get_string(
+                 "wallet_type" + _slot_suffix(active_slot_int),
+                 "not configured"),
+             "_slot": active_slot_int},
             {"title": "Customise", "key": "customise", "ui": "activity",
              "activity_class": CustomiseSettingsActivity,
              "placeholder": "Balance denomination, hero image",
              "_callbacks": {"denomination": self._on_denomination_changed, "hero_image": self._on_hero_image_changed}},
             {"title": "Screen Lock", "key": "screen_lock", "activity_class": True,
              "placeholder": "On - tapping disabled" if self.prefs.get_string("screen_lock", "off") == "on" else "Off - tapping changes display"},
-        ])
+        ]
+        if not other_wallet_type:
+            # No second wallet yet — offer to set one up.
+            settings_rows.append({
+                "title": "Add wallet",
+                "key": "wallet_type",
+                "ui": "activity",
+                "activity_class": WalletSettingsActivity,
+                "placeholder": "Set up a second wallet to switch between",
+                "_slot": other_slot,
+            })
+        else:
+            # Second wallet exists — offer a one-tap switch.
+            settings_rows.append({
+                "title": "Switch to " + other_wallet_type,
+                "key": "__switch_active_wallet",
+                "activity_class": True,  # routed inline by MainSettingsActivity
+                "placeholder": "Flip the active wallet",
+            })
+        intent.putExtra("settings", settings_rows)
         self.startActivity(intent)
 
     HERO_CYCLE = ["lightningpiggy", "lightningpenguin", "none"]
@@ -1497,32 +1836,40 @@ class DisplayWallet(Activity):
         return self.prefs.get_string("screen_lock", "off") == "on"
 
     def hero_image_clicked_cb(self, event):
-        """Cycle through hero images on tap."""
+        """Cycle through hero images on tap — writes to the active slot's
+        hero_image pref so a per-slot choice (Piggy on slot 1, Penguin on
+        slot 2) is preserved across wallet switches."""
         if self._is_screen_locked():
             return
-        current = self.prefs.get_string("hero_image", "lightningpiggy")
+        _, s = self._active_slot_and_suffix()
+        key = "hero_image" + s
+        current = self.prefs.get_string(key, "lightningpiggy")
         try:
             idx = self.HERO_CYCLE.index(current)
         except ValueError:
             idx = 0
         next_hero = self.HERO_CYCLE[(idx + 1) % len(self.HERO_CYCLE)]
         editor = self.prefs.edit()
-        editor.put_string("hero_image", next_hero)
+        editor.put_string(key, next_hero)
         editor.commit()
         self._update_hero_image()
 
     def balance_label_clicked_cb(self, event):
-        """Cycle through balance denominations on tap."""
+        """Cycle through balance denominations on tap — writes to the active
+        slot's denomination pref so each wallet remembers its own display
+        format independently."""
         if self._is_screen_locked():
             return
-        current = self.prefs.get_string("balance_denomination", "sats")
+        _, s = self._active_slot_and_suffix()
+        key = "balance_denomination" + s
+        current = self.prefs.get_string(key, "sats")
         try:
             idx = self.DENOMINATION_CYCLE.index(current)
         except ValueError:
             idx = 0
         next_denom = self.DENOMINATION_CYCLE[(idx + 1) % len(self.DENOMINATION_CYCLE)]
         editor = self.prefs.edit()
-        editor.put_string("balance_denomination", next_denom)
+        editor.put_string(key, next_denom)
         editor.commit()
         if hasattr(self, '_last_balance'):
             self.display_balance(self._last_balance)

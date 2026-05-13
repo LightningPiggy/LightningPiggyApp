@@ -6,6 +6,11 @@
 - Poll cadence: 60 s while any tx is unconfirmed, 300 s when everything's confirmed — fast feedback during a receive without hammering the indexer the rest of the time
 - xpub is never written to logs or surfaced in error messages — leaking the xpub exposes the entire past + future derivation tree to anyone who reads it. The Blockbook URL passed to `DownloadManager.download_url` uses `redact_url=True` (MicroPythonOS 0.9.6+) so the framework also scrubs the xpub from its own request/response/exception log lines
 - Privacy note: any external indexer (mempool.space, Esplora, Blockbook, an Electrum server) learns your addresses and can link them. Doesn't affect custody — Lightning Piggy holds no keys — but does affect chain confidentiality. Point the Blockbook URL setting at your own node to eliminate it
+- Multi-wallet: configure up to two wallets side-by-side and switch between them with one tap. Mix-and-match — LNBits + on-chain, NWC + on-chain, two LNBits, two NWCs, etc. Settings shows "Add wallet" when only one is configured and turns into "Switch to <type>" once both slots are populated
+- Per-wallet customisation: hero image (Piggy / Penguin / None) and balance denomination (sats / ₿ / bits / micro-BTC / milli-BTC / BTC) are stored per-slot, so each wallet remembers its own display preferences across switches
+- Wallet-type indicator next to the balance: yellow ⚡ for Lightning (LNBits, NWC), pink chain-link for on-chain. Visible only for the active slot's type
+- Per-slot wallet cache: each (wallet type, slot) pair retains its own cached balance / transactions / receive QR across reboots and slot-switches. Switching the active slot paints the new slot's data from disk instantly while a fresh fetch is in flight (matches the existing instant-paint experience for single-wallet users from 0.4.0)
+- ESP32 BOOT button (GPIO0) as a hardware wallet-switcher: short press flips the active wallet (when both slots are configured), long press (≥800 ms) opens Settings. No-op on desktop builds without GPIO. Means you can keep the device on a shelf and switch between your savings wallet and spending wallet without picking it up
 
 0.4.2
 =====
