@@ -411,10 +411,10 @@ class DisplayWallet(Activity):
     payments_label_current_font = 1
     try:
         # MicroPythonOS 0.9.3+
-        payments_label_fonts = [ lv.font_montserrat_10, lv.font_montserrat_16, lv.font_montserrat_24, lv.font_montserrat_28, lv.font_montserrat_40]
+        payments_label_fonts = [ lv.font_montserrat_10, lv.font_montserrat_16, lv.font_montserrat_24, lv.font_montserrat_28]
     except Exception as e:
         # Fallback for users with MicroPythonOS < 0.9.3
-        payments_label_fonts = [ lv.font_montserrat_10, lv.font_montserrat_16, lv.font_montserrat_24, lv.font_montserrat_28_compressed, lv.font_montserrat_40]
+        payments_label_fonts = [ lv.font_montserrat_10, lv.font_montserrat_16, lv.font_montserrat_24, lv.font_montserrat_28_compressed]
 
     # screens:
     main_screen = None

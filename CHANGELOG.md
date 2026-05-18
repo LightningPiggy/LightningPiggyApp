@@ -1,3 +1,7 @@
+0.4.2
+=====
+- Remove unsupported lv.font_montserrat_40 (MicroPythonOS 0.9.6+)
+
 0.4.1
 =====
 - Balance header split into two labels: a big number (`12,345`) in font_montserrat_24 plus a smaller unit suffix (`sats` / `bits` / `micro-BTC` / `milli-BTC` / `BTC`) in font_montserrat_16, sharing a baseline. The previous all-one-font rendering made long balance strings (millions of sats, or spelled-out denominations like "8.98765432 milli-BTC") overflow the available header area and visually collide with the wallet-type indicator icons (⚡ for Lightning, chain-link for on-chain) or push toward the QR. Shrinking just the unit suffix gives the number itself another ~40 px to grow into without changing its visual weight. The "₿ symbol" denomination is unchanged (the ₿ glyph is part of the big number, no separate unit suffix). Both labels remain clickable so tap-to-cycle-denomination keeps working from anywhere on the balance line
