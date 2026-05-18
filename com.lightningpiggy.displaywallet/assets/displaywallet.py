@@ -47,6 +47,7 @@ import wallet_cache
 # This prevents ImportError when switching wallet types after the app has started
 from lnbits_wallet import LNBitsWallet
 from nwc_wallet import NWCWallet
+from onchain_wallet import OnchainWallet
 
 
 def _apply_screen_theme(screen):
@@ -114,6 +115,8 @@ def _should_show_wallet_setting(setting):
         return False
     if wallet_type != "nwc" and setting["key"].startswith("nwc_"):
         return False
+    if wallet_type != "onchain" and setting["key"].startswith("onchain_"):
+        return False
     return True
 
 
@@ -124,7 +127,7 @@ class WalletSettingsActivity(SettingsActivity):
         self.prefs = extras.get("prefs")
         self.settings = [
             {"title": "Wallet Type", "key": "wallet_type", "ui": "radiobuttons",
-             "ui_options": [("LNBits", "lnbits"), ("Nostr Wallet Connect", "nwc")]},
+             "ui_options": [("LNBits", "lnbits"), ("Nostr Wallet Connect", "nwc"), ("On-chain (xpub)", "onchain")]},
             {"title": "LNBits URL", "key": "lnbits_url",
              "placeholder": "https://demo.lnpiggy.com", "should_show": _should_show_wallet_setting},
             {"title": "LNBits Read Key", "key": "lnbits_readkey",
@@ -135,6 +138,12 @@ class WalletSettingsActivity(SettingsActivity):
              "placeholder": "nostr+walletconnect://69effe7b...", "should_show": _should_show_wallet_setting},
             {"title": "Optional LN Address", "key": "nwc_static_receive_code",
              "placeholder": "Optional if present in NWC URL.", "should_show": _should_show_wallet_setting},
+            {"title": "xpub / ypub / zpub", "key": "onchain_xpub",
+             "placeholder": "zpub6rF...", "should_show": _should_show_wallet_setting},
+            {"title": "Blockbook URL", "key": "onchain_blockbook_url",
+             "placeholder": "https://btc1.trezor.io", "should_show": _should_show_wallet_setting},
+            {"title": "Optional Receive Address", "key": "onchain_static_receive_code",
+             "placeholder": "Auto-rotates if empty.", "should_show": _should_show_wallet_setting},
         ]
         screen = lv.obj()
         screen.set_style_pad_all(DisplayMetrics.pct_of_width(2), lv.PART.MAIN)
@@ -879,6 +888,12 @@ class DisplayWallet(Activity):
                     self.prefs.get_string("lnbits_readkey"))
         if wt == "nwc":
             return (wt, self.prefs.get_string("nwc_url"))
+        if wt == "onchain":
+            # Pointing the same xpub at a different Blockbook is a real
+            # config change — must trigger a wallet restart.
+            return (wt,
+                    self.prefs.get_string("onchain_xpub"),
+                    self.prefs.get_string("onchain_blockbook_url"))
         return (wt,)
 
     def onPause(self, main_screen):
@@ -1116,6 +1131,20 @@ class DisplayWallet(Activity):
                 self.redraw_static_receive_code_cb()
             except Exception as e:
                 self.error_cb(f"Couldn't initialize NWC Wallet because: {e}")
+                return
+        elif wallet_type == "onchain":
+            try:
+                blockbook_url = self.prefs.get_string("onchain_blockbook_url") or None
+                self.wallet = OnchainWallet(
+                    self.prefs.get_string("onchain_xpub"),
+                    blockbook_url=blockbook_url,
+                )
+                # Settings override (a user-supplied BIP21 URI / static address)
+                # wins; otherwise the wallet auto-rotates per-poll.
+                self.wallet.static_receive_code = self.prefs.get_string("onchain_static_receive_code")
+                self.redraw_static_receive_code_cb()
+            except Exception as e:
+                self.error_cb(f"Couldn't initialize On-chain wallet because: {e}")
                 return
         else:
             self.error_cb(f"No or unsupported wallet type configured: '{wallet_type}'")
@@ -1408,6 +1437,8 @@ class DisplayWallet(Activity):
             override = self.prefs.get_string("nwc_static_receive_code")
         elif wallet_type == "lnbits":
             override = self.prefs.get_string("lnbits_static_receive_code")
+        elif wallet_type == "onchain":
+            override = self.prefs.get_string("onchain_static_receive_code")
         # Next, the wallet's own discovered receive code (from backend / NWC lud16).
         wallet_code = self.wallet.static_receive_code if self.wallet else None
         # Pick the first non-empty source; fall through to whatever's already

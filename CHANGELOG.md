@@ -1,3 +1,12 @@
+0.5.0
+=====
+- Add on-chain wallet type: watch a Bitcoin xpub / ypub / zpub by polling a Blockbook indexer (Trezor's open-source explorer, https://github.com/trezor/blockbook). Server-side derivation means no BIP32 lib on the device. Defaults to Trezor's hosted instance at `btc1.trezor.io`; configurable to a self-hosted Blockbook (Umbrel / Start9 / BTCPay Server / Sparrow Server) for full privacy via the Settings → Wallet → Blockbook URL field
+- Receive QR auto-rotates to a fresh unused address after the displayed one has received a payment — preserves Bitcoin's "one address per receive" privacy convention. Avoids rotating mid-scan: the QR only changes after Blockbook reports the currently-displayed address has a transfer, not on every poll
+- Transactions list shows `"<amount> sats: Apr 16 confirmed"` / `"... pending"`; self-transfers (where every input AND every output belongs to the xpub) render as `"-<fee> sats: Apr 16 self-transfer"` so on-chain hopping looks like a fee-only loss instead of a misleading large net send
+- Poll cadence: 60 s while any tx is unconfirmed, 300 s when everything's confirmed — fast feedback during a receive without hammering the indexer the rest of the time
+- xpub is never written to logs or surfaced in error messages — leaking the xpub exposes the entire past + future derivation tree to anyone who reads it. The Blockbook URL passed to `DownloadManager.download_url` uses `redact_url=True` (MicroPythonOS 0.9.6+) so the framework also scrubs the xpub from its own request/response/exception log lines
+- Privacy note: any external indexer (mempool.space, Esplora, Blockbook, an Electrum server) learns your addresses and can link them. Doesn't affect custody — Lightning Piggy holds no keys — but does affect chain confidentiality. Point the Blockbook URL setting at your own node to eliminate it
+
 0.4.2
 =====
 - Remove unsupported lv.font_montserrat_40 (MicroPythonOS 0.9.6+)

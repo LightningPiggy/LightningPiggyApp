@@ -68,6 +68,16 @@ def compute_fingerprints(wallet_type, prefs):
         creds_fp = _fingerprint("nwc", nwc_url)
         qr_fp = _fingerprint("nwc", nwc_url, override)
         return creds_fp, qr_fp
+    if wallet_type == "onchain":
+        xpub = prefs.get_string("onchain_xpub") or ""
+        blockbook_url = prefs.get_string("onchain_blockbook_url") or ""
+        override = prefs.get_string("onchain_static_receive_code") or ""
+        # Both xpub and the indexer URL participate: pointing the same
+        # xpub at a different Blockbook is a valid config change and must
+        # invalidate cached balance + payments.
+        creds_fp = _fingerprint("onchain", xpub, blockbook_url)
+        qr_fp = _fingerprint("onchain", xpub, blockbook_url, override)
+        return creds_fp, qr_fp
     return None, None
 
 
