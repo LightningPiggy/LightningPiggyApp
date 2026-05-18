@@ -122,6 +122,15 @@ class WalletSettingsActivity(SettingsActivity):
     def onCreate(self):
         extras = self.getIntent().extras or {}
         self.prefs = extras.get("prefs")
+        # Optional callbacks passed from the parent settings dict — mirrors the
+        # pattern CustomiseSettingsActivity uses. Used here only for the LN-
+        # address override (LNBits + NWC): editing it must trigger an
+        # immediate QR redraw on the home screen. The URL / readkey / NWC URL
+        # don't need a callback because changing those does change
+        # `_wallet_config_key()` and `onResume` already restarts the wallet.
+        setting = extras.get("setting") or {}
+        callbacks = setting.get("_callbacks") or {}
+        static_cb = callbacks.get("static_receive_code")
         self.settings = [
             {"title": "Wallet Type", "key": "wallet_type", "ui": "radiobuttons",
              "ui_options": [("LNBits", "lnbits"), ("Nostr Wallet Connect", "nwc")]},
@@ -130,11 +139,13 @@ class WalletSettingsActivity(SettingsActivity):
             {"title": "LNBits Read Key", "key": "lnbits_readkey",
              "placeholder": "fd92e3f8168ba314dc22e54182784045", "should_show": _should_show_wallet_setting},
             {"title": "Optional LN Address", "key": "lnbits_static_receive_code",
-             "placeholder": "Will be fetched if empty.", "should_show": _should_show_wallet_setting},
+             "placeholder": "Will be fetched if empty.", "should_show": _should_show_wallet_setting,
+             "changed_callback": static_cb},
             {"title": "Nostr Wallet Connect", "key": "nwc_url",
              "placeholder": "nostr+walletconnect://69effe7b...", "should_show": _should_show_wallet_setting},
             {"title": "Optional LN Address", "key": "nwc_static_receive_code",
-             "placeholder": "Optional if present in NWC URL.", "should_show": _should_show_wallet_setting},
+             "placeholder": "Optional if present in NWC URL.", "should_show": _should_show_wallet_setting,
+             "changed_callback": static_cb},
         ]
         screen = lv.obj()
         screen.set_style_pad_all(DisplayMetrics.pct_of_width(2), lv.PART.MAIN)
@@ -871,14 +882,31 @@ class DisplayWallet(Activity):
     def _wallet_config_key(self):
         """Tuple that uniquely identifies the current wallet config. Changes
         to any of these prefs invalidate the running wallet — onResume uses
-        this to detect when the user changed settings and restart."""
+        this to detect when the user changed settings and restart.
+
+        The optional LN-address override IS included so that if the user
+        edits it through a code path that doesn't fire
+        `changed_callback` (e.g. a programmatic prefs write, a settings
+        migration, a future settings UI that wires its callback
+        differently), onResume still catches the change and forces a
+        wallet restart — pessimistic but always correct.
+
+        For the common case of editing the override through the normal
+        Settings UI, `_on_static_receive_code_changed` already handles
+        the redraw and bumps `_active_wallet_key` to the new tuple, so
+        onResume sees no change and skips the wallet restart entirely.
+        Result: live update via the callback (no socket churn), with
+        the config-key check as a defence-in-depth safety net."""
         wt = self.prefs.get_string("wallet_type")
         if wt == "lnbits":
             return (wt,
                     self.prefs.get_string("lnbits_url"),
-                    self.prefs.get_string("lnbits_readkey"))
+                    self.prefs.get_string("lnbits_readkey"),
+                    self.prefs.get_string("lnbits_static_receive_code"))
         if wt == "nwc":
-            return (wt, self.prefs.get_string("nwc_url"))
+            return (wt,
+                    self.prefs.get_string("nwc_url"),
+                    self.prefs.get_string("nwc_static_receive_code"))
         return (wt,)
 
     def onPause(self, main_screen):
@@ -1230,6 +1258,33 @@ class DisplayWallet(Activity):
         """Called when hero image setting changes."""
         self._update_hero_image()
 
+    def _on_static_receive_code_changed(self, new_value):
+        """Called when the user edits the optional LN-address override
+        (`lnbits_static_receive_code` or `nwc_static_receive_code`) in
+        Settings → Wallet. Updates the running wallet's
+        `static_receive_code` and triggers an immediate QR redraw so the
+        new address shows up without requiring an app restart.
+
+        Empty `new_value` is a "clear the override" — fall back to the
+        wallet's own discovered receive code (NWC lud16 / LNBits fetch).
+        `redraw_static_receive_code_cb` already implements the
+        prefs-override-wins-else-fallback-to-wallet-code logic, so we
+        don't have to special-case it here.
+
+        Also updates `_active_wallet_key` (which the post-0.4.2 fix now
+        includes the override in) so the subsequent `onResume` doesn't
+        see a "config changed" and waste cycles restarting the wallet —
+        the override change is fully handled live; no socket churn
+        needed.
+        """
+        if self.wallet and new_value:
+            self.wallet.static_receive_code = new_value
+        self.redraw_static_receive_code_cb()
+        # Keep the active-config key in sync so onResume's "config
+        # changed → restart wallet" branch doesn't fire redundantly.
+        if hasattr(self, '_active_wallet_key'):
+            self._active_wallet_key = self._wallet_config_key()
+
     def _qr_colors(self):
         """Return (dark_color, light_color) tuple based on current theme."""
         if not AppearanceManager.is_light_mode():
@@ -1449,7 +1504,8 @@ class DisplayWallet(Activity):
         intent.putExtra("settings", [
             {"title": "Wallet", "key": "wallet_type", "ui": "activity",
              "activity_class": WalletSettingsActivity,
-             "placeholder": self.prefs.get_string("wallet_type", "not configured")},
+             "placeholder": self.prefs.get_string("wallet_type", "not configured"),
+             "_callbacks": {"static_receive_code": self._on_static_receive_code_changed}},
             {"title": "Customise", "key": "customise", "ui": "activity",
              "activity_class": CustomiseSettingsActivity,
              "placeholder": "Balance denomination, hero image",

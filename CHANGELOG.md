@@ -1,6 +1,7 @@
 0.4.2
 =====
 - Remove unsupported lv.font_montserrat_40 (MicroPythonOS 0.9.6+)
+- Fix: the "Optional LN Address" override in Settings → Wallet now updates the on-screen receive QR immediately on save. Previously the new address was written to prefs correctly but the home-screen QR kept showing the old one until the app was fully closed and reopened — there was no `changed_callback` wired on the LN-address settings, AND `_wallet_config_key()` (the tuple `onResume` compares to detect setting changes and trigger a wallet restart) didn't include the override. Now: editing the override fires `_on_static_receive_code_changed`, which updates the running wallet's `static_receive_code` and calls `redraw_static_receive_code_cb` directly — live update, no wallet restart, no socket churn. The override is also added to `_wallet_config_key()` as a defence-in-depth safety net so the bug can't recur via a code path that doesn't wire the callback
 
 0.4.1
 =====
