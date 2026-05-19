@@ -1285,7 +1285,11 @@ class DisplayWallet(Activity):
             self._refresh_stale_indicator()
         return painted_anything
 
-    # Colour palette for the stale indicator.
+    # Colour palette for the stale indicator. Applied to the lightning_bolt
+    # label's text color and as a recolor-overlay on the chain_link image —
+    # the wallet-type icon doubles as the freshness signal so users don't
+    # have to look at two different visual elements.
+    _BOLT_COLOR_FRESH = 0xFFD700   # bright yellow — matches the initial style in onCreate
     _STALE_COLOR_WARN = 0xE69B1F   # amber / Bitcoin-orange
     _STALE_COLOR_ERROR = 0xDD2222  # red
 
@@ -1310,29 +1314,46 @@ class DisplayWallet(Activity):
             print("stale_indicator: reposition exception:", e)
 
     def _set_stale_indicator(self, level):
-        """Toggle the stale-indicator dot beneath the mascot.
+        """Paint the wallet-type icon's color to convey fetch freshness.
+
+        Reuses the existing ⚡ (lightning_bolt) / chain_link icon — no
+        separate dot widget needed. Whichever icon is currently visible
+        for the active slot's wallet type takes the color; the other is
+        hidden by `_update_wallet_type_indicator` anyway so its recolor
+        state is moot.
 
         `level` is one of:
-            None / False / ''  — hide the dot
-            'warn'             — show orange (>= 10 min since last update)
-            'error'            — show red  (>= 60 min since last update)
+            None / False / ''  — fresh (bolt → yellow, chain → native PNG colors)
+            'warn'             — orange (>= 10 min since last update)
+            'error'            — red    (>= 60 min since last update)
+
+        Legacy stale_indicator_dot widget kept hidden permanently — code
+        in onCreate that created it is left in place to avoid a churny
+        diff, but it never reappears via this method.
         """
-        if not hasattr(self, 'stale_indicator_dot'):
+        if not hasattr(self, 'lightning_bolt'):
             return
         try:
             if level == 'error':
-                self.stale_indicator_dot.set_style_bg_color(
-                    lv.color_hex(self._STALE_COLOR_ERROR), lv.PART.MAIN)
-                self.stale_indicator_dot.set_style_bg_opa(lv.OPA.COVER, lv.PART.MAIN)
-                self.stale_indicator_dot.remove_flag(lv.obj.FLAG.HIDDEN)
-                self.stale_indicator_dot.move_foreground()
+                color = self._STALE_COLOR_ERROR
             elif level == 'warn':
-                self.stale_indicator_dot.set_style_bg_color(
-                    lv.color_hex(self._STALE_COLOR_WARN), lv.PART.MAIN)
-                self.stale_indicator_dot.set_style_bg_opa(lv.OPA.COVER, lv.PART.MAIN)
-                self.stale_indicator_dot.remove_flag(lv.obj.FLAG.HIDDEN)
-                self.stale_indicator_dot.move_foreground()
+                color = self._STALE_COLOR_WARN
             else:
+                color = self._BOLT_COLOR_FRESH
+            # ⚡ is an lv.label — text color sets the glyph color directly.
+            self.lightning_bolt.set_style_text_color(lv.color_hex(color), lv.PART.MAIN)
+            # chain_link is an lv.image of a PNG — recolor + recolor_opa
+            # tints all opaque pixels with `color` while preserving the
+            # PNG's alpha mask. Clearing recolor_opa (TRANSP) restores
+            # the native PNG appearance for the fresh state.
+            if level in ('warn', 'error'):
+                self.chain_link.set_style_image_recolor(lv.color_hex(color), lv.PART.MAIN)
+                self.chain_link.set_style_image_recolor_opa(lv.OPA.COVER, lv.PART.MAIN)
+            else:
+                self.chain_link.set_style_image_recolor_opa(lv.OPA.TRANSP, lv.PART.MAIN)
+            # Ensure the legacy dot stays hidden — superseded by the
+            # icon-tint approach.
+            if hasattr(self, 'stale_indicator_dot'):
                 self.stale_indicator_dot.add_flag(lv.obj.FLAG.HIDDEN)
         except Exception as e:
             print("stale_indicator: exception:", e)
