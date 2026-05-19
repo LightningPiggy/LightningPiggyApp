@@ -136,6 +136,24 @@ def _resolve_denom_key(setting, default="balance_denomination"):
     return (setting or {}).get("key") or default
 
 
+# Human-readable display names for wallet_type values. Used in the
+# "Switch to <other>" button on the main Settings screen so users see
+# "Switch to Lightning" instead of "Switch to nwc". Both NWC and LNBits
+# are Lightning under the hood — collapsing them into a single
+# "Lightning" label keeps the switch button focused on the user-visible
+# distinction (Lightning vs On-chain) rather than the back-end protocol.
+# Unknown values pass through unchanged.
+_WALLET_TYPE_DISPLAY = {
+    "nwc": "Lightning",
+    "lnbits": "Lightning",
+    "onchain": "On-chain",
+}
+
+
+def _friendly_wallet_type(wt):
+    return _WALLET_TYPE_DISPLAY.get(wt, wt)
+
+
 def _should_show_wallet_setting(setting):
     """Conditionally show wallet-specific settings based on this slot's
     wallet_type. The slot comes from the setting dict (parent populates
@@ -197,7 +215,7 @@ class WalletSettingsActivity(SettingsActivity):
              "placeholder": "zpub6rF...", "should_show": _should_show_wallet_setting, "_slot": self.slot},
             {"title": "Blockbook URL", "key": "onchain_blockbook_url" + s,
              "placeholder": "https://btc1.trezor.io", "should_show": _should_show_wallet_setting, "_slot": self.slot},
-            {"title": "Optional Receive Address", "key": "onchain_static_receive_code" + s,
+            {"title": "Optional Fixed Receive Address", "key": "onchain_static_receive_code" + s,
              "placeholder": "Auto-rotates if empty.", "should_show": _should_show_wallet_setting, "_slot": self.slot,
              "changed_callback": static_cb},
         ]
@@ -1878,9 +1896,14 @@ class DisplayWallet(Activity):
         settings_rows = [
             {"title": "Wallet", "key": "wallet_type", "ui": "activity",
              "activity_class": WalletSettingsActivity,
-             "placeholder": self.prefs.get_string(
+             # Display the active slot's wallet type as a friendly label
+             # ("Lightning" for nwc/lnbits, "On-chain" for onchain) rather
+             # than the raw stored value. Same helper as the "Switch to X"
+             # button below — keeps both rows speaking the same user-
+             # facing vocabulary.
+             "placeholder": _friendly_wallet_type(self.prefs.get_string(
                  "wallet_type" + _slot_suffix(active_slot_int),
-                 "not configured"),
+                 "not configured")),
              "_slot": active_slot_int,
              "_callbacks": _wallet_callbacks},
             {"title": "Customise", "key": "customise", "ui": "activity",
@@ -1902,9 +1925,11 @@ class DisplayWallet(Activity):
                 "_callbacks": _wallet_callbacks,
             })
         else:
-            # Second wallet exists — offer a one-tap switch.
+            # Second wallet exists — offer a one-tap switch. Use the
+            # friendly display name (e.g. "Lightning" for nwc/lnbits)
+            # rather than the raw stored value.
             settings_rows.append({
-                "title": "Switch to " + other_wallet_type,
+                "title": "Switch to " + _friendly_wallet_type(other_wallet_type),
                 "key": "__switch_active_wallet",
                 "activity_class": True,  # routed inline by MainSettingsActivity
                 "placeholder": "Flip the active wallet",
