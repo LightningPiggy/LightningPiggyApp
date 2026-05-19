@@ -169,6 +169,14 @@ class WalletSettingsActivity(SettingsActivity):
         parent_setting = extras.get("setting") or {}
         self.slot = parent_setting.get("_slot", 1)
         s = _slot_suffix(self.slot)
+        # Optional callback passed from the parent settings dict. Used by the
+        # three "Optional ... Address" overrides (LNBits / NWC / onchain) to
+        # trigger an immediate QR redraw on save — without this the new value
+        # is written to prefs but the home-screen QR keeps showing the old
+        # one until the app is fully closed and reopened. Matches the pattern
+        # CustomiseSettingsActivity uses for denomination + hero_image.
+        callbacks = parent_setting.get("_callbacks") or {}
+        static_cb = callbacks.get("static_receive_code")
         self.settings = [
             {"title": "Wallet Type", "key": "wallet_type" + s, "ui": "radiobuttons",
              "ui_options": [("LNBits", "lnbits"), ("Nostr Wallet Connect", "nwc"), ("On-chain (xpub)", "onchain")],
@@ -178,17 +186,20 @@ class WalletSettingsActivity(SettingsActivity):
             {"title": "LNBits Read Key", "key": "lnbits_readkey" + s,
              "placeholder": "fd92e3f8168ba314dc22e54182784045", "should_show": _should_show_wallet_setting, "_slot": self.slot},
             {"title": "Optional LN Address", "key": "lnbits_static_receive_code" + s,
-             "placeholder": "Will be fetched if empty.", "should_show": _should_show_wallet_setting, "_slot": self.slot},
+             "placeholder": "Will be fetched if empty.", "should_show": _should_show_wallet_setting, "_slot": self.slot,
+             "changed_callback": static_cb},
             {"title": "Nostr Wallet Connect", "key": "nwc_url" + s,
              "placeholder": "nostr+walletconnect://69effe7b...", "should_show": _should_show_wallet_setting, "_slot": self.slot},
             {"title": "Optional LN Address", "key": "nwc_static_receive_code" + s,
-             "placeholder": "Optional if present in NWC URL.", "should_show": _should_show_wallet_setting, "_slot": self.slot},
+             "placeholder": "Optional if present in NWC URL.", "should_show": _should_show_wallet_setting, "_slot": self.slot,
+             "changed_callback": static_cb},
             {"title": "xpub / ypub / zpub", "key": "onchain_xpub" + s,
              "placeholder": "zpub6rF...", "should_show": _should_show_wallet_setting, "_slot": self.slot},
             {"title": "Blockbook URL", "key": "onchain_blockbook_url" + s,
              "placeholder": "https://btc1.trezor.io", "should_show": _should_show_wallet_setting, "_slot": self.slot},
             {"title": "Optional Receive Address", "key": "onchain_static_receive_code" + s,
-             "placeholder": "Auto-rotates if empty.", "should_show": _should_show_wallet_setting, "_slot": self.slot},
+             "placeholder": "Auto-rotates if empty.", "should_show": _should_show_wallet_setting, "_slot": self.slot,
+             "changed_callback": static_cb},
         ]
         screen = lv.obj()
         screen.set_style_pad_all(DisplayMetrics.pct_of_width(2), lv.PART.MAIN)
@@ -1019,21 +1030,42 @@ class DisplayWallet(Activity):
         """Tuple uniquely identifying the active wallet's config. Changes
         to any of these prefs invalidate the running wallet — onResume uses
         this to detect when the user changed settings (or flipped the active
-        slot) and restart cleanly."""
+        slot) and restart cleanly.
+
+        The optional receive-address override IS included for each wallet
+        type so that if the override is changed through a code path that
+        doesn't fire `changed_callback` (programmatic prefs write, a
+        settings migration, a future settings UI), onResume still catches
+        the change and forces a wallet restart — pessimistic but always
+        correct. For the common UI-edit case,
+        `_on_static_receive_code_changed` already handles the redraw and
+        bumps `_active_wallet_key` to the new tuple, so onResume sees no
+        change and skips the wallet restart entirely. Result: live update
+        via the callback (no socket churn) with the config-key check as a
+        defence-in-depth safety net.
+
+        Only the active slot's override is included — changes to the
+        inactive slot's override shouldn't restart the running wallet.
+        The inactive slot's override takes effect on next slot switch
+        (which re-reads prefs in went_online)."""
         slot, s = self._active_slot_and_suffix()
         wt = self.prefs.get_string("wallet_type" + s)
         if wt == "lnbits":
             return (wt, slot,
                     self.prefs.get_string("lnbits_url" + s),
-                    self.prefs.get_string("lnbits_readkey" + s))
+                    self.prefs.get_string("lnbits_readkey" + s),
+                    self.prefs.get_string("lnbits_static_receive_code" + s))
         if wt == "nwc":
-            return (wt, slot, self.prefs.get_string("nwc_url" + s))
+            return (wt, slot,
+                    self.prefs.get_string("nwc_url" + s),
+                    self.prefs.get_string("nwc_static_receive_code" + s))
         if wt == "onchain":
             # Pointing the same xpub at a different Blockbook is a real
             # config change — must trigger a wallet restart.
             return (wt, slot,
                     self.prefs.get_string("onchain_xpub" + s),
-                    self.prefs.get_string("onchain_blockbook_url" + s))
+                    self.prefs.get_string("onchain_blockbook_url" + s),
+                    self.prefs.get_string("onchain_static_receive_code" + s))
         return (wt, slot)
 
     def onPause(self, main_screen):
@@ -1561,6 +1593,49 @@ class DisplayWallet(Activity):
         """Called when hero image setting changes."""
         self._update_hero_image()
 
+    def _on_static_receive_code_changed(self, new_value):
+        """Called when the user edits any "Optional ... Address" override
+        in Settings → Wallet — `lnbits_static_receive_code`,
+        `nwc_static_receive_code`, or `onchain_static_receive_code`,
+        for slot 1 or slot 2.
+
+        Re-syncs the currently-active wallet's `static_receive_code`
+        from prefs and triggers an immediate QR redraw, so the new
+        value shows up without requiring an app restart.
+
+        Multi-wallet behaviour: only the *active* slot's override is
+        read here. If the user edited the *inactive* slot's override,
+        the active slot's value is unchanged and this is a no-op for
+        the visible state — the inactive slot's new value is correctly
+        saved to prefs and will take effect on the next slot switch
+        (which already re-reads prefs via `went_online`). The fix is
+        therefore safe to wire on every LN-address setting regardless
+        of which slot it belongs to.
+
+        Also updates `_active_wallet_key` so the subsequent `onResume`
+        doesn't see a "config changed" and waste cycles restarting the
+        active wallet — the override change is handled live, no socket
+        churn needed.
+        """
+        if self.wallet:
+            _, s = self._active_slot_and_suffix()
+            wt = self.prefs.get_string("wallet_type" + s)
+            if wt == "lnbits":
+                override = self.prefs.get_string("lnbits_static_receive_code" + s)
+            elif wt == "nwc":
+                override = self.prefs.get_string("nwc_static_receive_code" + s)
+            elif wt == "onchain":
+                override = self.prefs.get_string("onchain_static_receive_code" + s)
+            else:
+                override = ""
+            if override:
+                self.wallet.static_receive_code = override
+        self.redraw_static_receive_code_cb()
+        # Keep the active-config key in sync so onResume's "config
+        # changed → restart wallet" branch doesn't fire redundantly.
+        if hasattr(self, '_active_wallet_key'):
+            self._active_wallet_key = self._wallet_config_key()
+
     def _qr_colors(self):
         """Return (dark_color, light_color) tuple based on current theme."""
         if not AppearanceManager.is_light_mode():
@@ -1794,13 +1869,20 @@ class DisplayWallet(Activity):
         other_slot = 2 if active_slot_int == 1 else 1
         other_suffix = _slot_suffix(other_slot)
         other_wallet_type = self.prefs.get_string("wallet_type" + other_suffix)
+        # Shared callback bundle for both Wallet entries below. Only the
+        # static_receive_code (Optional LN Address / Optional Receive
+        # Address) override needs live-redraw on save; URL / readkey /
+        # NWC URL / xpub / Blockbook URL changes already trip
+        # `_wallet_config_key()` and onResume restarts the wallet.
+        _wallet_callbacks = {"static_receive_code": self._on_static_receive_code_changed}
         settings_rows = [
             {"title": "Wallet", "key": "wallet_type", "ui": "activity",
              "activity_class": WalletSettingsActivity,
              "placeholder": self.prefs.get_string(
                  "wallet_type" + _slot_suffix(active_slot_int),
                  "not configured"),
-             "_slot": active_slot_int},
+             "_slot": active_slot_int,
+             "_callbacks": _wallet_callbacks},
             {"title": "Customise", "key": "customise", "ui": "activity",
              "activity_class": CustomiseSettingsActivity,
              "placeholder": "Balance denomination, hero image",
@@ -1817,6 +1899,7 @@ class DisplayWallet(Activity):
                 "activity_class": WalletSettingsActivity,
                 "placeholder": "Set up a second wallet to switch between",
                 "_slot": other_slot,
+                "_callbacks": _wallet_callbacks,
             })
         else:
             # Second wallet exists — offer a one-tap switch.
