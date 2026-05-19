@@ -691,12 +691,14 @@ class DisplayWallet(Activity):
         # denominations (milli-BTC, micro-BTC) extended into that gap and
         # collided with the icon. Now the icon sits as far right as it can
         # without touching the QR's quiet-zone border.
-        self.lightning_bolt.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, 0, 4)
+        # dy is 2 less than it would be otherwise — nudges the icon up by
+        # 2 px to visually balance against the balance number's baseline.
+        self.lightning_bolt.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, 0, -4)
         self.lightning_bolt.move_background()
         self.lightning_bolt.add_flag(lv.obj.FLAG.HIDDEN)
         self.chain_link = lv.image(self.main_screen)
         self.chain_link.set_src(f"{self.ASSET_PATH}chain_link.png")
-        self.chain_link.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, 0, 2)
+        self.chain_link.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, 0, -4)
         self.chain_link.move_background()
         self.chain_link.add_flag(lv.obj.FLAG.HIDDEN)
         # Payments live inside a fixed-height container that scrolls
