@@ -1,3 +1,7 @@
+0.4.4
+=====
+- Support emojis
+
 0.4.3
 =====
 - Cleanup MANIFEST.JSON file

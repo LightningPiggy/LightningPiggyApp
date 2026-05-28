@@ -171,15 +171,42 @@ class Wallet:
         fully close can fail with socket exhaustion."""
         return (not self.keep_running) and self._cleanup_done
 
+    def _decode_surrogate_pairs(self, text):
+        """Collapse UTF-16 surrogate pairs into real Unicode code points.
+
+        Some MicroPython JSON stacks keep escaped emoji (e.g. "\\ud83d\\ude42")
+        as two surrogate code units instead of one character. LVGL fonts can't
+        render those surrogate code units directly, so the payments label shows
+        tofu squares. Normalize to actual code points before rendering.
+        """
+        if not isinstance(text, str):
+            return text
+        out = []
+        i = 0
+        n = len(text)
+        while i < n:
+            hi = ord(text[i])
+            if 0xD800 <= hi <= 0xDBFF and i + 1 < n:
+                lo = ord(text[i + 1])
+                if 0xDC00 <= lo <= 0xDFFF:
+                    codepoint = 0x10000 + ((hi - 0xD800) << 10) + (lo - 0xDC00)
+                    out.append(chr(codepoint))
+                    i += 2
+                    continue
+            out.append(text[i])
+            i += 1
+        return "".join(out)
+
     # Decode something like:
     # {"id": "d410....6e9", "content": "zap zap emoji", "pubkey":"e9f...f50", "created_at": 1767713767, "kind": 9734, "tags":[["p","06ff...4f42"], ["amount", "21000"], ["e", "c1c9...0e92"], ["relays", "wss://relay.nostr.band"]], "sig": "48a...4fd"}
     def try_parse_as_zap(self, comment):
+        comment = self._decode_surrogate_pairs(comment)
         try:
             import json
             json_comment = json.loads(comment)
             content = json_comment.get("content")
             if content:
-                return "zapped - " + content
+                return "zapped - " + self._decode_surrogate_pairs(content)
         except Exception as e:
             print(f"Info: try_parse_as_zap of comment '{comment}' got exception while trying to decode as JSON. This is probably fine, using as-is ({e})")
         return comment
