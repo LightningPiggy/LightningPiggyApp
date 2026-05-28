@@ -1,3 +1,7 @@
+0.4.3
+=====
+- Cleanup MANIFEST.JSON file
+
 0.4.2
 =====
 - Remove unsupported lv.font_montserrat_40 (MicroPythonOS 0.9.6+)
