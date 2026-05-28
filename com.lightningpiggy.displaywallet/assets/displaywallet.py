@@ -2,7 +2,7 @@ import time
 
 import lvgl as lv
 
-from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, DisplayMetrics, SharedPreferences, SettingsActivity, TaskManager, WidgetAnimator
+from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, DisplayMetrics, SharedPreferences, SettingsActivity, TaskManager, WidgetAnimator, FontManager
 
 # TEMPORARY DIAGNOSTIC / UX FIX — the stock mpos SettingActivity.radio_event_handler
 # lets a user click an already-selected radio button to UN-select it, saving an
@@ -407,14 +407,14 @@ class DisplayWallet(Activity):
     # the two lv.font_unscii_* entries were removed (they're ASCII-only
     # and don't include the ₿ glyph U+20BF, so a transaction line like
     # "₿1,234: comment" rendered as "1,234: comment" with a missing
-    # glyph or substituted box). Cycle now: 10 → 16 → 24 → 28 → 40.
+    # glyph or substituted box). Cycle now: 10 → 16 → 24 → 28.
     payments_label_current_font = 1
-    try:
-        # MicroPythonOS 0.9.3+
-        payments_label_fonts = [ lv.font_montserrat_10, lv.font_montserrat_16, lv.font_montserrat_24, lv.font_montserrat_28]
-    except Exception as e:
-        # Fallback for users with MicroPythonOS < 0.9.3
-        payments_label_fonts = [ lv.font_montserrat_10, lv.font_montserrat_16, lv.font_montserrat_24, lv.font_montserrat_28_compressed]
+    payments_label_fonts = [
+        FontManager.getFont(size=10, emoji=True),
+        FontManager.getFont(size=16, emoji=True),
+        FontManager.getFont(size=24, emoji=True),
+        FontManager.getFont(size=28, emoji=True),
+    ]
 
     # screens:
     main_screen = None
