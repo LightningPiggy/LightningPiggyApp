@@ -4,7 +4,7 @@
     "short_description": "Display wallet that shows balance, transactions, receive QR code etc.",
     "long_description": "See https://www.LightningPiggy.com",
     "fullname": "com.lightningpiggy.displaywallet",
-    "version": "0.4.3",
+    "version": "0.4.4",
     "category": "finance",
     "activities": [
         {
