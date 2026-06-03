@@ -155,6 +155,26 @@ def _friendly_wallet_type(wt):
     return _WALLET_TYPE_DISPLAY.get(wt, wt)
 
 
+# Slot-specific wallet-type radio options.
+#
+# Design rule: there are only two kinds of wallet a user can hold — Lightning
+# (LNBits / Nostr Wallet Connect) and On-chain. The two slots are dedicated:
+# slot 1 is the Lightning wallet (user picks the protocol — LNBits or NWC);
+# slot 2 is the On-chain wallet. This eliminates ambiguity in the Switch
+# button (always "Switch to <opposite category>") and rules out the failure
+# mode where a user ends up with two Lightning wallets and no on-chain
+# visibility (or vice versa). Multi-wallet is a new feature, so we don't
+# carry forward any defensive "preserve current value" logic for users who
+# might have had on-chain on slot 1 in an interim build.
+_WALLET_TYPE_OPTIONS_SLOT1 = [
+    ("LNBits", "lnbits"),
+    ("Nostr Wallet Connect", "nwc"),
+]
+_WALLET_TYPE_OPTIONS_SLOT2 = [
+    ("On-chain (xpub)", "onchain"),
+]
+
+
 def _should_show_wallet_setting(setting):
     """Conditionally show wallet-specific settings based on this slot's
     wallet_type. The slot comes from the setting dict (parent populates
@@ -196,9 +216,37 @@ class WalletSettingsActivity(SettingsActivity):
         # CustomiseSettingsActivity uses for denomination + hero_image.
         callbacks = parent_setting.get("_callbacks") or {}
         static_cb = callbacks.get("static_receive_code")
+        # Slot 1 = free choice (LNBits / NWC). Slot 2 = on-chain only — the
+        # single supported multi-wallet shape is "Lightning + On-chain".
+        # Pre-seed two slot-2 prefs so the screen is ready-to-fill the first
+        # time the user opens it:
+        #   - wallet_type_2 = "onchain" → the lone radio shows pre-selected
+        #     instead of forcing the user to tap the only available option.
+        #   - onchain_blockbook_url_2 = Trezor default → the Blockbook field
+        #     placeholder is replaced with a working value; the user only
+        #     has to paste an xpub to be done.
+        # Critically: NEITHER pre-seed counts as "wallet configured" —
+        # `_slot_has_credentials` checks `onchain_xpub<s>` exclusively, so
+        # the main settings row stays "Add an on-chain wallet" until the
+        # user actually enters an xpub.
+        if str(self.slot) == "2":
+            wallet_type_options = _WALLET_TYPE_OPTIONS_SLOT2
+            editor = self.prefs.edit()
+            dirty = False
+            if not self.prefs.get_string("wallet_type" + s):
+                editor.put_string("wallet_type" + s, "onchain")
+                dirty = True
+            if not self.prefs.get_string("onchain_blockbook_url" + s):
+                editor.put_string("onchain_blockbook_url" + s,
+                                  OnchainWallet.DEFAULT_BLOCKBOOK_URL)
+                dirty = True
+            if dirty:
+                editor.commit()
+        else:
+            wallet_type_options = _WALLET_TYPE_OPTIONS_SLOT1
         self.settings = [
             {"title": "Wallet Type", "key": "wallet_type" + s, "ui": "radiobuttons",
-             "ui_options": [("LNBits", "lnbits"), ("Nostr Wallet Connect", "nwc"), ("On-chain (xpub)", "onchain")],
+             "ui_options": wallet_type_options,
              "_slot": self.slot},
             {"title": "LNBits URL", "key": "lnbits_url" + s,
              "placeholder": "https://demo.lnpiggy.com", "should_show": _should_show_wallet_setting, "_slot": self.slot},
@@ -289,7 +337,9 @@ class CustomiseSettingsActivity(SettingsActivity):
         denom_key = "balance_denomination" + s
         hero_options = [
             ("Lightning Piggy", "lightningpiggy"),
+            ("Lightning Piggy FF2K", "lightningpiggy_ff2k"),
             ("Lightning Penguin", "lightningpenguin"),
+            ("Lightning Piggy Logo", "logo"),
             ("None", "none"),
         ]
         # MPOS 0.9.6+ renders the human-readable label from `ui_options` in
@@ -302,12 +352,25 @@ class CustomiseSettingsActivity(SettingsActivity):
             "default_value": "lightningpiggy",
             "changed_callback": callbacks.get("hero_image"),
         }
+        # Optional free-text label rendered below the hero image (e.g.
+        # "Savings", "Spending", "Sock drawer"). Per-slot so each wallet
+        # can carry its own name. Placeholder shows the current value
+        # if any, otherwise "(none)" — same pattern as Balance Denomination
+        # / hero image labels. Live-redraws via the changed_callback
+        # without needing an app restart.
+        hero_name_key = "hero_name" + s
+        hero_name_setting = {
+            "title": "Hero Name", "key": hero_name_key,
+            "placeholder": self.prefs.get_string(hero_name_key) or "(none)",
+            "changed_callback": callbacks.get("hero_name"),
+        }
         self.settings = [
             {"title": "Balance Denomination", "key": denom_key, "ui": "activity",
              "activity_class": DenominationSettingsActivity,
              "placeholder": self.prefs.get_string(denom_key, "sats"),
              "changed_callback": callbacks.get("denomination")},
             hero_setting,
+            hero_name_setting,
             {"title": "Theme", "key": "theme_override", "activity_class": True,
              "placeholder": theme_label},
         ]
@@ -586,6 +649,20 @@ class DisplayWallet(Activity):
         # legacy "symbol" value in practice, but the helper handles both
         # for symmetry).
         _migrate_legacy_symbol_denom(self.prefs)
+        # Register the LodePNG decoder so lv.image.set_src() of a .png file
+        # actually produces pixels. MPOS compiles LV_USE_LODEPNG=1 but
+        # doesn't call lv.lodepng_init() at framework startup, which leaves
+        # the decoder pipeline wired up but inactive — set_src() returns
+        # success, the image widget stays at 0×0, and nothing renders.
+        # Symptom: hero / chain-link / confetti PNGs all invisible despite
+        # the files being present and the widget being unhidden.
+        # Idempotent on subsequent calls; wrapped in try/except so an
+        # already-registered decoder or a missing symbol on a future
+        # MPOS build doesn't crash app startup.
+        try:
+            lv.lodepng_init()
+        except Exception as _e:
+            print("displaywallet: lv.lodepng_init() failed: {}".format(_e))
         self.main_screen = lv.obj()
         # Disable scrolling on the screen itself — overflowing widgets are
         # supposed to scroll in-place (the payments_container below has its
@@ -798,6 +875,43 @@ class DisplayWallet(Activity):
         # immediately.
         self._reposition_stale_indicator()
 
+        # User-set free-text label placed below the hero image, horizontally
+        # centred on the hero's centre column. Lets the user name each
+        # wallet ("Savings", "Spending"…) so the same hardware piece can
+        # sit on a shelf alongside another and be told apart. Per-slot
+        # pref `hero_name<suffix>`; empty → label hidden.
+        #
+        # Geometry: 84 px wide centred at the hero's centre x (x=264 on a
+        # 320 wide display, hero_container being centred under the QR).
+        # The widget therefore spans roughly x=222..306, which overlaps
+        # the settings cog widget on its right side (cog at x=280..320,
+        # cog gear glyph starts around x=291) — but this is INTENTIONAL:
+        # the label is created BEFORE the cog, so the cog draws on top
+        # and naturally clips the rightmost characters when a name is too
+        # long, exactly the way the hero image is also already overlapped
+        # by the cog on its bottom-right corner (transparent PNG corners
+        # make it invisible there too). For short names (≤ ~11 chars) the
+        # whole name renders cleanly under the hero; for longer names the
+        # cog gear progressively occludes the tail. Python-side truncation
+        # at 14 chars + "…" (see `_update_hero_name`) caps the worst case.
+        # Text aligned CENTER inside the widget so the visible content
+        # sits centred under the hero.
+        self.hero_name_label = lv.label(self.main_screen)
+        self.hero_name_label.set_style_text_font(lv.font_montserrat_12, lv.PART.MAIN)
+        # CLIP enforces a hard pixel boundary so nothing escapes the widget
+        # bounds (the cog handles the visual occlusion on the right edge).
+        self.hero_name_label.set_long_mode(lv.label.LONG_MODE.CLIP)
+        self.hero_name_label.set_width(84)
+        self.hero_name_label.set_style_text_align(lv.TEXT_ALIGN.CENTER, lv.PART.MAIN)
+        self.hero_name_label.set_style_text_color(self._icon_color(), lv.PART.MAIN)
+        # OUT_BOTTOM_MID of hero_container = horizontally centred on the
+        # hero's centre x, vertically just below the hero. y offset 5 sits
+        # the label cleanly between hero bottom (y=216) and screen bottom
+        # (y=240) — leaves a 1–2 px gap above and below.
+        self.hero_name_label.align_to(self.hero_container, lv.ALIGN.OUT_BOTTOM_MID, 0, 5)
+        self.hero_name_label.set_text("")
+        self._update_hero_name()
+
         settings_button = lv.obj(self.main_screen)
         settings_button.set_size(40, 40)
         settings_button.align(lv.ALIGN.BOTTOM_RIGHT, 0, 0)
@@ -810,13 +924,18 @@ class DisplayWallet(Activity):
         self.settings_icon.set_text(lv.SYMBOL.SETTINGS)
         self.settings_icon.set_style_text_font(lv.font_montserrat_18, lv.PART.MAIN)
         self.settings_icon.set_style_text_color(self._icon_color(), lv.PART.MAIN)
-        self.settings_icon.center()
+        # Nudge the gear glyph 4 px right + 4 px down inside its 40×40
+        # widget (vs `.center()`), freeing a sliver of breathing room on
+        # the left edge for the hero_name label without making the gear
+        # itself look uncomfortably close to the screen corner. Widget
+        # bounds (and therefore the tap target) are unchanged.
+        self.settings_icon.align(lv.ALIGN.CENTER, 4, 4)
         focusgroup = lv.group_get_default()
         if focusgroup:
             focusgroup.add_obj(settings_button)
 
         # Track wallet-mode widgets so they can be hidden/shown as a group
-        self.wallet_container_widgets = [balance_line, self.balance_label, self.balance_unit_label, self.receive_qr, self.lightning_bolt, self.chain_link, self.payments_container, self.hero_container, settings_button]
+        self.wallet_container_widgets = [balance_line, self.balance_label, self.balance_unit_label, self.receive_qr, self.lightning_bolt, self.chain_link, self.payments_container, self.hero_container, self.hero_name_label, settings_button]
         # Install the screen-contact tracker on every interactive widget.
         # LVGL 9 doesn't bubble events to ancestors by default, so a single
         # listener on main_screen would miss touches that originate on
@@ -1017,6 +1136,7 @@ class DisplayWallet(Activity):
         else:
             # Returning from settings or other activity
             self._update_hero_image()
+            self._update_hero_name()
             if config_changed_old_wallet is not None:
                 # Starting the new wallet synchronously now would race against
                 # the old wallet's async socket teardown — on ESP32 that
@@ -1052,13 +1172,43 @@ class DisplayWallet(Activity):
         cm = ConnectivityManager.get()
         self.network_changed(cm.is_online())
 
+    def _slot_has_credentials(self, slot):
+        """True iff slot has both a wallet_type AND the credentials its
+        type requires (i.e. the wallet can actually run).
+
+        Needed because `wallet_type<slot>` alone isn't enough: opening
+        Wallet 2 settings pre-seeds wallet_type_2 = "onchain" so the lone
+        on-chain radio renders pre-selected, but the user may back out
+        before entering an xpub. From the main settings screen's
+        perspective, that slot is NOT yet "configured" — the "Add an
+        on-chain wallet" row should still show, not "Switch to On-chain".
+
+        Per-type required fields:
+            lnbits  → url + readkey   (LN address is optional)
+            nwc     → nwc_url         (LN address is optional)
+            onchain → xpub            (blockbook_url defaults; receive
+                                       addr is optional)
+        """
+        s = _slot_suffix(slot)
+        wt = self.prefs.get_string("wallet_type" + s)
+        if wt == "lnbits":
+            return (bool(self.prefs.get_string("lnbits_url" + s))
+                    and bool(self.prefs.get_string("lnbits_readkey" + s)))
+        if wt == "nwc":
+            return bool(self.prefs.get_string("nwc_url" + s))
+        if wt == "onchain":
+            return bool(self.prefs.get_string("onchain_xpub" + s))
+        return False
+
     def _active_slot_and_suffix(self):
         """Return (slot_str, suffix) for the currently active wallet slot.
         Falls back to slot 1 if slot 2 is set active but unconfigured —
-        e.g. user deleted slot 2's wallet_type without flipping the active
-        slot back."""
+        e.g. user deleted slot 2's wallet_type or its credentials without
+        flipping the active slot back. Uses `_slot_has_credentials` rather
+        than just checking wallet_type_2, so a half-set-up slot 2 (type
+        pre-seeded but xpub missing) is still treated as not-active-ready."""
         slot = self.prefs.get_string("active_wallet_slot", "1")
-        if slot == "2" and not self.prefs.get_string("wallet_type_2"):
+        if slot == "2" and not self._slot_has_credentials(2):
             print("Active slot 2 not configured, falling back to slot 1")
             editor = self.prefs.edit()
             editor.put_string("active_wallet_slot", "1")
@@ -1245,9 +1395,11 @@ class DisplayWallet(Activity):
         # Hide the previous wallet's QR until the new slot's static_receive_code
         # is loaded (from cache or fresh fetch).
         self.receive_qr.add_flag(lv.obj.FLAG.HIDDEN)
-        # New slot might have a different hero image / wallet type icon —
-        # repaint both via went_online (which calls _update_wallet_type_indicator).
+        # New slot might have a different hero image / wallet type icon /
+        # hero name — repaint all three. The wallet-type indicator is
+        # repainted via went_online's _update_wallet_type_indicator call.
         self._update_hero_image()
+        self._update_hero_name()
         cm = ConnectivityManager.get()
         self.network_changed(cm.is_online())
 
@@ -1663,6 +1815,42 @@ class DisplayWallet(Activity):
         """Called when hero image setting changes."""
         self._update_hero_image()
 
+    HERO_NAME_DISPLAY_MAX_CHARS = 8
+
+    def _update_hero_name(self):
+        """Read the active slot's `hero_name<suffix>` pref and update the
+        label below the hero image. Empty pref → label hidden. Per-slot,
+        so switching wallets refreshes the label to the new slot's value.
+        Safe to call before the widget exists (no-op via hasattr guard) —
+        the slot-switch path runs before onCreate finishes wiring widgets
+        on the very first paint.
+
+        Truncates names longer than `HERO_NAME_DISPLAY_MAX_CHARS`. No
+        ellipsis indicator is added — `font_montserrat_12` doesn't
+        include the Unicode `…` glyph (U+2026), and falling back to plain
+        `...` would consume three of only eight characters. Hard-truncate
+        keeps all eight slots showing actual name content. The full
+        untruncated name is still stored in prefs; only the on-screen
+        rendering is shortened. Edit the constant if you change the
+        label width or font."""
+        if not hasattr(self, 'hero_name_label'):
+            return
+        _, s = self._active_slot_and_suffix()
+        name = self.prefs.get_string("hero_name" + s) or ""
+        if len(name) > self.HERO_NAME_DISPLAY_MAX_CHARS:
+            name = name[:self.HERO_NAME_DISPLAY_MAX_CHARS]
+        self.hero_name_label.set_text(name)
+        if name:
+            self.hero_name_label.remove_flag(lv.obj.FLAG.HIDDEN)
+        else:
+            self.hero_name_label.add_flag(lv.obj.FLAG.HIDDEN)
+
+    def _on_hero_name_changed(self, new_value):
+        """Called when the user saves the Hero Name setting. Refreshes
+        the on-screen label immediately so the new name shows without
+        requiring an app restart."""
+        self._update_hero_name()
+
     def _on_static_receive_code_changed(self, new_value):
         """Called when the user edits any "Optional ... Address" override
         in Settings → Wallet — `lnbits_static_receive_code`,
@@ -1734,6 +1922,12 @@ class DisplayWallet(Activity):
         # Settings-cog icon colour tracks the theme (white in dark mode, black in light).
         if hasattr(self, 'settings_icon'):
             self.settings_icon.set_style_text_color(self._icon_color(), lv.PART.MAIN)
+        # Hero name label colour tracks the theme for the same reason —
+        # otherwise a theme flip leaves it the previous colour and either
+        # vanishes (e.g. white text on light bg) or stays high-contrast
+        # against the wrong backdrop.
+        if hasattr(self, 'hero_name_label'):
+            self.hero_name_label.set_style_text_color(self._icon_color(), lv.PART.MAIN)
         # Splash + welcome containers are opaque overlays; keep their bg in sync
         # with the screen so a theme flip while either is visible doesn't leave
         # a stale dark-grey rectangle behind.
@@ -1975,18 +2169,28 @@ class DisplayWallet(Activity):
             {"title": "Customise", "key": "customise", "ui": "activity",
              "activity_class": CustomiseSettingsActivity,
              "placeholder": "Balance denomination, hero image",
-             "_callbacks": {"denomination": self._on_denomination_changed, "hero_image": self._on_hero_image_changed}},
+             "_callbacks": {"denomination": self._on_denomination_changed, "hero_image": self._on_hero_image_changed, "hero_name": self._on_hero_name_changed}},
             {"title": "Screen Lock", "key": "screen_lock", "activity_class": True,
              "placeholder": "On - tapping disabled" if self.prefs.get_string("screen_lock", "off") == "on" else "Off - tapping changes display"},
         ]
-        if not other_wallet_type:
-            # No second wallet yet — offer to set one up.
+        # "Configured" needs to mean "credentials present", not just
+        # "wallet_type is set" — opening Wallet 2 settings pre-seeds
+        # wallet_type_2 = "onchain" before the user has entered an xpub,
+        # and we shouldn't flip the row to "Switch to On-chain" until
+        # there's actually a wallet there to switch to.
+        other_configured = self._slot_has_credentials(other_slot)
+        if not other_configured:
+            # No second wallet yet — offer to set one up. Slot 2 is locked
+            # to on-chain (the wallet-type radio in WalletSettingsActivity
+            # offers only that option), so name the row explicitly rather
+            # than the vague "Add wallet" — the user learns what they're
+            # adding before they tap.
             settings_rows.append({
-                "title": "Add wallet",
+                "title": "Add an on-chain wallet",
                 "key": "wallet_type",
                 "ui": "activity",
                 "activity_class": WalletSettingsActivity,
-                "placeholder": "Set up a second wallet to switch between",
+                "placeholder": "Track an xpub alongside your Lightning wallet",
                 "_slot": other_slot,
                 "_callbacks": _wallet_callbacks,
             })
@@ -2003,7 +2207,7 @@ class DisplayWallet(Activity):
         intent.putExtra("settings", settings_rows)
         self.startActivity(intent)
 
-    HERO_CYCLE = ["lightningpiggy", "lightningpenguin", "none"]
+    HERO_CYCLE = ["lightningpiggy", "lightningpiggy_ff2k", "lightningpenguin", "logo", "none"]
     DENOMINATION_CYCLE = ["sats", "₿ symbol", "bits", "ubtc", "mbtc", "btc"]
 
     def _is_screen_locked(self):
