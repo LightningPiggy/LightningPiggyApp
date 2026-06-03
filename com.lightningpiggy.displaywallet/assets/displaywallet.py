@@ -804,6 +804,18 @@ class DisplayWallet(Activity):
         # 320×240 display.
         self.payments_container.set_scroll_dir(lv.DIR.VER)
         self.payments_container.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
+        # Tap-to-cycle-font must work anywhere in the transactions area, not
+        # just on the text glyphs. The payments_label sizes to its content
+        # (set_width 100% but content-height), so with few transactions and
+        # the smallest font it's a tiny strip — taps below it would miss.
+        # Making the fixed-height CONTAINER clickable (and routing its CLICKED
+        # to the same handler) means the whole ~190 px region responds. A
+        # scroll drag still scrolls (LVGL only fires CLICKED on a clean
+        # press+release), so the two gestures don't conflict. This is what
+        # made tapping the on-chain wallet's short list fail at the smallest
+        # font while the longer Lightning list still worked.
+        self.payments_container.add_flag(lv.obj.FLAG.CLICKABLE)
+        self.payments_container.add_event_cb(self.payments_label_clicked, lv.EVENT.CLICKED, None)
         self.payments_label = lv.label(self.payments_container)
         self.payments_label.set_text("")
         # Label width follows its container (the 1.1× narrowing now
