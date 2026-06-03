@@ -11,7 +11,7 @@ from mpos.util import urldecode
 
 from nostr_service import NostrManager
 
-from wallet import Wallet
+from wallet import Wallet, ensure_lightning_prefix
 from payment import Payment
 from unique_sorted_list import UniqueSortedList
 
@@ -127,6 +127,9 @@ class NWCWallet(Wallet):
         comment = super().try_parse_as_zap(comment)
         return comment
 
+    # async_wallet_manager_task, fetch_balance, fetch_payments removed
+    # in 0.5.0 refactor — relay/event-loop/polling is handled by
+    # NostrManager (nostr_service.py).
     def parse_nwc_url(self, nwc_url):
         print("DEBUG: Starting to parse NWC URL")
         try:

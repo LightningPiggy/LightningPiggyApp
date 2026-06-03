@@ -48,6 +48,7 @@ import wallet_cache
 from lnbits_wallet import LNBitsWallet
 from nwc_wallet import NWCWallet
 from onchain_wallet import OnchainWallet
+from wallet import ensure_lightning_prefix
 
 
 def _apply_screen_theme(screen):
@@ -656,9 +657,23 @@ class DisplayWallet(Activity):
         dark, light = self._qr_colors()
         self.receive_qr.set_dark_color(dark)
         self.receive_qr.set_light_color(light)
-        self.receive_qr.align(lv.ALIGN.TOP_RIGHT,0,0)
+        # Inset by 8 px from the top and right edges so the QR has visible
+        # quiet zone on those sides (the widget itself sits flush against
+        # the corner with TOP_RIGHT(0,0), leaving no room for the QR-spec's
+        # 4-module quiet zone on top + right). The chain_link / lightning_bolt
+        # icons align OUT_LEFT_TOP of receive_qr so they shift with it.
+        self.receive_qr.align(lv.ALIGN.TOP_RIGHT, -8, 8)
         self.receive_qr.set_style_border_color(light, lv.PART.MAIN)
-        self.receive_qr.set_style_border_width(8, lv.PART.MAIN);
+        # No styled border. The QR widget itself already has an internal
+        # margin from LVGL's qrcode-vs-widget centering logic (modules
+        # don't always divide evenly into widget width — leftover pixels
+        # become a centered margin). With `set_quiet_zone(True)` below,
+        # LVGL also reserves 4 modules of quiet zone inside that margin —
+        # exactly matching the QR-spec recommendation. Adding a styled
+        # border on top of that produced an over-quoted ~9-module white
+        # zone around the actual QR pattern.
+        self.receive_qr.set_style_border_width(0, lv.PART.MAIN);
+        self.receive_qr.set_quiet_zone(True)
         self.receive_qr.add_flag(lv.obj.FLAG.CLICKABLE)
         self.receive_qr.add_event_cb(self.qr_clicked_cb,lv.EVENT.CLICKED,None)
         # Wallet-type indicator on the right side of the balance area, rendered
@@ -672,12 +687,19 @@ class DisplayWallet(Activity):
         self.lightning_bolt.set_text(lv.SYMBOL.CHARGE)
         self.lightning_bolt.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
         self.lightning_bolt.set_style_text_color(lv.color_hex(0xFFD700), lv.PART.MAIN)
-        self.lightning_bolt.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, -4, 4)
+        # dx=0 → icon's right edge flush against the QR's left edge.
+        # Previously dx=-4 left a small gap; balance strings in longer
+        # denominations (milli-BTC, micro-BTC) extended into that gap and
+        # collided with the icon. Now the icon sits as far right as it can
+        # without touching the QR's quiet-zone border.
+        # dy is 2 less than it would be otherwise — nudges the icon up by
+        # 2 px to visually balance against the balance number's baseline.
+        self.lightning_bolt.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, 0, -4)
         self.lightning_bolt.move_background()
         self.lightning_bolt.add_flag(lv.obj.FLAG.HIDDEN)
         self.chain_link = lv.image(self.main_screen)
         self.chain_link.set_src(f"{self.ASSET_PATH}chain_link.png")
-        self.chain_link.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, -4, 2)
+        self.chain_link.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, 0, -4)
         self.chain_link.move_background()
         self.chain_link.add_flag(lv.obj.FLAG.HIDDEN)
         # Payments live inside a fixed-height container that scrolls
@@ -1285,7 +1307,11 @@ class DisplayWallet(Activity):
             self._refresh_stale_indicator()
         return painted_anything
 
-    # Colour palette for the stale indicator.
+    # Colour palette for the stale indicator. Applied to the lightning_bolt
+    # label's text color and as a recolor-overlay on the chain_link image —
+    # the wallet-type icon doubles as the freshness signal so users don't
+    # have to look at two different visual elements.
+    _BOLT_COLOR_FRESH = 0xFFD700   # bright yellow — matches the initial style in onCreate
     _STALE_COLOR_WARN = 0xE69B1F   # amber / Bitcoin-orange
     _STALE_COLOR_ERROR = 0xDD2222  # red
 
@@ -1310,29 +1336,46 @@ class DisplayWallet(Activity):
             print("stale_indicator: reposition exception:", e)
 
     def _set_stale_indicator(self, level):
-        """Toggle the stale-indicator dot beneath the mascot.
+        """Paint the wallet-type icon's color to convey fetch freshness.
+
+        Reuses the existing ⚡ (lightning_bolt) / chain_link icon — no
+        separate dot widget needed. Whichever icon is currently visible
+        for the active slot's wallet type takes the color; the other is
+        hidden by `_update_wallet_type_indicator` anyway so its recolor
+        state is moot.
 
         `level` is one of:
-            None / False / ''  — hide the dot
-            'warn'             — show orange (>= 10 min since last update)
-            'error'            — show red  (>= 60 min since last update)
+            None / False / ''  — fresh (bolt → yellow, chain → native PNG colors)
+            'warn'             — orange (>= 10 min since last update)
+            'error'            — red    (>= 60 min since last update)
+
+        Legacy stale_indicator_dot widget kept hidden permanently — code
+        in onCreate that created it is left in place to avoid a churny
+        diff, but it never reappears via this method.
         """
-        if not hasattr(self, 'stale_indicator_dot'):
+        if not hasattr(self, 'lightning_bolt'):
             return
         try:
             if level == 'error':
-                self.stale_indicator_dot.set_style_bg_color(
-                    lv.color_hex(self._STALE_COLOR_ERROR), lv.PART.MAIN)
-                self.stale_indicator_dot.set_style_bg_opa(lv.OPA.COVER, lv.PART.MAIN)
-                self.stale_indicator_dot.remove_flag(lv.obj.FLAG.HIDDEN)
-                self.stale_indicator_dot.move_foreground()
+                color = self._STALE_COLOR_ERROR
             elif level == 'warn':
-                self.stale_indicator_dot.set_style_bg_color(
-                    lv.color_hex(self._STALE_COLOR_WARN), lv.PART.MAIN)
-                self.stale_indicator_dot.set_style_bg_opa(lv.OPA.COVER, lv.PART.MAIN)
-                self.stale_indicator_dot.remove_flag(lv.obj.FLAG.HIDDEN)
-                self.stale_indicator_dot.move_foreground()
+                color = self._STALE_COLOR_WARN
             else:
+                color = self._BOLT_COLOR_FRESH
+            # ⚡ is an lv.label — text color sets the glyph color directly.
+            self.lightning_bolt.set_style_text_color(lv.color_hex(color), lv.PART.MAIN)
+            # chain_link is an lv.image of a PNG — recolor + recolor_opa
+            # tints all opaque pixels with `color` while preserving the
+            # PNG's alpha mask. Clearing recolor_opa (TRANSP) restores
+            # the native PNG appearance for the fresh state.
+            if level in ('warn', 'error'):
+                self.chain_link.set_style_image_recolor(lv.color_hex(color), lv.PART.MAIN)
+                self.chain_link.set_style_image_recolor_opa(lv.OPA.COVER, lv.PART.MAIN)
+            else:
+                self.chain_link.set_style_image_recolor_opa(lv.OPA.TRANSP, lv.PART.MAIN)
+            # Ensure the legacy dot stays hidden — superseded by the
+            # icon-tint approach.
+            if hasattr(self, 'stale_indicator_dot'):
                 self.stale_indicator_dot.add_flag(lv.obj.FLAG.HIDDEN)
         except Exception as e:
             print("stale_indicator: exception:", e)
@@ -1434,7 +1477,11 @@ class DisplayWallet(Activity):
                 self.wallet = LNBitsWallet(
                     self.prefs.get_string("lnbits_url" + s),
                     self.prefs.get_string("lnbits_readkey" + s))
-                self.wallet.static_receive_code = self.prefs.get_string("lnbits_static_receive_code" + s)
+                # ensure_lightning_prefix wraps the LNURL/lud16 with
+                # `lightning:` for QR-scanner compatibility (idempotent
+                # on already-prefixed values; passes empty through).
+                self.wallet.static_receive_code = ensure_lightning_prefix(
+                    self.prefs.get_string("lnbits_static_receive_code" + s))
                 self.redraw_static_receive_code_cb()
             except Exception as e:
                 self.error_cb(f"Couldn't initialize LNBits wallet because: {e}")
@@ -1442,7 +1489,8 @@ class DisplayWallet(Activity):
         elif wallet_type == "nwc":
             try:
                 self.wallet = NWCWallet(self.prefs.get_string("nwc_url" + s))
-                self.wallet.static_receive_code = self.prefs.get_string("nwc_static_receive_code" + s)
+                self.wallet.static_receive_code = ensure_lightning_prefix(
+                    self.prefs.get_string("nwc_static_receive_code" + s))
                 self.redraw_static_receive_code_cb()
             except Exception as e:
                 self.error_cb(f"Couldn't initialize NWC Wallet because: {e}")
@@ -1595,7 +1643,11 @@ class DisplayWallet(Activity):
         screen_h = DisplayMetrics.height()
         container_h = 100
         gap = (screen_h - qr_bottom_y - container_h) // 2
-        self.hero_container.align_to(self.receive_qr, lv.ALIGN.OUT_BOTTOM_MID, 0, gap - 10)
+        # `gap - 6` (was gap - 10) gives the hero an extra ~4 px of
+        # clearance below the QR widget, so the QR's bottom quiet zone
+        # reaches the spec-recommended 4 modules even though the QR widget
+        # is anchored near the top-right of the screen.
+        self.hero_container.align_to(self.receive_qr, lv.ALIGN.OUT_BOTTOM_MID, 0, gap - 6)
         if hero and hero != "none":
             self.hero_image.set_src(f"{self.ASSET_PATH}hero_{hero}.png")
             self.hero_image.center()
@@ -1647,7 +1699,12 @@ class DisplayWallet(Activity):
             else:
                 override = ""
             if override:
-                self.wallet.static_receive_code = override
+                # For Lightning wallets (LNBits/NWC), normalise via the
+                # `lightning:` URI prefix so the user can paste a bare
+                # `user@host` or `LNURL1…` and still get a scanner-friendly
+                # QR. The helper is a no-op for on-chain `bitcoin:…` URIs
+                # so this single line handles all wallet types.
+                self.wallet.static_receive_code = ensure_lightning_prefix(override)
         self.redraw_static_receive_code_cb()
         # Keep the active-config key in sync so onResume's "config
         # changed → restart wallet" branch doesn't fire redundantly.
@@ -1838,6 +1895,15 @@ class DisplayWallet(Activity):
             override = self.prefs.get_string("lnbits_static_receive_code" + s)
         elif wallet_type == "onchain":
             override = self.prefs.get_string("onchain_static_receive_code" + s)
+        # Normalise the override before it reaches the QR encoder. The pref
+        # is stored raw (whatever the user typed); the helper adds the
+        # `lightning:` URI scheme for lud16 / LNURL / BOLT11 to improve QR
+        # scanner compatibility, and is a no-op for `bitcoin:…` URIs and
+        # values that already carry a scheme. Without this, the override
+        # bypasses every other prefixing site (wallet construction +
+        # `_on_static_receive_code_changed`) because the QR is rendered
+        # straight from prefs here.
+        override = ensure_lightning_prefix(override)
         # Next, the wallet's own discovered receive code (from backend / NWC lud16).
         wallet_code = self.wallet.static_receive_code if self.wallet else None
         # Pick the first non-empty source; fall through to whatever's already

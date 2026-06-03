@@ -2,6 +2,8 @@ import ssl
 import json
 import time
 
+from wallet import ensure_lightning_prefix
+
 from mpos import Service, TaskManager
 
 from nostr.relay_manager import RelayManager
@@ -389,7 +391,7 @@ class NostrManager:
             self.relay_manager.publish_message(json.dumps(req))
             print("NostrManager: subscribed to NWC responses")
             if self._nwc_lud16:
-                self._handle_nwc_static_receive_code(self._nwc_lud16)
+                self._handle_nwc_static_receive_code(ensure_lightning_prefix(self._nwc_lud16))
 
         self._last_nwc_poll = time.time() - self.NWC_POLL_SECONDS
 
