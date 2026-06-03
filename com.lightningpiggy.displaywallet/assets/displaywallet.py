@@ -171,8 +171,20 @@ _WALLET_TYPE_OPTIONS_SLOT1 = [
     ("Nostr Wallet Connect", "nwc"),
 ]
 _WALLET_TYPE_OPTIONS_SLOT2 = [
-    ("On-chain (xpub)", "onchain"),
+    ("On-chain (xpub or Bitcoin address)", "onchain"),
 ]
+
+# Privacy nudge shown beneath the Wallet Type radio on the slot-2
+# (on-chain) settings page. Renders via the MPOS SettingActivity's
+# `note` field (added in MicroPythonOS#155); older firmwares without
+# the note field ignore it silently — the radio label change above
+# is the load-bearing UX, the note is the explanation.
+_SLOT2_WALLET_TYPE_NOTE = (
+    "Tip: an xpub is more private than reusing a single address. With an "
+    "xpub, the wallet derives a fresh receive address per payment so the "
+    "people paying you can't see your full balance or each other's amounts; "
+    "with a single address, every payment shares the same on-chain record."
+)
 
 
 def _should_show_wallet_setting(setting):
@@ -247,10 +259,20 @@ class WalletSettingsActivity(SettingsActivity):
                 editor.commit()
         else:
             wallet_type_options = _WALLET_TYPE_OPTIONS_SLOT1
+        # Slot-2's wallet type radio gets a privacy nudge below it
+        # explaining why xpub is preferable to a single reused address.
+        # Slot 1 doesn't need it — neither LNBits nor NWC are address-
+        # reuse-shaped — and the framework's `note` field is harmless
+        # when absent.
+        wallet_type_setting = {
+            "title": "Wallet Type", "key": "wallet_type" + s, "ui": "radiobuttons",
+            "ui_options": wallet_type_options,
+            "_slot": self.slot,
+        }
+        if str(self.slot) == "2":
+            wallet_type_setting["note"] = _SLOT2_WALLET_TYPE_NOTE
         self.settings = [
-            {"title": "Wallet Type", "key": "wallet_type" + s, "ui": "radiobuttons",
-             "ui_options": wallet_type_options,
-             "_slot": self.slot},
+            wallet_type_setting,
             {"title": "LNBits URL", "key": "lnbits_url" + s,
              "placeholder": "https://demo.lnpiggy.com", "should_show": _should_show_wallet_setting, "_slot": self.slot},
             {"title": "LNBits Read Key", "key": "lnbits_readkey" + s,
