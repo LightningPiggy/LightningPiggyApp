@@ -154,6 +154,26 @@ def _friendly_wallet_type(wt):
     return _WALLET_TYPE_DISPLAY.get(wt, wt)
 
 
+# Slot-specific wallet-type radio options.
+#
+# Design rule: there are only two kinds of wallet a user can hold — Lightning
+# (LNBits / Nostr Wallet Connect) and On-chain. The two slots are dedicated:
+# slot 1 is the Lightning wallet (user picks the protocol — LNBits or NWC);
+# slot 2 is the On-chain wallet. This eliminates ambiguity in the Switch
+# button (always "Switch to <opposite category>") and rules out the failure
+# mode where a user ends up with two Lightning wallets and no on-chain
+# visibility (or vice versa). Multi-wallet is a new feature, so we don't
+# carry forward any defensive "preserve current value" logic for users who
+# might have had on-chain on slot 1 in an interim build.
+_WALLET_TYPE_OPTIONS_SLOT1 = [
+    ("LNBits", "lnbits"),
+    ("Nostr Wallet Connect", "nwc"),
+]
+_WALLET_TYPE_OPTIONS_SLOT2 = [
+    ("On-chain (xpub)", "onchain"),
+]
+
+
 def _should_show_wallet_setting(setting):
     """Conditionally show wallet-specific settings based on this slot's
     wallet_type. The slot comes from the setting dict (parent populates
@@ -195,9 +215,37 @@ class WalletSettingsActivity(SettingsActivity):
         # CustomiseSettingsActivity uses for denomination + hero_image.
         callbacks = parent_setting.get("_callbacks") or {}
         static_cb = callbacks.get("static_receive_code")
+        # Slot 1 = free choice (LNBits / NWC). Slot 2 = on-chain only — the
+        # single supported multi-wallet shape is "Lightning + On-chain".
+        # Pre-seed two slot-2 prefs so the screen is ready-to-fill the first
+        # time the user opens it:
+        #   - wallet_type_2 = "onchain" → the lone radio shows pre-selected
+        #     instead of forcing the user to tap the only available option.
+        #   - onchain_blockbook_url_2 = Trezor default → the Blockbook field
+        #     placeholder is replaced with a working value; the user only
+        #     has to paste an xpub to be done.
+        # Critically: NEITHER pre-seed counts as "wallet configured" —
+        # `_slot_has_credentials` checks `onchain_xpub<s>` exclusively, so
+        # the main settings row stays "Add an on-chain wallet" until the
+        # user actually enters an xpub.
+        if str(self.slot) == "2":
+            wallet_type_options = _WALLET_TYPE_OPTIONS_SLOT2
+            editor = self.prefs.edit()
+            dirty = False
+            if not self.prefs.get_string("wallet_type" + s):
+                editor.put_string("wallet_type" + s, "onchain")
+                dirty = True
+            if not self.prefs.get_string("onchain_blockbook_url" + s):
+                editor.put_string("onchain_blockbook_url" + s,
+                                  OnchainWallet.DEFAULT_BLOCKBOOK_URL)
+                dirty = True
+            if dirty:
+                editor.commit()
+        else:
+            wallet_type_options = _WALLET_TYPE_OPTIONS_SLOT1
         self.settings = [
             {"title": "Wallet Type", "key": "wallet_type" + s, "ui": "radiobuttons",
-             "ui_options": [("LNBits", "lnbits"), ("Nostr Wallet Connect", "nwc"), ("On-chain (xpub)", "onchain")],
+             "ui_options": wallet_type_options,
              "_slot": self.slot},
             {"title": "LNBits URL", "key": "lnbits_url" + s,
              "placeholder": "https://demo.lnpiggy.com", "should_show": _should_show_wallet_setting, "_slot": self.slot},
@@ -288,6 +336,7 @@ class CustomiseSettingsActivity(SettingsActivity):
         denom_key = "balance_denomination" + s
         hero_options = [
             ("Lightning Piggy", "lightningpiggy"),
+            ("Lightning Piggy FF2K", "lightningpiggy_ff2k"),
             ("Lightning Penguin", "lightningpenguin"),
             ("None", "none"),
         ]
@@ -585,6 +634,20 @@ class DisplayWallet(Activity):
         # legacy "symbol" value in practice, but the helper handles both
         # for symmetry).
         _migrate_legacy_symbol_denom(self.prefs)
+        # Register the LodePNG decoder so lv.image.set_src() of a .png file
+        # actually produces pixels. MPOS compiles LV_USE_LODEPNG=1 but
+        # doesn't call lv.lodepng_init() at framework startup, which leaves
+        # the decoder pipeline wired up but inactive — set_src() returns
+        # success, the image widget stays at 0×0, and nothing renders.
+        # Symptom: hero / chain-link / confetti PNGs all invisible despite
+        # the files being present and the widget being unhidden.
+        # Idempotent on subsequent calls; wrapped in try/except so an
+        # already-registered decoder or a missing symbol on a future
+        # MPOS build doesn't crash app startup.
+        try:
+            lv.lodepng_init()
+        except Exception as _e:
+            print("displaywallet: lv.lodepng_init() failed: {}".format(_e))
         self.main_screen = lv.obj()
         # Disable scrolling on the screen itself — overflowing widgets are
         # supposed to scroll in-place (the payments_container below has its
@@ -1030,13 +1093,43 @@ class DisplayWallet(Activity):
         cm = ConnectivityManager.get()
         self.network_changed(cm.is_online())
 
+    def _slot_has_credentials(self, slot):
+        """True iff slot has both a wallet_type AND the credentials its
+        type requires (i.e. the wallet can actually run).
+
+        Needed because `wallet_type<slot>` alone isn't enough: opening
+        Wallet 2 settings pre-seeds wallet_type_2 = "onchain" so the lone
+        on-chain radio renders pre-selected, but the user may back out
+        before entering an xpub. From the main settings screen's
+        perspective, that slot is NOT yet "configured" — the "Add an
+        on-chain wallet" row should still show, not "Switch to On-chain".
+
+        Per-type required fields:
+            lnbits  → url + readkey   (LN address is optional)
+            nwc     → nwc_url         (LN address is optional)
+            onchain → xpub            (blockbook_url defaults; receive
+                                       addr is optional)
+        """
+        s = _slot_suffix(slot)
+        wt = self.prefs.get_string("wallet_type" + s)
+        if wt == "lnbits":
+            return (bool(self.prefs.get_string("lnbits_url" + s))
+                    and bool(self.prefs.get_string("lnbits_readkey" + s)))
+        if wt == "nwc":
+            return bool(self.prefs.get_string("nwc_url" + s))
+        if wt == "onchain":
+            return bool(self.prefs.get_string("onchain_xpub" + s))
+        return False
+
     def _active_slot_and_suffix(self):
         """Return (slot_str, suffix) for the currently active wallet slot.
         Falls back to slot 1 if slot 2 is set active but unconfigured —
-        e.g. user deleted slot 2's wallet_type without flipping the active
-        slot back."""
+        e.g. user deleted slot 2's wallet_type or its credentials without
+        flipping the active slot back. Uses `_slot_has_credentials` rather
+        than just checking wallet_type_2, so a half-set-up slot 2 (type
+        pre-seeded but xpub missing) is still treated as not-active-ready."""
         slot = self.prefs.get_string("active_wallet_slot", "1")
-        if slot == "2" and not self.prefs.get_string("wallet_type_2"):
+        if slot == "2" and not self._slot_has_credentials(2):
             print("Active slot 2 not configured, falling back to slot 1")
             editor = self.prefs.edit()
             editor.put_string("active_wallet_slot", "1")
@@ -1913,14 +2006,24 @@ class DisplayWallet(Activity):
             {"title": "Screen Lock", "key": "screen_lock", "activity_class": True,
              "placeholder": "On - tapping disabled" if self.prefs.get_string("screen_lock", "off") == "on" else "Off - tapping changes display"},
         ]
-        if not other_wallet_type:
-            # No second wallet yet — offer to set one up.
+        # "Configured" needs to mean "credentials present", not just
+        # "wallet_type is set" — opening Wallet 2 settings pre-seeds
+        # wallet_type_2 = "onchain" before the user has entered an xpub,
+        # and we shouldn't flip the row to "Switch to On-chain" until
+        # there's actually a wallet there to switch to.
+        other_configured = self._slot_has_credentials(other_slot)
+        if not other_configured:
+            # No second wallet yet — offer to set one up. Slot 2 is locked
+            # to on-chain (the wallet-type radio in WalletSettingsActivity
+            # offers only that option), so name the row explicitly rather
+            # than the vague "Add wallet" — the user learns what they're
+            # adding before they tap.
             settings_rows.append({
-                "title": "Add wallet",
+                "title": "Add an on-chain wallet",
                 "key": "wallet_type",
                 "ui": "activity",
                 "activity_class": WalletSettingsActivity,
-                "placeholder": "Set up a second wallet to switch between",
+                "placeholder": "Track an xpub alongside your Lightning wallet",
                 "_slot": other_slot,
                 "_callbacks": _wallet_callbacks,
             })
@@ -1937,7 +2040,7 @@ class DisplayWallet(Activity):
         intent.putExtra("settings", settings_rows)
         self.startActivity(intent)
 
-    HERO_CYCLE = ["lightningpiggy", "lightningpenguin", "none"]
+    HERO_CYCLE = ["lightningpiggy", "lightningpiggy_ff2k", "lightningpenguin", "none"]
     DENOMINATION_CYCLE = ["sats", "₿ symbol", "bits", "ubtc", "mbtc", "btc"]
 
     def _is_screen_locked(self):
