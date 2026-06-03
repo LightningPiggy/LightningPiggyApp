@@ -580,6 +580,9 @@ class DisplayWallet(Activity):
 
     def onCreate(self):
         self.prefs = SharedPreferences("com.lightningpiggy.displaywallet")
+        # Hidden easter egg: triple-tap the wallet-type indicator to play.
+        self._egg_count = 0
+        self._egg_last = 0
         # Run any required pref migrations before any code path reads
         # `balance_denomination` / `balance_denomination_2`. The helper
         # covers both slot keys (slot 2's pref couldn't have been the
@@ -697,11 +700,19 @@ class DisplayWallet(Activity):
         self.lightning_bolt.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, 0, -4)
         self.lightning_bolt.move_background()
         self.lightning_bolt.add_flag(lv.obj.FLAG.HIDDEN)
+        # Hidden easter egg: tapping the wallet-type indicator three times in
+        # quick succession launches the Lightning Piggy Jump mini-game. The
+        # icon stays in the background (long balances still flow over it); it's
+        # only marked clickable so taps on its exposed area are counted.
+        self.lightning_bolt.add_flag(lv.obj.FLAG.CLICKABLE)
+        self.lightning_bolt.add_event_cb(self._egg_tap, lv.EVENT.CLICKED, None)
         self.chain_link = lv.image(self.main_screen)
         self.chain_link.set_src(f"{self.ASSET_PATH}chain_link.png")
         self.chain_link.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, 0, -4)
         self.chain_link.move_background()
         self.chain_link.add_flag(lv.obj.FLAG.HIDDEN)
+        self.chain_link.add_flag(lv.obj.FLAG.CLICKABLE)
+        self.chain_link.add_event_cb(self._egg_tap, lv.EVENT.CLICKED, None)
         # Payments live inside a fixed-height container that scrolls
         # vertically when the text overflows. Without this wrapper, a
         # long zap comment or many on-chain tx lines would push the
@@ -2070,3 +2081,22 @@ class DisplayWallet(Activity):
             return
         self.destination = FullscreenQR
         self.startActivity(Intent(activity_class=self.fullscreenqr).putExtra("receive_qr_data", self.receive_qr_data))
+
+    def _egg_tap(self, event):
+        """Hidden easter egg: three taps on the wallet-type indicator (the ⚡
+        bolt or the on-chain link) within ~1.2s launch Lightning Piggy Jump."""
+        now = time.ticks_ms()
+        if time.ticks_diff(now, self._egg_last) > 1200:
+            self._egg_count = 0
+        self._egg_last = now
+        self._egg_count += 1
+        if self._egg_count >= 3:
+            self._egg_count = 0
+            self._launch_easter_egg()
+
+    def _launch_easter_egg(self):
+        try:
+            from dino import DinoJump
+            self.startActivity(Intent(activity_class=DinoJump))
+        except Exception as e:
+            print("easter egg launch failed:", e)
