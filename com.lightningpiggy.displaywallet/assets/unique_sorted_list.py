@@ -37,6 +37,19 @@ class UniqueSortedList:
         #print("UniqueSortedList tostring called")
         return "\n".join(str(item) for item in self._items)
 
+    def head_str(self, n):
+        """Return the multi-line display string of just the first `n`
+        items (the largest, since the list is sorted descending). Used
+        to honour a user-set cap on visible transactions (Customise →
+        Transactions Shown) without rebuilding the underlying list.
+        `n <= 0` returns an empty string; `n >= len(self)` is equivalent
+        to `str(self)`."""
+        if n <= 0 or len(self._items) == 0:
+            return ""
+        if n >= len(self._items):
+            return self.__str__()
+        return "\n".join(str(item) for item in self._items[:n])
+
     def __eq__(self, other):
         if len(self._items) != len(other):
             return False
