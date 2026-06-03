@@ -581,10 +581,16 @@ class DisplayWallet(Activity):
     # Pixels by which the wallet-type indicator's clickable area is extended
     # on every side, to make the small ⚡/chain glyph a realistic triple-tap
     # target for the hidden easter egg (see the indicator setup in onCreate).
-    # Kept modest (12) now that the indicator is foreground for clicks — a
-    # larger value would steal taps from the QR (fullscreen-on-tap) on its
-    # left edge.
-    EGG_EXT_CLICK = 12
+    # 18 gives a generous ~51×65 (bolt) / ~64×64 (chain) target. The right
+    # edge does reach a little into the QR's left quiet-zone tap region
+    # (fullscreen-on-tap), but only the non-scannable margin — acceptable.
+    EGG_EXT_CLICK = 18
+    # Max gap (ms) between consecutive indicator taps for them to count
+    # toward the triple-tap. A tap more than this after the previous one
+    # resets the counter to 1. 2000 ms is forgiving enough that a deliberate
+    # (if unhurried) triple-tap registers without being so loose that random
+    # taps accumulate.
+    EGG_TAP_WINDOW_MS = 2000
 
     def onCreate(self):
         self.prefs = SharedPreferences("com.lightningpiggy.displaywallet")
@@ -2101,7 +2107,7 @@ class DisplayWallet(Activity):
         """Hidden easter egg: three taps on the wallet-type indicator (the ⚡
         bolt or the on-chain link) within ~1.2s launch Lightning Piggy Jump."""
         now = time.ticks_ms()
-        if time.ticks_diff(now, self._egg_last) > 1200:
+        if time.ticks_diff(now, self._egg_last) > self.EGG_TAP_WINDOW_MS:
             self._egg_count = 0
         self._egg_last = now
         self._egg_count += 1

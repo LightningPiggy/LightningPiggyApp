@@ -13,7 +13,8 @@ from a clean boot.
 
 On the home (wallet) screen, **triple-tap the wallet-type indicator** — the
 yellow ⚡ bolt (Lightning slots) or the pink chain-link (on-chain slot), three
-taps within ~1.2 s. That launches **Lightning Piggy Jump**:
+taps each within ~2 s of the last (`EGG_TAP_WINDOW_MS`). That launches
+**Lightning Piggy Jump**:
 
 - Tap anywhere = jump (also starts / restarts).
 - Hold the **DUCK** button (bottom-right) = duck under flying bolts; tapping it
@@ -40,8 +41,9 @@ in `META-INF/MANIFEST.JSON`, so it never appears on the device launcher.
 
 ### Changed in `assets/displaywallet.py`
 All in / around `class DisplayWallet`:
-1. A class constant `EGG_EXT_CLICK = 12` (px the indicator's clickable area
-   is extended on each side — see point 2).
+1. Two class constants: `EGG_EXT_CLICK = 18` (px the indicator's clickable
+   area is extended on each side — see point 3) and `EGG_TAP_WINDOW_MS = 2000`
+   (max gap between consecutive taps before the counter resets — see point 4).
 2. `onCreate`, just after `self.prefs = ...`:
    ```python
    self._egg_count = 0
@@ -66,8 +68,8 @@ All in / around `class DisplayWallet`:
    x≈200), so there's no visual cost — this resolves the "deliberately
    avoided foreground" caveat that earlier versions of this doc flagged.
    `set_ext_click_area` then enlarges the ~15×29 px glyph into a comfortable
-   touch target (kept at 12 px so it doesn't steal the QR's fullscreen-tap
-   region on the left).
+   touch target (18 px — generous; only reaches into the QR's non-scannable
+   left quiet-zone tap region).
 4. Two new methods appended to the class:
    ```python
    def _egg_tap(self, event):
