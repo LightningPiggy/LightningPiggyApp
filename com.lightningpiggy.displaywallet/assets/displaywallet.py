@@ -363,6 +363,24 @@ class CustomiseSettingsActivity(SettingsActivity):
             "placeholder": self.prefs.get_string(hero_name_key) or "(none)",
             "changed_callback": callbacks.get("hero_name"),
         }
+        # Per-slot count of transactions to fetch + render. Range 1..21 via
+        # an MPOS slider (`ui: "slider"` + `min`/`max`) — visual + tappable,
+        # no keyboard required. The slider widget enforces the range
+        # natively; the `_on_payments_to_show_changed` callback still
+        # clamps as defence-in-depth so a future change to the stored
+        # value via another code path can't escape the bounds. Default 6
+        # matches the historical hard-coded class constant on each wallet
+        # type so users who never touch this setting see the same behaviour
+        # as before. Save persists the slider's integer value as a string.
+        payments_to_show_key = "payments_to_show" + s
+        payments_to_show_setting = {
+            "title": "Transactions Shown", "key": payments_to_show_key,
+            "ui": "slider",
+            "min": 1,
+            "max": 21,
+            "default_value": "6",
+            "changed_callback": callbacks.get("payments_to_show"),
+        }
         self.settings = [
             {"title": "Balance Denomination", "key": denom_key, "ui": "activity",
              "activity_class": DenominationSettingsActivity,
@@ -370,6 +388,7 @@ class CustomiseSettingsActivity(SettingsActivity):
              "changed_callback": callbacks.get("denomination")},
             hero_setting,
             hero_name_setting,
+            payments_to_show_setting,
             {"title": "Theme", "key": "theme_override", "activity_class": True,
              "placeholder": theme_label},
         ]
@@ -1616,6 +1635,13 @@ class DisplayWallet(Activity):
         else:
             self.error_cb(f"No or unsupported wallet type configured: '{wallet_type}'")
             return
+        # Per-slot user setting overrides each wallet class's hard-coded
+        # `PAYMENTS_TO_SHOW = 6` default. LNBits / NWC use this as the
+        # `limit=` parameter on their list_transactions backend call;
+        # onchain fetches all transactions from Blockbook regardless,
+        # so the cap there is enforced at display time via head_str
+        # rather than at fetch time.
+        self.wallet.PAYMENTS_TO_SHOW = self._payments_to_show()
         # Stamp the (per-wallet-type, per-slot) cache identity onto the wallet
         # so its handle_new_* writes land in the correct slot with matching
         # fingerprints. slot_key = "{type}_{slot}" → e.g. "lnbits_1", "onchain_2".
@@ -1798,6 +1824,73 @@ class DisplayWallet(Activity):
         the on-screen label immediately so the new name shows without
         requiring an app restart."""
         self._update_hero_name()
+
+    PAYMENTS_TO_SHOW_MIN = 1
+    PAYMENTS_TO_SHOW_MAX = 21
+    PAYMENTS_TO_SHOW_DEFAULT = 6
+
+    def _payments_to_show(self):
+        """Return the active slot's `payments_to_show` setting as an int,
+        clamped to [PAYMENTS_TO_SHOW_MIN, PAYMENTS_TO_SHOW_MAX]. Falls
+        back to PAYMENTS_TO_SHOW_DEFAULT (6) when the pref is empty,
+        unset, or non-numeric — keeps the wallet usable even if the
+        user types nonsense into the text field."""
+        _, s = self._active_slot_and_suffix()
+        raw = self.prefs.get_string("payments_to_show" + s, "")
+        try:
+            n = int(raw) if raw else self.PAYMENTS_TO_SHOW_DEFAULT
+        except (ValueError, TypeError):
+            n = self.PAYMENTS_TO_SHOW_DEFAULT
+        if n < self.PAYMENTS_TO_SHOW_MIN:
+            n = self.PAYMENTS_TO_SHOW_MIN
+        elif n > self.PAYMENTS_TO_SHOW_MAX:
+            n = self.PAYMENTS_TO_SHOW_MAX
+        return n
+
+    def _on_payments_to_show_changed(self, new_value):
+        """Called when the user saves the Transactions Shown setting.
+
+        Validates the raw pref to a clamped integer 1..21, writes the
+        normalised value back to prefs (so a "20" entered when the cap
+        is 21 sticks, and "100" gets stored as 21 — predictable for the
+        next time the user opens the setting), updates the running
+        wallet's instance `PAYMENTS_TO_SHOW` (overrides the class
+        default; next fetch will request the new count from the
+        backend), and re-renders the on-screen list with the new
+        limit so the visible count updates immediately rather than
+        waiting for the next poll cycle.
+
+        Note: the FETCH count won't drop instantly when the user lowers
+        the cap — the existing cached payment_list still has the
+        previously-fetched entries until the next poll replaces it. The
+        head_str slice below ensures only the new count is shown in the
+        meantime."""
+        _, s = self._active_slot_and_suffix()
+        key = "payments_to_show" + s
+        raw = self.prefs.get_string(key, "")
+        try:
+            n = int(raw) if raw else self.PAYMENTS_TO_SHOW_DEFAULT
+        except (ValueError, TypeError):
+            n = self.PAYMENTS_TO_SHOW_DEFAULT
+        if n < self.PAYMENTS_TO_SHOW_MIN:
+            n = self.PAYMENTS_TO_SHOW_MIN
+        elif n > self.PAYMENTS_TO_SHOW_MAX:
+            n = self.PAYMENTS_TO_SHOW_MAX
+        # Persist the clamped value so future reads see the validated
+        # form rather than whatever raw string the user typed.
+        if str(n) != raw:
+            editor = self.prefs.edit()
+            editor.put_string(key, str(n))
+            editor.commit()
+        if self.wallet:
+            self.wallet.PAYMENTS_TO_SHOW = n
+            # Instant on-screen refresh — slice the existing payment_list
+            # to the new limit. UniqueSortedList.head_str(n) handles the
+            # truncation; falls back gracefully when payment_list is None
+            # or empty (e.g. wallet hasn't completed first fetch yet).
+            pl = getattr(self.wallet, "payment_list", None)
+            if pl and len(pl) > 0 and hasattr(pl, "head_str"):
+                self.payments_label.set_text(pl.head_str(n))
 
     def _on_static_receive_code_changed(self, new_value):
         """Called when the user edits any "Optional ... Address" override
@@ -2103,7 +2196,7 @@ class DisplayWallet(Activity):
             {"title": "Customise", "key": "customise", "ui": "activity",
              "activity_class": CustomiseSettingsActivity,
              "placeholder": "Balance denomination, hero image",
-             "_callbacks": {"denomination": self._on_denomination_changed, "hero_image": self._on_hero_image_changed, "hero_name": self._on_hero_name_changed}},
+             "_callbacks": {"denomination": self._on_denomination_changed, "hero_image": self._on_hero_image_changed, "hero_name": self._on_hero_name_changed, "payments_to_show": self._on_payments_to_show_changed}},
             {"title": "Screen Lock", "key": "screen_lock", "activity_class": True,
              "placeholder": "On - tapping disabled" if self.prefs.get_string("screen_lock", "off") == "on" else "Off - tapping changes display"},
         ]
