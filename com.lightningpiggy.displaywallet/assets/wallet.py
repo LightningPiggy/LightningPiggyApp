@@ -49,6 +49,8 @@ class Wallet:
             return "LNBitsWallet"
         elif isinstance(self, NWCWallet):
             return "NWCWallet"
+        elif isinstance(self, OnchainWallet):
+            return "OnchainWallet"
 
     def notify_poll_success(self):
         """Subclasses call this after any successful fetch (balance OR
