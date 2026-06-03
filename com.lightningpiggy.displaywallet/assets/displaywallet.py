@@ -2431,12 +2431,11 @@ class DisplayWallet(Activity):
         # restores (removes) it afterwards — by the time this click handler
         # runs, `assets/` is gone from the path and a bare `from dino import`
         # raises "no module named 'dino'". Re-insert the app's assets dir
-        # (derived from appFullName for host-portability, with a hardcoded
-        # fallback) before importing so the lazy import resolves.
+        # (derived from __file__ for host-portability) before importing so
+        # the lazy import resolves.
         try:
             import sys
-            pkg = getattr(self, "appFullName", None) or "com.lightningpiggy.displaywallet"
-            asset_dir = "/apps/{}/assets".format(pkg)
+            asset_dir = __file__.rsplit("/", 1)[0]
             if asset_dir not in sys.path:
                 sys.path.insert(0, asset_dir)
             from dino import DinoJump
