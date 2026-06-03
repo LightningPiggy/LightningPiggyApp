@@ -656,17 +656,23 @@ class DisplayWallet(Activity):
         dark, light = self._qr_colors()
         self.receive_qr.set_dark_color(dark)
         self.receive_qr.set_light_color(light)
-        self.receive_qr.align(lv.ALIGN.TOP_RIGHT,0,0)
+        # Inset by 8 px from the top and right edges so the QR has visible
+        # quiet zone on those sides (the widget itself sits flush against
+        # the corner with TOP_RIGHT(0,0), leaving no room for the QR-spec's
+        # 4-module quiet zone on top + right). The chain_link / lightning_bolt
+        # icons align OUT_LEFT_TOP of receive_qr so they shift with it.
+        self.receive_qr.align(lv.ALIGN.TOP_RIGHT, -8, 8)
         self.receive_qr.set_style_border_color(light, lv.PART.MAIN)
-        # 4 px styled border (was 8). The QR widget itself already has an
-        # internal margin from LVGL's qrcode-vs-widget centering logic
-        # (modules don't always divide evenly into widget width — leftover
-        # pixels become a centered margin). The combined "white quiet zone"
-        # around the actual QR pattern was ~6-11 modules wide for typical
-        # Bitcoin/Lightning URIs; well above the QR-spec recommended 4
-        # modules. Reducing the styled border tightens the look without
-        # dropping below scanner-reliability thresholds.
-        self.receive_qr.set_style_border_width(4, lv.PART.MAIN);
+        # No styled border. The QR widget itself already has an internal
+        # margin from LVGL's qrcode-vs-widget centering logic (modules
+        # don't always divide evenly into widget width — leftover pixels
+        # become a centered margin). With `set_quiet_zone(True)` below,
+        # LVGL also reserves 4 modules of quiet zone inside that margin —
+        # exactly matching the QR-spec recommendation. Adding a styled
+        # border on top of that produced an over-quoted ~9-module white
+        # zone around the actual QR pattern.
+        self.receive_qr.set_style_border_width(0, lv.PART.MAIN);
+        self.receive_qr.set_quiet_zone(True)
         self.receive_qr.add_flag(lv.obj.FLAG.CLICKABLE)
         self.receive_qr.add_event_cb(self.qr_clicked_cb,lv.EVENT.CLICKED,None)
         # Wallet-type indicator on the right side of the balance area, rendered
@@ -1629,7 +1635,11 @@ class DisplayWallet(Activity):
         screen_h = DisplayMetrics.height()
         container_h = 100
         gap = (screen_h - qr_bottom_y - container_h) // 2
-        self.hero_container.align_to(self.receive_qr, lv.ALIGN.OUT_BOTTOM_MID, 0, gap - 10)
+        # `gap - 6` (was gap - 10) gives the hero an extra ~4 px of
+        # clearance below the QR widget, so the QR's bottom quiet zone
+        # reaches the spec-recommended 4 modules even though the QR widget
+        # is anchored near the top-right of the screen.
+        self.hero_container.align_to(self.receive_qr, lv.ALIGN.OUT_BOTTOM_MID, 0, gap - 6)
         if hero and hero != "none":
             self.hero_image.set_src(f"{self.ASSET_PATH}hero_{hero}.png")
             self.hero_image.center()
