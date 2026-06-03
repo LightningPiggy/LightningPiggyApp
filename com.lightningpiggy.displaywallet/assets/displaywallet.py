@@ -658,7 +658,15 @@ class DisplayWallet(Activity):
         self.receive_qr.set_light_color(light)
         self.receive_qr.align(lv.ALIGN.TOP_RIGHT,0,0)
         self.receive_qr.set_style_border_color(light, lv.PART.MAIN)
-        self.receive_qr.set_style_border_width(8, lv.PART.MAIN);
+        # 4 px styled border (was 8). The QR widget itself already has an
+        # internal margin from LVGL's qrcode-vs-widget centering logic
+        # (modules don't always divide evenly into widget width — leftover
+        # pixels become a centered margin). The combined "white quiet zone"
+        # around the actual QR pattern was ~6-11 modules wide for typical
+        # Bitcoin/Lightning URIs; well above the QR-spec recommended 4
+        # modules. Reducing the styled border tightens the look without
+        # dropping below scanner-reliability thresholds.
+        self.receive_qr.set_style_border_width(4, lv.PART.MAIN);
         self.receive_qr.add_flag(lv.obj.FLAG.CLICKABLE)
         self.receive_qr.add_event_cb(self.qr_clicked_cb,lv.EVENT.CLICKED,None)
         # Wallet-type indicator on the right side of the balance area, rendered
@@ -672,12 +680,17 @@ class DisplayWallet(Activity):
         self.lightning_bolt.set_text(lv.SYMBOL.CHARGE)
         self.lightning_bolt.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
         self.lightning_bolt.set_style_text_color(lv.color_hex(0xFFD700), lv.PART.MAIN)
-        self.lightning_bolt.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, -4, 4)
+        # dx=0 → icon's right edge flush against the QR's left edge.
+        # Previously dx=-4 left a small gap; balance strings in longer
+        # denominations (milli-BTC, micro-BTC) extended into that gap and
+        # collided with the icon. Now the icon sits as far right as it can
+        # without touching the QR's quiet-zone border.
+        self.lightning_bolt.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, 0, 4)
         self.lightning_bolt.move_background()
         self.lightning_bolt.add_flag(lv.obj.FLAG.HIDDEN)
         self.chain_link = lv.image(self.main_screen)
         self.chain_link.set_src(f"{self.ASSET_PATH}chain_link.png")
-        self.chain_link.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, -4, 2)
+        self.chain_link.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, 0, 2)
         self.chain_link.move_background()
         self.chain_link.add_flag(lv.obj.FLAG.HIDDEN)
         # Payments live inside a fixed-height container that scrolls
