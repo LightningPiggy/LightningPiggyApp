@@ -338,6 +338,7 @@ class CustomiseSettingsActivity(SettingsActivity):
             ("Lightning Piggy", "lightningpiggy"),
             ("Lightning Piggy FF2K", "lightningpiggy_ff2k"),
             ("Lightning Penguin", "lightningpenguin"),
+            ("Lightning Piggy Logo", "logo"),
             ("None", "none"),
         ]
         # MPOS 0.9.6+ renders the human-readable label from `ui_options` in
@@ -2140,7 +2141,7 @@ class DisplayWallet(Activity):
         intent.putExtra("settings", settings_rows)
         self.startActivity(intent)
 
-    HERO_CYCLE = ["lightningpiggy", "lightningpiggy_ff2k", "lightningpenguin", "none"]
+    HERO_CYCLE = ["lightningpiggy", "lightningpiggy_ff2k", "lightningpenguin", "logo", "none"]
     DENOMINATION_CYCLE = ["sats", "₿ symbol", "bits", "ubtc", "mbtc", "btc"]
 
     def _is_screen_locked(self):
