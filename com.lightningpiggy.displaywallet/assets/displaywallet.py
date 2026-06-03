@@ -578,6 +578,14 @@ class DisplayWallet(Activity):
     # activities
     fullscreenqr = FullscreenQR() # need a reference to be able to finish() it
 
+    # Pixels by which the wallet-type indicator's clickable area is extended
+    # on every side, to make the small ⚡/chain glyph a realistic triple-tap
+    # target for the hidden easter egg (see the indicator setup in onCreate).
+    # Kept modest (12) now that the indicator is foreground for clicks — a
+    # larger value would steal taps from the QR (fullscreen-on-tap) on its
+    # left edge.
+    EGG_EXT_CLICK = 12
+
     def onCreate(self):
         self.prefs = SharedPreferences("com.lightningpiggy.displaywallet")
         # Hidden easter egg: triple-tap the wallet-type indicator to play.
@@ -698,20 +706,27 @@ class DisplayWallet(Activity):
         # dy is 2 less than it would be otherwise — nudges the icon up by
         # 2 px to visually balance against the balance number's baseline.
         self.lightning_bolt.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, 0, -4)
-        self.lightning_bolt.move_background()
         self.lightning_bolt.add_flag(lv.obj.FLAG.HIDDEN)
         # Hidden easter egg: tapping the wallet-type indicator three times in
-        # quick succession launches the Lightning Piggy Jump mini-game. The
-        # icon stays in the background (long balances still flow over it); it's
-        # only marked clickable so taps on its exposed area are counted.
+        # quick succession launches the Lightning Piggy Jump mini-game.
+        # The indicator is created AFTER the balance line and QR, so leaving
+        # it foreground (no move_background) puts it on top for both drawing
+        # and — crucially — click hit-testing, so taps reliably reach it.
+        # The only widgets it overlaps are the thin balance underline and
+        # the QR's left quiet-zone border; it does NOT overlap realistic
+        # balance numbers (those end far to the left of x≈200), so the
+        # foreground placement carries no practical visual cost. The glyph
+        # is small (~15×29 px) so `set_ext_click_area` enlarges the touch
+        # target into the empty gap below/left of it.
         self.lightning_bolt.add_flag(lv.obj.FLAG.CLICKABLE)
+        self.lightning_bolt.set_ext_click_area(self.EGG_EXT_CLICK)
         self.lightning_bolt.add_event_cb(self._egg_tap, lv.EVENT.CLICKED, None)
         self.chain_link = lv.image(self.main_screen)
         self.chain_link.set_src(f"{self.ASSET_PATH}chain_link.png")
         self.chain_link.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, 0, -4)
-        self.chain_link.move_background()
         self.chain_link.add_flag(lv.obj.FLAG.HIDDEN)
         self.chain_link.add_flag(lv.obj.FLAG.CLICKABLE)
+        self.chain_link.set_ext_click_area(self.EGG_EXT_CLICK)
         self.chain_link.add_event_cb(self._egg_tap, lv.EVENT.CLICKED, None)
         # Payments live inside a fixed-height container that scrolls
         # vertically when the text overflows. Without this wrapper, a
@@ -2095,7 +2110,20 @@ class DisplayWallet(Activity):
             self._launch_easter_egg()
 
     def _launch_easter_egg(self):
+        # `dino` is imported lazily (only when the egg is triggered) so the
+        # ~20 KB game module isn't loaded on every wallet startup. But MPOS
+        # only keeps the app's `assets/` dir on sys.path DURING app load and
+        # restores (removes) it afterwards — by the time this click handler
+        # runs, `assets/` is gone from the path and a bare `from dino import`
+        # raises "no module named 'dino'". Re-insert the app's assets dir
+        # (derived from appFullName for host-portability, with a hardcoded
+        # fallback) before importing so the lazy import resolves.
         try:
+            import sys
+            pkg = getattr(self, "appFullName", None) or "com.lightningpiggy.displaywallet"
+            asset_dir = "/apps/{}/assets".format(pkg)
+            if asset_dir not in sys.path:
+                sys.path.insert(0, asset_dir)
             from dino import DinoJump
             self.startActivity(Intent(activity_class=DinoJump))
         except Exception as e:

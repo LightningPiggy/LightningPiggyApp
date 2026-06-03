@@ -3,8 +3,9 @@
 A hidden endless-runner mini-game embedded in the Lightning Piggy display
 wallet. This doc is the handover for whoever maintains the LP app next.
 
-Status: implemented, on-device-verified for asset loading; the triple-tap
-trigger and live gameplay still need a human with the touchscreen to confirm.
+Status: implemented and on-device-verified end-to-end — triple-tap trigger,
+launch, and live gameplay all confirmed on a Waveshare ESP32-S3 Touch LCD 2
+from a clean boot.
 
 ---
 
@@ -38,22 +39,36 @@ in `META-INF/MANIFEST.JSON`, so it never appears on the device launcher.
   (No launcher icon — a hidden activity needs none.)
 
 ### Changed in `assets/displaywallet.py`
-Three small edits, all in / around `class DisplayWallet`:
-1. `onCreate`, just after `self.prefs = ...`:
+All in / around `class DisplayWallet`:
+1. A class constant `EGG_EXT_CLICK = 12` (px the indicator's clickable area
+   is extended on each side — see point 2).
+2. `onCreate`, just after `self.prefs = ...`:
    ```python
    self._egg_count = 0
    self._egg_last = 0
    ```
-2. Where `self.lightning_bolt` and `self.chain_link` are created (the
+3. Where `self.lightning_bolt` and `self.chain_link` are created (the
    wallet-type indicator), each got:
    ```python
    self.lightning_bolt.add_flag(lv.obj.FLAG.CLICKABLE)
+   self.lightning_bolt.set_ext_click_area(self.EGG_EXT_CLICK)
    self.lightning_bolt.add_event_cb(self._egg_tap, lv.EVENT.CLICKED, None)
    ```
-   (and the same two lines for `self.chain_link`). They were previously only
-   `move_background()` + `HIDDEN`; they are still in the background, just now
-   clickable on their exposed area.
-3. Two new methods appended to the class:
+   (and the same three lines for `self.chain_link`).
+
+   **The `move_background()` call each indicator used to have was REMOVED.**
+   This is the key reliability fix: a backgrounded widget loses click
+   hit-testing to whatever sits on top of it, so the neighbouring balance
+   line / QR / payments widgets were swallowing ~5 of every 6 taps. The
+   indicators are created *after* the balance line and QR, so simply NOT
+   backgrounding them leaves them on top for both drawing and clicks. They
+   still don't overlap realistic balance numbers (those end far left of
+   x≈200), so there's no visual cost — this resolves the "deliberately
+   avoided foreground" caveat that earlier versions of this doc flagged.
+   `set_ext_click_area` then enlarges the ~15×29 px glyph into a comfortable
+   touch target (kept at 12 px so it doesn't steal the QR's fullscreen-tap
+   region on the left).
+4. Two new methods appended to the class:
    ```python
    def _egg_tap(self, event):
        now = time.ticks_ms()
@@ -66,13 +81,28 @@ Three small edits, all in / around `class DisplayWallet`:
            self._launch_easter_egg()
 
    def _launch_easter_egg(self):
+       # Re-insert the app's assets dir on sys.path before the lazy import.
+       # MPOS keeps assets/ on the path only DURING app load and removes it
+       # afterwards, so a bare `from dino import` at click time raises
+       # "no module named 'dino'".
        try:
+           import sys
+           pkg = getattr(self, "appFullName", None) or "com.lightningpiggy.displaywallet"
+           asset_dir = "/apps/{}/assets".format(pkg)
+           if asset_dir not in sys.path:
+               sys.path.insert(0, asset_dir)
            from dino import DinoJump
            self.startActivity(Intent(activity_class=DinoJump))
        except Exception as e:
            print("easter egg launch failed:", e)
    ```
    (`Intent` and `time` are already imported by displaywallet.py.)
+
+   ⚠️ The `sys.path` re-insert in `_launch_easter_egg` is essential: `dino`
+   is imported lazily (so the ~20 KB module isn't loaded on every wallet
+   start), but the lazy import runs at click time — long after MPOS dropped
+   `assets/` from `sys.path` post-load. Without the re-insert the import
+   fails silently into the `except` and the game never launches.
 
 ### Changed: `CHANGELOG.md`
 One bullet added under the `0.5.0` section.
@@ -170,13 +200,16 @@ ln -sfn "../../../LightningPiggyApp/com.lightningpiggy.displaywallet/" com.light
 
 ## 7. Known issues / caveats
 
-1. **Trigger reliability.** The ⚡/chain indicator is rendered *behind* the
-   balance number (`move_background()`), so a long balance string can cover it
-   and taps land on `balance_label` instead. If triple-tap proves fiddly,
-   consider moving the trigger to a reliably-exposed widget (hero image, or a
-   small invisible corner button), or `move_foreground()` the indicator (but
-   that lets the icon draw over long balances — a visual regression that was
-   deliberately avoided).
+1. **Trigger reliability — RESOLVED.** Originally the ⚡/chain indicator was
+   `move_background()`'d, which lost click hit-testing to the balance line /
+   QR / payments widgets on top of it — only ~1 of every 6 taps reached the
+   indicator (measured on-device). Fixed by removing `move_background()` (the
+   indicator is created after the balance line + QR, so it's naturally on top
+   for clicks) and adding `set_ext_click_area(EGG_EXT_CLICK)` to enlarge the
+   small glyph's touch target. The feared visual regression (icon over a long
+   balance) doesn't occur in practice — realistic balances end far left of the
+   indicator's x≈200 position. Triple-tap now registers reliably and was
+   confirmed launching the game from a clean boot. See §2 point 3.
 2. **Broken desktop symlink** (pre-existing, NOT introduced here):
    `internal_filesystem/apps/com.lightningpiggy.displaywallet` →
    `../../../LightningPiggyApp/...` (three `../`) resolves to
