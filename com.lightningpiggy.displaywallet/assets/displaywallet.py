@@ -350,12 +350,25 @@ class CustomiseSettingsActivity(SettingsActivity):
             "default_value": "lightningpiggy",
             "changed_callback": callbacks.get("hero_image"),
         }
+        # Optional free-text label rendered below the hero image (e.g.
+        # "Savings", "Spending", "Sock drawer"). Per-slot so each wallet
+        # can carry its own name. Placeholder shows the current value
+        # if any, otherwise "(none)" — same pattern as Balance Denomination
+        # / hero image labels. Live-redraws via the changed_callback
+        # without needing an app restart.
+        hero_name_key = "hero_name" + s
+        hero_name_setting = {
+            "title": "Hero Name", "key": hero_name_key,
+            "placeholder": self.prefs.get_string(hero_name_key) or "(none)",
+            "changed_callback": callbacks.get("hero_name"),
+        }
         self.settings = [
             {"title": "Balance Denomination", "key": denom_key, "ui": "activity",
              "activity_class": DenominationSettingsActivity,
              "placeholder": self.prefs.get_string(denom_key, "sats"),
              "changed_callback": callbacks.get("denomination")},
             hero_setting,
+            hero_name_setting,
             {"title": "Theme", "key": "theme_override", "activity_class": True,
              "placeholder": theme_label},
         ]
@@ -839,6 +852,43 @@ class DisplayWallet(Activity):
         # immediately.
         self._reposition_stale_indicator()
 
+        # User-set free-text label placed below the hero image, horizontally
+        # centred on the hero's centre column. Lets the user name each
+        # wallet ("Savings", "Spending"…) so the same hardware piece can
+        # sit on a shelf alongside another and be told apart. Per-slot
+        # pref `hero_name<suffix>`; empty → label hidden.
+        #
+        # Geometry: 84 px wide centred at the hero's centre x (x=264 on a
+        # 320 wide display, hero_container being centred under the QR).
+        # The widget therefore spans roughly x=222..306, which overlaps
+        # the settings cog widget on its right side (cog at x=280..320,
+        # cog gear glyph starts around x=291) — but this is INTENTIONAL:
+        # the label is created BEFORE the cog, so the cog draws on top
+        # and naturally clips the rightmost characters when a name is too
+        # long, exactly the way the hero image is also already overlapped
+        # by the cog on its bottom-right corner (transparent PNG corners
+        # make it invisible there too). For short names (≤ ~11 chars) the
+        # whole name renders cleanly under the hero; for longer names the
+        # cog gear progressively occludes the tail. Python-side truncation
+        # at 14 chars + "…" (see `_update_hero_name`) caps the worst case.
+        # Text aligned CENTER inside the widget so the visible content
+        # sits centred under the hero.
+        self.hero_name_label = lv.label(self.main_screen)
+        self.hero_name_label.set_style_text_font(lv.font_montserrat_12, lv.PART.MAIN)
+        # CLIP enforces a hard pixel boundary so nothing escapes the widget
+        # bounds (the cog handles the visual occlusion on the right edge).
+        self.hero_name_label.set_long_mode(lv.label.LONG_MODE.CLIP)
+        self.hero_name_label.set_width(84)
+        self.hero_name_label.set_style_text_align(lv.TEXT_ALIGN.CENTER, lv.PART.MAIN)
+        self.hero_name_label.set_style_text_color(self._icon_color(), lv.PART.MAIN)
+        # OUT_BOTTOM_MID of hero_container = horizontally centred on the
+        # hero's centre x, vertically just below the hero. y offset 5 sits
+        # the label cleanly between hero bottom (y=216) and screen bottom
+        # (y=240) — leaves a 1–2 px gap above and below.
+        self.hero_name_label.align_to(self.hero_container, lv.ALIGN.OUT_BOTTOM_MID, 0, 5)
+        self.hero_name_label.set_text("")
+        self._update_hero_name()
+
         settings_button = lv.obj(self.main_screen)
         settings_button.set_size(40, 40)
         settings_button.align(lv.ALIGN.BOTTOM_RIGHT, 0, 0)
@@ -851,13 +901,18 @@ class DisplayWallet(Activity):
         self.settings_icon.set_text(lv.SYMBOL.SETTINGS)
         self.settings_icon.set_style_text_font(lv.font_montserrat_18, lv.PART.MAIN)
         self.settings_icon.set_style_text_color(self._icon_color(), lv.PART.MAIN)
-        self.settings_icon.center()
+        # Nudge the gear glyph 4 px right + 4 px down inside its 40×40
+        # widget (vs `.center()`), freeing a sliver of breathing room on
+        # the left edge for the hero_name label without making the gear
+        # itself look uncomfortably close to the screen corner. Widget
+        # bounds (and therefore the tap target) are unchanged.
+        self.settings_icon.align(lv.ALIGN.CENTER, 4, 4)
         focusgroup = lv.group_get_default()
         if focusgroup:
             focusgroup.add_obj(settings_button)
 
         # Track wallet-mode widgets so they can be hidden/shown as a group
-        self.wallet_container_widgets = [balance_line, self.balance_label, self.balance_unit_label, self.receive_qr, self.lightning_bolt, self.chain_link, self.payments_container, self.hero_container, settings_button]
+        self.wallet_container_widgets = [balance_line, self.balance_label, self.balance_unit_label, self.receive_qr, self.lightning_bolt, self.chain_link, self.payments_container, self.hero_container, self.hero_name_label, settings_button]
         # Install the screen-contact tracker on every interactive widget.
         # LVGL 9 doesn't bubble events to ancestors by default, so a single
         # listener on main_screen would miss touches that originate on
@@ -1058,6 +1113,7 @@ class DisplayWallet(Activity):
         else:
             # Returning from settings or other activity
             self._update_hero_image()
+            self._update_hero_name()
             if config_changed_old_wallet is not None:
                 # Starting the new wallet synchronously now would race against
                 # the old wallet's async socket teardown — on ESP32 that
@@ -1316,9 +1372,11 @@ class DisplayWallet(Activity):
         # Hide the previous wallet's QR until the new slot's static_receive_code
         # is loaded (from cache or fresh fetch).
         self.receive_qr.add_flag(lv.obj.FLAG.HIDDEN)
-        # New slot might have a different hero image / wallet type icon —
-        # repaint both via went_online (which calls _update_wallet_type_indicator).
+        # New slot might have a different hero image / wallet type icon /
+        # hero name — repaint all three. The wallet-type indicator is
+        # repainted via went_online's _update_wallet_type_indicator call.
         self._update_hero_image()
+        self._update_hero_name()
         cm = ConnectivityManager.get()
         self.network_changed(cm.is_online())
 
@@ -1704,6 +1762,42 @@ class DisplayWallet(Activity):
         """Called when hero image setting changes."""
         self._update_hero_image()
 
+    HERO_NAME_DISPLAY_MAX_CHARS = 8
+
+    def _update_hero_name(self):
+        """Read the active slot's `hero_name<suffix>` pref and update the
+        label below the hero image. Empty pref → label hidden. Per-slot,
+        so switching wallets refreshes the label to the new slot's value.
+        Safe to call before the widget exists (no-op via hasattr guard) —
+        the slot-switch path runs before onCreate finishes wiring widgets
+        on the very first paint.
+
+        Truncates names longer than `HERO_NAME_DISPLAY_MAX_CHARS`. No
+        ellipsis indicator is added — `font_montserrat_12` doesn't
+        include the Unicode `…` glyph (U+2026), and falling back to plain
+        `...` would consume three of only eight characters. Hard-truncate
+        keeps all eight slots showing actual name content. The full
+        untruncated name is still stored in prefs; only the on-screen
+        rendering is shortened. Edit the constant if you change the
+        label width or font."""
+        if not hasattr(self, 'hero_name_label'):
+            return
+        _, s = self._active_slot_and_suffix()
+        name = self.prefs.get_string("hero_name" + s) or ""
+        if len(name) > self.HERO_NAME_DISPLAY_MAX_CHARS:
+            name = name[:self.HERO_NAME_DISPLAY_MAX_CHARS]
+        self.hero_name_label.set_text(name)
+        if name:
+            self.hero_name_label.remove_flag(lv.obj.FLAG.HIDDEN)
+        else:
+            self.hero_name_label.add_flag(lv.obj.FLAG.HIDDEN)
+
+    def _on_hero_name_changed(self, new_value):
+        """Called when the user saves the Hero Name setting. Refreshes
+        the on-screen label immediately so the new name shows without
+        requiring an app restart."""
+        self._update_hero_name()
+
     def _on_static_receive_code_changed(self, new_value):
         """Called when the user edits any "Optional ... Address" override
         in Settings → Wallet — `lnbits_static_receive_code`,
@@ -1770,6 +1864,12 @@ class DisplayWallet(Activity):
         # Settings-cog icon colour tracks the theme (white in dark mode, black in light).
         if hasattr(self, 'settings_icon'):
             self.settings_icon.set_style_text_color(self._icon_color(), lv.PART.MAIN)
+        # Hero name label colour tracks the theme for the same reason —
+        # otherwise a theme flip leaves it the previous colour and either
+        # vanishes (e.g. white text on light bg) or stays high-contrast
+        # against the wrong backdrop.
+        if hasattr(self, 'hero_name_label'):
+            self.hero_name_label.set_style_text_color(self._icon_color(), lv.PART.MAIN)
         # Splash + welcome containers are opaque overlays; keep their bg in sync
         # with the screen so a theme flip while either is visible doesn't leave
         # a stale dark-grey rectangle behind.
@@ -2002,7 +2102,7 @@ class DisplayWallet(Activity):
             {"title": "Customise", "key": "customise", "ui": "activity",
              "activity_class": CustomiseSettingsActivity,
              "placeholder": "Balance denomination, hero image",
-             "_callbacks": {"denomination": self._on_denomination_changed, "hero_image": self._on_hero_image_changed}},
+             "_callbacks": {"denomination": self._on_denomination_changed, "hero_image": self._on_hero_image_changed, "hero_name": self._on_hero_name_changed}},
             {"title": "Screen Lock", "key": "screen_lock", "activity_class": True,
              "placeholder": "On - tapping disabled" if self.prefs.get_string("screen_lock", "off") == "on" else "Off - tapping changes display"},
         ]
