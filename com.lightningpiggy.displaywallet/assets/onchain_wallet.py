@@ -42,6 +42,12 @@ class OnchainWallet(Wallet):
     _USER_AGENT = ("Mozilla/5.0 (X11; Linux x86_64) "
                    "AppleWebKit/537.36 (KHTML, like Gecko) "
                    "Chrome/122 Safari/537.36")
+    # Whether the running MPOS framework supports DownloadManager's
+    # redact_url= kwarg (added in MicroPythonOS#136, shipped 0.9.6+).
+    # None = unknown / not probed yet; True/False set by first successful
+    # or first TypeError-raising call in fetch_balance_and_payments.
+    # Class-level so the verdict survives wallet-restart cycles.
+    _redact_url_supported = None
 
     def __init__(self, xpub, blockbook_url=None):
         super().__init__()
@@ -167,15 +173,34 @@ class OnchainWallet(Wallet):
         # user's entire derivation tree (all past/future addresses) if logs
         # are ever shared for debugging.
         print("OnchainWallet: fetching from {}".format(self.blockbook_url))
+        # Pre-0.9.6 MicroPythonOS doesn't recognise the `redact_url=` kwarg
+        # (added in MPOS#136) and raises
+        # TypeError("unexpected keyword argument 'redact_url'") on every
+        # call. Probe once and remember — `_redact_url_supported` is a
+        # class-level attribute so the result is shared across instances
+        # and survives the wallet-restart cycle in `went_online` /
+        # slot-switch flows (the class object outlives any single wallet
+        # instance). True/False after the first call; None means
+        # "not probed yet".
+        kwargs = {"headers": {"User-Agent": self._USER_AGENT}}
+        if OnchainWallet._redact_url_supported is not False:
+            kwargs["redact_url"] = True
         try:
-            # redact_url=True (MicroPythonOS 0.9.6+) tells the framework to
-            # log only `scheme://host/...REDACTED...` instead of the full
-            # URL, suppress its response-headers dump, and scrub the URL
-            # from any aiohttp exception message that bubbles up. Belt-and-
-            # braces for the print() above which already hides the xpub.
-            response_bytes = await DownloadManager.download_url(
-                url, headers={"User-Agent": self._USER_AGENT},
-                redact_url=True)
+            try:
+                response_bytes = await DownloadManager.download_url(
+                    url, **kwargs)
+                # First successful call confirms the kwarg is accepted.
+                OnchainWallet._redact_url_supported = True
+            except TypeError as e:
+                if "redact_url" not in str(e):
+                    raise
+                # Old MPOS — cache the verdict and retry without the kwarg.
+                print("OnchainWallet: redact_url= unsupported (pre-0.9.6 MPOS), "
+                      "falling back to plain download (xpub still hidden in "
+                      "LP's own log lines; framework logs may show the URL)")
+                OnchainWallet._redact_url_supported = False
+                response_bytes = await DownloadManager.download_url(
+                    url, headers={"User-Agent": self._USER_AGENT})
         except Exception as e:
             # Scrub xpub from error message for the same reason.
             raise RuntimeError(
