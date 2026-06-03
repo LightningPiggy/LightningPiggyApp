@@ -1,10 +1,11 @@
-"""Per-wallet-type on-disk cache of balance, payments and static-receive-code.
+"""Per-(wallet-type, wallet-slot) on-disk cache of balance, payments and
+static-receive-code.
 
 Cache layout (cache.json):
     {
       "version": 2,
       "slots": {
-        "<slot_key>": {
+        "<slot_key>": {                     # e.g. "lnbits_1", "nwc_2", "onchain_1"
           "creds_fp": "<hash>",     # fingerprint guarding balance + payments
           "qr_fp":    "<hash>",     # fingerprint guarding static_receive_code
           "balance":              3113,              # optional
@@ -14,6 +15,12 @@ Cache layout (cache.json):
         ...
       }
     }
+
+The `slot_key` combines wallet *type* with the user-facing wallet *slot*
+(1 or 2 in the multi-wallet feature) so each (type, slot) pair retains its
+own balance + payments + QR across reboots and slot-switches. Switching
+the active slot in Settings or via the BOOT button → the new slot's data
+paints instantly from disk while a fresh fetch is in flight.
 
 Fields are guarded independently — changing the LN-address override only
 invalidates `static_receive_code` (qr_fp mismatch); changing URL/readkey/
@@ -51,32 +58,53 @@ def _fingerprint(*parts):
     return h.digest()[:8].hex()
 
 
-def compute_fingerprints(wallet_type, prefs):
-    """Return (creds_fp, qr_fp) for the currently-configured wallet of
-    `wallet_type`, derived from `prefs` (a SharedPreferences instance).
-    Returns (None, None) for unknown wallet types."""
+def slot_suffix(slot):
+    """Pref-key suffix for slot 1 ('' — keeps backward-compat with single-wallet
+    builds) and slot 2 ('_2'). Used both here and in displaywallet to map a
+    UI-facing slot number to the actual pref keys on disk."""
+    return "_2" if str(slot) == "2" else ""
+
+
+def compute_slot_key(wallet_type, slot=1):
+    """Return the cache slot_key for a (wallet_type, slot) pair, e.g.
+    'lnbits_1', 'nwc_2', 'onchain_1'. The slot is always appended so the
+    cache file structure is uniform regardless of how many wallets the user
+    has configured."""
+    return "{}_{}".format(wallet_type, slot)
+
+
+def compute_fingerprints(wallet_type, prefs, slot=1):
+    """Return (creds_fp, qr_fp) for the wallet of `wallet_type` configured
+    in `slot` (1 or 2), reading from `prefs` (a SharedPreferences instance).
+    Slot is encoded into the fingerprint inputs so two slots with identical
+    LNBits URLs / NWC URLs (the "same wallet in both slots" edge case)
+    still get distinct cache entries.
+
+    Returns (None, None) for unknown wallet types.
+    """
+    s = slot_suffix(slot)
     if wallet_type == "lnbits":
-        url = prefs.get_string("lnbits_url") or ""
-        readkey = prefs.get_string("lnbits_readkey") or ""
-        override = prefs.get_string("lnbits_static_receive_code") or ""
-        creds_fp = _fingerprint("lnbits", url, readkey)
-        qr_fp = _fingerprint("lnbits", url, readkey, override)
+        url = prefs.get_string("lnbits_url" + s) or ""
+        readkey = prefs.get_string("lnbits_readkey" + s) or ""
+        override = prefs.get_string("lnbits_static_receive_code" + s) or ""
+        creds_fp = _fingerprint("lnbits", str(slot), url, readkey)
+        qr_fp = _fingerprint("lnbits", str(slot), url, readkey, override)
         return creds_fp, qr_fp
     if wallet_type == "nwc":
-        nwc_url = prefs.get_string("nwc_url") or ""
-        override = prefs.get_string("nwc_static_receive_code") or ""
-        creds_fp = _fingerprint("nwc", nwc_url)
-        qr_fp = _fingerprint("nwc", nwc_url, override)
+        nwc_url = prefs.get_string("nwc_url" + s) or ""
+        override = prefs.get_string("nwc_static_receive_code" + s) or ""
+        creds_fp = _fingerprint("nwc", str(slot), nwc_url)
+        qr_fp = _fingerprint("nwc", str(slot), nwc_url, override)
         return creds_fp, qr_fp
     if wallet_type == "onchain":
-        xpub = prefs.get_string("onchain_xpub") or ""
-        blockbook_url = prefs.get_string("onchain_blockbook_url") or ""
-        override = prefs.get_string("onchain_static_receive_code") or ""
+        xpub = prefs.get_string("onchain_xpub" + s) or ""
+        blockbook_url = prefs.get_string("onchain_blockbook_url" + s) or ""
+        override = prefs.get_string("onchain_static_receive_code" + s) or ""
         # Both xpub and the indexer URL participate: pointing the same
         # xpub at a different Blockbook is a valid config change and must
         # invalidate cached balance + payments.
-        creds_fp = _fingerprint("onchain", xpub, blockbook_url)
-        qr_fp = _fingerprint("onchain", xpub, blockbook_url, override)
+        creds_fp = _fingerprint("onchain", str(slot), xpub, blockbook_url)
+        qr_fp = _fingerprint("onchain", str(slot), xpub, blockbook_url, override)
         return creds_fp, qr_fp
     return None, None
 
