@@ -171,8 +171,20 @@ _WALLET_TYPE_OPTIONS_SLOT1 = [
     ("Nostr Wallet Connect", "nwc"),
 ]
 _WALLET_TYPE_OPTIONS_SLOT2 = [
-    ("On-chain (xpub)", "onchain"),
+    ("On-chain (xpub or Bitcoin address)", "onchain"),
 ]
+
+# Privacy nudge shown beneath the Wallet Type radio on the slot-2
+# (on-chain) settings page. Renders via the MPOS SettingActivity's
+# `note` field (added in MicroPythonOS#155); older firmwares without
+# the note field ignore it silently — the radio label change above
+# is the load-bearing UX, the note is the explanation.
+_SLOT2_WALLET_TYPE_NOTE = (
+    "Tip: an xpub is more private than reusing a single address. With an "
+    "xpub, the wallet derives a fresh receive address per payment so the "
+    "people paying you can't see your full balance or each other's amounts; "
+    "with a single address, every payment shares the same on-chain record."
+)
 
 
 def _should_show_wallet_setting(setting):
@@ -228,7 +240,10 @@ class WalletSettingsActivity(SettingsActivity):
         # Critically: NEITHER pre-seed counts as "wallet configured" —
         # `_slot_has_credentials` checks `onchain_xpub<s>` exclusively, so
         # the main settings row stays "Add an on-chain wallet" until the
-        # user actually enters an xpub.
+        # user actually enters an xpub or a single Bitcoin address. The
+        # pref key is named `onchain_xpub` for backward compat — its
+        # contents can also be a plain address (auto-detected at wallet
+        # construction time via `classify_credential` in onchain_wallet).
         if str(self.slot) == "2":
             wallet_type_options = _WALLET_TYPE_OPTIONS_SLOT2
             editor = self.prefs.edit()
@@ -244,10 +259,20 @@ class WalletSettingsActivity(SettingsActivity):
                 editor.commit()
         else:
             wallet_type_options = _WALLET_TYPE_OPTIONS_SLOT1
+        # Slot-2's wallet type radio gets a privacy nudge below it
+        # explaining why xpub is preferable to a single reused address.
+        # Slot 1 doesn't need it — neither LNBits nor NWC are address-
+        # reuse-shaped — and the framework's `note` field is harmless
+        # when absent.
+        wallet_type_setting = {
+            "title": "Wallet Type", "key": "wallet_type" + s, "ui": "radiobuttons",
+            "ui_options": wallet_type_options,
+            "_slot": self.slot,
+        }
+        if str(self.slot) == "2":
+            wallet_type_setting["note"] = _SLOT2_WALLET_TYPE_NOTE
         self.settings = [
-            {"title": "Wallet Type", "key": "wallet_type" + s, "ui": "radiobuttons",
-             "ui_options": wallet_type_options,
-             "_slot": self.slot},
+            wallet_type_setting,
             {"title": "LNBits URL", "key": "lnbits_url" + s,
              "placeholder": "https://demo.lnpiggy.com", "should_show": _should_show_wallet_setting, "_slot": self.slot},
             {"title": "LNBits Read Key", "key": "lnbits_readkey" + s,
@@ -260,8 +285,8 @@ class WalletSettingsActivity(SettingsActivity):
             {"title": "Optional LN Address", "key": "nwc_static_receive_code" + s,
              "placeholder": "Optional if present in NWC URL.", "should_show": _should_show_wallet_setting, "_slot": self.slot,
              "changed_callback": static_cb},
-            {"title": "xpub / ypub / zpub", "key": "onchain_xpub" + s,
-             "placeholder": "zpub6rF...", "should_show": _should_show_wallet_setting, "_slot": self.slot},
+            {"title": "xpub or Bitcoin Address", "key": "onchain_xpub" + s,
+             "placeholder": "zpub6rF... or bc1q...", "should_show": _should_show_wallet_setting, "_slot": self.slot},
             {"title": "Blockbook URL", "key": "onchain_blockbook_url" + s,
              "placeholder": "https://btc1.trezor.io", "should_show": _should_show_wallet_setting, "_slot": self.slot},
             {"title": "Optional Fixed Receive Address", "key": "onchain_static_receive_code" + s,
@@ -1249,8 +1274,11 @@ class DisplayWallet(Activity):
         Per-type required fields:
             lnbits  → url + readkey   (LN address is optional)
             nwc     → nwc_url         (LN address is optional)
-            onchain → xpub            (blockbook_url defaults; receive
-                                       addr is optional)
+            onchain → xpub OR address (blockbook_url defaults; receive
+                                       addr is optional; the
+                                       `onchain_xpub` pref key holds
+                                       either form, classified at
+                                       wallet construction)
         """
         s = _slot_suffix(slot)
         wt = self.prefs.get_string("wallet_type" + s)
