@@ -228,7 +228,10 @@ class WalletSettingsActivity(SettingsActivity):
         # Critically: NEITHER pre-seed counts as "wallet configured" —
         # `_slot_has_credentials` checks `onchain_xpub<s>` exclusively, so
         # the main settings row stays "Add an on-chain wallet" until the
-        # user actually enters an xpub.
+        # user actually enters an xpub or a single Bitcoin address. The
+        # pref key is named `onchain_xpub` for backward compat — its
+        # contents can also be a plain address (auto-detected at wallet
+        # construction time via `classify_credential` in onchain_wallet).
         if str(self.slot) == "2":
             wallet_type_options = _WALLET_TYPE_OPTIONS_SLOT2
             editor = self.prefs.edit()
@@ -260,8 +263,8 @@ class WalletSettingsActivity(SettingsActivity):
             {"title": "Optional LN Address", "key": "nwc_static_receive_code" + s,
              "placeholder": "Optional if present in NWC URL.", "should_show": _should_show_wallet_setting, "_slot": self.slot,
              "changed_callback": static_cb},
-            {"title": "xpub / ypub / zpub", "key": "onchain_xpub" + s,
-             "placeholder": "zpub6rF...", "should_show": _should_show_wallet_setting, "_slot": self.slot},
+            {"title": "xpub or Bitcoin Address", "key": "onchain_xpub" + s,
+             "placeholder": "zpub6rF... or bc1q...", "should_show": _should_show_wallet_setting, "_slot": self.slot},
             {"title": "Blockbook URL", "key": "onchain_blockbook_url" + s,
              "placeholder": "https://btc1.trezor.io", "should_show": _should_show_wallet_setting, "_slot": self.slot},
             {"title": "Optional Fixed Receive Address", "key": "onchain_static_receive_code" + s,
@@ -1249,8 +1252,11 @@ class DisplayWallet(Activity):
         Per-type required fields:
             lnbits  → url + readkey   (LN address is optional)
             nwc     → nwc_url         (LN address is optional)
-            onchain → xpub            (blockbook_url defaults; receive
-                                       addr is optional)
+            onchain → xpub OR address (blockbook_url defaults; receive
+                                       addr is optional; the
+                                       `onchain_xpub` pref key holds
+                                       either form, classified at
+                                       wallet construction)
         """
         s = _slot_suffix(slot)
         wt = self.prefs.get_string("wallet_type" + s)
