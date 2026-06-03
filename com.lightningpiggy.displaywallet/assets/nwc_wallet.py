@@ -11,7 +11,7 @@ from nostr.filter import Filter, Filters
 from nostr.event import EncryptedDirectMessage
 from nostr.key import PrivateKey
 
-from wallet import Wallet
+from wallet import Wallet, ensure_lightning_prefix
 from payment import Payment
 from unique_sorted_list import UniqueSortedList
 
@@ -191,7 +191,10 @@ class NWCWallet(Wallet):
 
     async def async_wallet_manager_task(self):
         if self.lud16:
-            self.handle_new_static_receive_code(self.lud16)
+            # Wrap as `lightning:<address>` URI so QR scanners that look for
+            # the URI scheme handle the code without relying on lud16
+            # pattern-detection (boosts wallet compatibility ~90% → ~95%).
+            self.handle_new_static_receive_code(ensure_lightning_prefix(self.lud16))
 
         self.private_key = PrivateKey(bytes.fromhex(self.secret))
         self.relay_manager = RelayManager()

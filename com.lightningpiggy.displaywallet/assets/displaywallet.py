@@ -48,6 +48,7 @@ import wallet_cache
 from lnbits_wallet import LNBitsWallet
 from nwc_wallet import NWCWallet
 from onchain_wallet import OnchainWallet
+from wallet import ensure_lightning_prefix
 
 
 def _apply_screen_theme(screen):
@@ -1476,7 +1477,11 @@ class DisplayWallet(Activity):
                 self.wallet = LNBitsWallet(
                     self.prefs.get_string("lnbits_url" + s),
                     self.prefs.get_string("lnbits_readkey" + s))
-                self.wallet.static_receive_code = self.prefs.get_string("lnbits_static_receive_code" + s)
+                # ensure_lightning_prefix wraps the LNURL/lud16 with
+                # `lightning:` for QR-scanner compatibility (idempotent
+                # on already-prefixed values; passes empty through).
+                self.wallet.static_receive_code = ensure_lightning_prefix(
+                    self.prefs.get_string("lnbits_static_receive_code" + s))
                 self.redraw_static_receive_code_cb()
             except Exception as e:
                 self.error_cb(f"Couldn't initialize LNBits wallet because: {e}")
@@ -1484,7 +1489,8 @@ class DisplayWallet(Activity):
         elif wallet_type == "nwc":
             try:
                 self.wallet = NWCWallet(self.prefs.get_string("nwc_url" + s))
-                self.wallet.static_receive_code = self.prefs.get_string("nwc_static_receive_code" + s)
+                self.wallet.static_receive_code = ensure_lightning_prefix(
+                    self.prefs.get_string("nwc_static_receive_code" + s))
                 self.redraw_static_receive_code_cb()
             except Exception as e:
                 self.error_cb(f"Couldn't initialize NWC Wallet because: {e}")
@@ -1693,7 +1699,12 @@ class DisplayWallet(Activity):
             else:
                 override = ""
             if override:
-                self.wallet.static_receive_code = override
+                # For Lightning wallets (LNBits/NWC), normalise via the
+                # `lightning:` URI prefix so the user can paste a bare
+                # `user@host` or `LNURL1…` and still get a scanner-friendly
+                # QR. The helper is a no-op for on-chain `bitcoin:…` URIs
+                # so this single line handles all wallet types.
+                self.wallet.static_receive_code = ensure_lightning_prefix(override)
         self.redraw_static_receive_code_cb()
         # Keep the active-config key in sync so onResume's "config
         # changed → restart wallet" branch doesn't fire redundantly.
@@ -1884,6 +1895,15 @@ class DisplayWallet(Activity):
             override = self.prefs.get_string("lnbits_static_receive_code" + s)
         elif wallet_type == "onchain":
             override = self.prefs.get_string("onchain_static_receive_code" + s)
+        # Normalise the override before it reaches the QR encoder. The pref
+        # is stored raw (whatever the user typed); the helper adds the
+        # `lightning:` URI scheme for lud16 / LNURL / BOLT11 to improve QR
+        # scanner compatibility, and is a no-op for `bitcoin:…` URIs and
+        # values that already carry a scheme. Without this, the override
+        # bypasses every other prefixing site (wallet construction +
+        # `_on_static_receive_code_changed`) because the QR is rendered
+        # straight from prefs here.
+        override = ensure_lightning_prefix(override)
         # Next, the wallet's own discovered receive code (from backend / NWC lud16).
         wallet_code = self.wallet.static_receive_code if self.wallet else None
         # Pick the first non-empty source; fall through to whatever's already
