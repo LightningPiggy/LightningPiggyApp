@@ -77,7 +77,7 @@ def _add_floating_back_button(screen, finish_callback):
     back_btn.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
     back_btn.add_event_cb(lambda e: finish_callback(), lv.EVENT.CLICKED, None)
     back_icon = lv.label(back_btn)
-    back_icon.set_text(lv.SYMBOL.IMAGE)
+    back_icon.set_text(lv.SYMBOL.NEW_LINE)
     back_icon.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
     back_icon.center()
     focusgroup = lv.group_get_default()
