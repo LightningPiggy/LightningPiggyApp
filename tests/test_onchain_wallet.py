@@ -455,5 +455,100 @@ class TestOnchainWalletAddressMode(unittest.TestCase):
         self.assertEqual(w.slot_key, "onchain")
 
 
+@unittest.skipUnless(_HAVE_ONCHAIN, "onchain_wallet.py not installed")
+class TestOnchainWalletPageSize(unittest.TestCase):
+    """Regression: Blockbook fetches must include `pageSize=N` derived from
+    the wallet's `PAYMENTS_TO_SHOW`. Without it, Blockbook returns up to
+    1000 transactions per page; on addresses with many txs (genesis, big
+    mining-payout clusters) the response + the subsequent slot-cache
+    write blew the ESP32-S3 heap with `MemoryError`. Reported by Thomas
+    in LightningPiggyApp#45 review."""
+
+    def setUp(self):
+        import asyncio
+        from mpos import DownloadManager
+        self._asyncio = asyncio
+        self._original_download = DownloadManager.download_url
+        self.DownloadManager = DownloadManager
+        # Empty but JSON-valid response — fetch parses it without
+        # firing payments / receive-code callbacks, leaves the test
+        # focused on the URL the wallet constructed.
+        self._fake_response = (
+            b'{"balance":"0","unconfirmedBalance":"0","unconfirmedTxs":0,'
+            b'"transactions":[],"tokens":[]}'
+        )
+        self.captured = {"url": None}
+        async def fake(url, **kwargs):
+            self.captured["url"] = url
+            return self._fake_response
+        DownloadManager.download_url = fake
+
+    def tearDown(self):
+        # Restore the original download_url so subsequent tests in the
+        # session (when the suite runs as a whole) see the real one.
+        self.DownloadManager.download_url = self._original_download
+
+    def _fetch(self, w):
+        # Stub out the handle_new_* fan-out so an empty response doesn't
+        # blow up trying to render against widgets that don't exist in
+        # the test environment.
+        w.handle_new_balance = lambda b, fetchPaymentsIfChanged=True: None
+        w.handle_new_payments = lambda p: None
+        w.handle_new_static_receive_code = lambda s: None
+        w.notify_poll_success = lambda: None
+        self._asyncio.run(w.fetch_balance_and_payments())
+
+    def test_address_mode_url_contains_pageSize(self):
+        w = OnchainWallet("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")
+        w.PAYMENTS_TO_SHOW = 21
+        self._fetch(w)
+        self.assertIn("pageSize=21", self.captured["url"])
+        self.assertIn("/api/v2/address/", self.captured["url"])
+        # details=txslight drops the hex/scripts the parser doesn't use;
+        # measured at ~43 % smaller responses vs the default txs format
+        self.assertIn("details=txslight", self.captured["url"])
+        self.assertFalse("details=txs&" in self.captured["url"])
+
+    def test_xpub_mode_url_contains_pageSize(self):
+        w = OnchainWallet("zpub6rFAKE")
+        w.PAYMENTS_TO_SHOW = 10
+        self._fetch(w)
+        self.assertIn("pageSize=10", self.captured["url"])
+        self.assertIn("/api/v2/xpub/", self.captured["url"])
+        # tokens=derived still present — the rotation logic depends on it
+        self.assertIn("tokens=derived", self.captured["url"])
+        # txslight regression
+        self.assertIn("details=txslight", self.captured["url"])
+        self.assertFalse("details=txs&" in self.captured["url"])
+
+    def test_pageSize_defaults_to_six_when_unset(self):
+        # Wallet constructed but DisplayWallet hasn't yet stamped the
+        # per-slot value — class default `PAYMENTS_TO_SHOW = 6` applies.
+        w = OnchainWallet("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")
+        self._fetch(w)
+        self.assertIn("pageSize=6", self.captured["url"])
+
+    def test_pageSize_treats_zero_as_unset_and_uses_default(self):
+        # `0` from a future code path would otherwise turn into
+        # `?pageSize=0` which Blockbook interprets as "no limit" — the
+        # exact unbounded-fetch case this PR closes. The fetch helper
+        # treats 0 as equivalent to None/unset and falls back to the
+        # class default (6), matching the intent of the slider's 1..21
+        # range (a user can't pick 0 through the UI anyway).
+        w = OnchainWallet("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")
+        w.PAYMENTS_TO_SHOW = 0
+        self._fetch(w)
+        self.assertIn("pageSize=6", self.captured["url"])
+
+    def test_pageSize_clamped_at_100_max(self):
+        # The settings slider is bounded 1..21 — this clamp is for
+        # programmatic abuse and to keep the response size bounded if
+        # the cap ever loosens upstream.
+        w = OnchainWallet("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")
+        w.PAYMENTS_TO_SHOW = 9999
+        self._fetch(w)
+        self.assertIn("pageSize=100", self.captured["url"])
+
+
 if __name__ == "__main__":
     unittest.main()

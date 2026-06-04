@@ -393,20 +393,44 @@ class OnchainWallet(Wallet):
         """Single Blockbook call populates balance, payments, and receive code.
 
         Endpoint depends on mode:
-            xpub mode    → /api/v2/xpub/{xpub}?details=txs&tokens=derived
+            xpub mode    → /api/v2/xpub/{xpub}?details=txslight&tokens=derived&pageSize=N
                            (server-side derivation; `tokens` carries all
                            addresses + their `transfers` count, used to
                            pick the next unused receive address)
-            address mode → /api/v2/address/{addr}?details=txs
+            address mode → /api/v2/address/{addr}?details=txslight&pageSize=N
                            (single watched address; no `tokens`, no
                            receive-address rotation)
+
+        `details=txslight` (vs the default `txs`) drops per-tx fields the
+        parser doesn't use — `hex`, `version`, `size`, vin/vout script
+        bytes, etc. — and keeps everything we do use: `confirmations`,
+        `vin[].value`, `vout[].value`, `vout[].isOwn`, `fees`, `blockTime`.
+        Measured response size on a typical 21-tx page: ~177 KB → ~101 KB
+        (~43 % smaller, ~76 KB saved per fetch). Suggested by Thomas in
+        LightningPiggyApp#45 review.
+
+        `pageSize` is capped at `self.PAYMENTS_TO_SHOW` (the user's per-slot
+        Transactions Shown setting from PR #43, default 6, max 21). Without
+        the cap, Blockbook defaults to 1000 transactions per page; on
+        addresses with many txs (mainnet genesis ~3000+, or the kind of
+        mining-payout cluster Thomas reported with ~5000) the JSON
+        response + the subsequent slot-cache write blew the ESP32-S3
+        heap with `MemoryError: memory allocation failed`. Fetching only
+        what's actually displayed kills that bug at the source; txslight
+        compounds the savings.
         """
+        # PAYMENTS_TO_SHOW is set on the instance by DisplayWallet after
+        # construction (per-slot user setting). Cap defensively to 100 in
+        # case a future code path sets a larger value — at typical
+        # ~5 KB per tx in txslight that's ~500 KB of JSON, still inside
+        # the heap with margin.
+        page_size = max(1, min(int(self.PAYMENTS_TO_SHOW or 6), 100))
         if self.mode == "xpub":
-            url = "{}/api/v2/xpub/{}?details=txs&tokens=derived".format(
-                self.blockbook_url, self.xpub)
+            url = "{}/api/v2/xpub/{}?details=txslight&tokens=derived&pageSize={}".format(
+                self.blockbook_url, self.xpub, page_size)
         else:
-            url = "{}/api/v2/address/{}?details=txs".format(
-                self.blockbook_url, self.address)
+            url = "{}/api/v2/address/{}?details=txslight&pageSize={}".format(
+                self.blockbook_url, self.address, page_size)
         # Don't log the full URL: in xpub mode it contains the xpub
         # (would leak the entire derivation tree if logs are ever
         # shared); in address mode it contains the watched address
