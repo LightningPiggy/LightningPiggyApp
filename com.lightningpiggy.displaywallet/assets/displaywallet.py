@@ -1156,6 +1156,15 @@ class DisplayWallet(Activity):
 
     def onResume(self, main_screen):
         super().onResume(main_screen)
+        # Re-attach the BOOT-button watcher if it died while LP was in the
+        # background (e.g. MPOS auto-launched the WiFi-picker activity after
+        # a failed reconnect — observed at a new location with no saved
+        # networks in range — and our watcher task got cleaned up alongside
+        # whatever else MPOS tore down). `_start_boot_button_watcher` is
+        # idempotent (heartbeat check) so calling it on every onResume is
+        # cheap when the watcher is already running and is the load-bearing
+        # restart when it isn't.
+        self._start_boot_button_watcher()
         # Ensure the app's effective theme (local override or OS) is applied.
         # This never writes to OS prefs — see _apply_displaywallet_theme.
         _apply_displaywallet_theme(self.prefs)
@@ -1387,13 +1396,42 @@ class DisplayWallet(Activity):
 
     def _start_boot_button_watcher(self):
         """Wire up GPIO0 (BOOT button) for short/long press detection. Silent
-        no-op on desktop builds without machine.Pin."""
+        no-op on desktop builds without machine.Pin.
+
+        Idempotent: safe to call repeatedly. Checks for a still-alive watcher
+        task before starting a new one — without this, calling from both
+        onStart and onResume would spawn racing watchers that would each
+        flip `active_wallet_slot` on every press (back-and-forth), cancelling
+        the user's swap. The check uses the stored task handle's `.done()`
+        plus the `_boot_button_alive_ms` heartbeat the watcher loop updates
+        every iteration; a stale heartbeat means the task died silently
+        (the LP `MemoryError` traceback case from #45 demonstrated this is
+        possible) and we should restart it.
+        """
         try:
             from machine import Pin
         except ImportError:
             # Desktop build — no GPIO. Silently skip.
             self._boot_button_keep_running = False
             return
+
+        # Idempotency: if we have a task handle and it's not done, AND the
+        # heartbeat is recent (within 500 ms), the existing watcher is alive
+        # and there's nothing to do. Otherwise fall through and (re-)start.
+        existing = getattr(self, "_boot_button_task", None)
+        last_alive = getattr(self, "_boot_button_alive_ms", None)
+        if existing is not None:
+            try:
+                still_alive = not existing.done()
+            except Exception:
+                still_alive = True  # can't tell → assume alive, don't double-start
+            if still_alive and last_alive is not None:
+                if time.ticks_diff(time.ticks_ms(), last_alive) < 500:
+                    return
+            # Either the task is done or its heartbeat is stale — flag the
+            # old loop to exit, then fall through to start a fresh one.
+            self._boot_button_keep_running = False
+
         try:
             self._boot_button_pin = Pin(0, Pin.IN, Pin.PULL_UP)
         except Exception as e:
@@ -1401,7 +1439,9 @@ class DisplayWallet(Activity):
             self._boot_button_keep_running = False
             return
         self._boot_button_keep_running = True
-        TaskManager.create_task(self._boot_button_watcher_task())
+        self._boot_button_alive_ms = time.ticks_ms()
+        self._boot_button_task = TaskManager.create_task(self._boot_button_watcher_task())
+        print("BOOT button: watcher started")
 
     async def _boot_button_watcher_task(self):
         """Polling watcher with short/long press detection. Runs until onDestroy.
@@ -1419,6 +1459,10 @@ class DisplayWallet(Activity):
         pin = self._boot_button_pin
         debounce_s = self._BOOT_DEBOUNCE_MS / 1000
         while self._boot_button_keep_running:
+            # Heartbeat for the idempotency check in _start_boot_button_watcher
+            # — onResume reads this to decide whether the watcher is still
+            # alive or needs a restart. A stale value means we silently died.
+            self._boot_button_alive_ms = time.ticks_ms()
             try:
                 if pin.value() == 0:  # active LOW: pressed
                     await TaskManager.sleep(debounce_s)
