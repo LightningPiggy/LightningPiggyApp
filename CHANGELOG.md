@@ -1,3 +1,7 @@
+0.5.1
+=====
+- Optimize PNG image sizes using optipng and zopflipng
+
 0.5.0
 =====
 - Add on-chain wallet type: watch a Bitcoin xpub / ypub / zpub by polling a Blockbook indexer (Trezor's open-source explorer, https://github.com/trezor/blockbook). Server-side derivation means no BIP32 lib on the device. Defaults to Trezor's hosted instance at `btc1.trezor.io`; configurable to a self-hosted Blockbook (Umbrel / Start9 / BTCPay Server / Sparrow Server) for full privacy via the Settings → Wallet → Blockbook URL field
