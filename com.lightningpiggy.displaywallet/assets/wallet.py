@@ -86,12 +86,12 @@ class Wallet:
         self.payment_list = UniqueSortedList()
 
     def __str__(self):
-        if isinstance(self, LNBitsWallet):
-            return "LNBitsWallet"
-        elif isinstance(self, NWCWallet):
-            return "NWCWallet"
-        elif isinstance(self, OnchainWallet):
-            return "OnchainWallet"
+        # The class name IS the wallet-type name ("LNBitsWallet",
+        # "NWCWallet", "OnchainWallet"). The previous isinstance-chain
+        # referenced those classes without importing them, so any
+        # str(wallet) raised NameError — and returned None (a TypeError)
+        # for unknown subclasses.
+        return type(self).__name__
 
     def notify_poll_success(self):
         """Subclasses call this after any successful fetch (balance OR
