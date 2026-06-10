@@ -1,6 +1,14 @@
 0.5.1
 =====
 - Optimize PNG image sizes using optipng and zopflipng
+- NWC wallets now honour the per-slot "Transactions Shown" slider — the NIP-47 `list_transactions` request previously hardcoded `limit: 6` while LNBits (`limit=`) and on-chain (`pageSize=`) already followed the setting
+- NWC: outgoing payments now render as negative amounts in the transactions list (NIP-47 amounts are unsigned with a separate `type` field; previously a send showed up looking like a receive), and an outgoing payment notification updates the balance + list immediately instead of waiting for the next poll
+- Fix LNBits websocket notifications being silently dropped when the message lacks `wallet_balance` (unbound-variable error swallowed by the catch-all), and fix the accompanying log line printing a literal `{e}`
+- Fix LNBits `extra.comment` list handling: LNBits 0.x returns a list which previously rendered as a Python list literal (e.g. `['yes']`); also stop an `extra` dict without a comment from wiping the payment's memo
+- Fix Nostr relay-manager late-configuration path adding each character of the relay URL as a separate relay, and reconfiguring NWC with the same URL after a service restart leaving the manager permanently dead (early-return skipped the main-task respawn)
+- Transactions list memory is now bounded: the in-RAM payment list (fed by websocket pushes and NWC notifications for as long as the app runs) caps at 50 entries, trimming the oldest — display max is 21 so the cap is invisible, but a busy wallet no longer grows ESP32 RAM and cache-file size without limit
+- Reduce ESP32 flash wear ~10×: cache writes that only refresh the staleness timestamp (one per successful poll, every 60-300 s) are rate-limited to one per 15 minutes; data writes (balance / payments / receive code changes) are never skipped. The live stale indicator runs off RAM and is unaffected; only the across-restart seed gets ±15 min granularity
+- Internal robustness: `str(wallet)` no longer raises (returns the wallet-type name; previously referenced un-imported classes), comparing a payment list against `None` no longer raises TypeError
 
 0.5.0
 =====
