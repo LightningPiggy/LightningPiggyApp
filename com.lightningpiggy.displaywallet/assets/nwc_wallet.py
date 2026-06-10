@@ -18,14 +18,39 @@ from unique_sorted_list import UniqueSortedList
 
 class NWCWallet(Wallet):
 
-    PAYMENTS_TO_SHOW = 6
-
     relays = []
     secret = None
     wallet_pubkey = None
 
+    # The actual list_transactions fetch happens inside NostrManager (it owns
+    # the relay connection and the periodic poll loop), so the user's
+    # "Transactions Shown" slider value has to be forwarded there. Expose
+    # PAYMENTS_TO_SHOW as a property whose setter pushes the value into the
+    # manager — DisplayWallet stamps `wallet.PAYMENTS_TO_SHOW = n` both at
+    # wallet construction and on live slider changes, and this keeps NWC at
+    # parity with LNBits (limit=) and on-chain (pageSize=), which read the
+    # attribute at fetch time.
+    @property
+    def PAYMENTS_TO_SHOW(self):
+        return self._payments_to_show_value
+
+    @PAYMENTS_TO_SHOW.setter
+    def PAYMENTS_TO_SHOW(self, n):
+        self._payments_to_show_value = n
+        # The NostrManager singleton may come from the MPOS nostr app's
+        # own copy of nostr_service.py (its boot_completed service imports
+        # first, winning the sys.modules slot) — and that copy may predate
+        # set_nwc_list_limit. Degrade gracefully: the limit stays at the
+        # manager's default instead of crashing wallet construction.
+        try:
+            NostrManager.get_instance().set_nwc_list_limit(n)
+        except AttributeError:
+            print("NWCWallet: NostrManager lacks set_nwc_list_limit "
+                  "(older copy loaded) — list limit stays at its default")
+
     def __init__(self, nwc_url):
         super().__init__()
+        self._payments_to_show_value = 6
         self.nwc_url = nwc_url
         if not nwc_url:
             raise ValueError("NWC URL is not set.")
@@ -71,6 +96,11 @@ class NWCWallet(Wallet):
         new_payment_list = UniqueSortedList()
         for transaction in transactions:
             amount = round(transaction["amount"] / 1000)
+            # NIP-47 list_transactions amounts are unsigned msats with a
+            # separate "type" field; render outgoing payments as negative
+            # so a send doesn't show up looking like a receive.
+            if transaction.get("type") == "outgoing":
+                amount = -amount
             comment = self.getCommentFromTransaction(transaction)
             epoch_time = transaction["created_at"]
             payment_obj = Payment(epoch_time, amount, comment)
@@ -86,7 +116,17 @@ class NWCWallet(Wallet):
         amount = round(notification["amount"] / 1000)
         ntype = notification["type"]
         if ntype == "outgoing":
+            # Mirror the incoming branch with a negative amount so a send
+            # updates the balance + transactions list immediately instead
+            # of waiting up to NWC_POLL_SECONDS for the next poll. (The
+            # previous code negated `amount` and then did nothing with it.)
             amount = -amount
+            if self.last_known_balance is not None:
+                self.handle_new_balance(self.last_known_balance + amount, False)
+            epoch_time = notification["created_at"]
+            comment = self.getCommentFromTransaction(notification)
+            payment_obj = Payment(epoch_time, amount, comment)
+            self.handle_new_payment(payment_obj)
             self.notify_poll_success()
         elif ntype == "incoming":
             new_balance = self.last_known_balance + amount if self.last_known_balance is not None else amount

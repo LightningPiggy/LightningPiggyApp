@@ -58,9 +58,18 @@ class LNBitsWallet(Wallet):
         try:
             extra = transaction.get("extra")
             if extra:
-                comment = extra.get("comment")
-                first_from_list = comment.get(0) # some LNBits 0.x versions return a list instead of a string here...
-                comment = first_from_list # if the above threw exception, it will catch below
+                extra_comment = extra.get("comment")
+                # Some LNBits 0.x versions return a list here instead of a
+                # string — take its first element. (The previous code did
+                # `comment.get(0)`, but lists have no .get(), so the list
+                # case rendered as a Python list literal like "['yes']".)
+                if isinstance(extra_comment, (list, tuple)):
+                    extra_comment = extra_comment[0] if extra_comment else None
+                # Only override the memo when extra actually carries a
+                # comment — an extra dict without one (or with an empty
+                # one) must not wipe the memo to None.
+                if extra_comment:
+                    comment = extra_comment
         except Exception as e:
             pass
         comment = super().try_parse_as_zap(comment)
@@ -71,10 +80,16 @@ class LNBitsWallet(Wallet):
         print(f"wallet.py _on_message received: {message}")
         try:
             payment_notification = json.loads(message)
+            # Initialise before the try: if the int() below raises (e.g.
+            # wallet_balance missing → int(None)), new_balance would
+            # otherwise be unbound and the `if new_balance:` line would
+            # NameError — swallowed by the outer except, silently dropping
+            # the whole payment notification.
+            new_balance = None
             try:
                 new_balance = int(payment_notification.get("wallet_balance"))
             except Exception as e:
-                print("wallet.py on_message got exception while parsing balance: {e}")
+                print(f"wallet.py on_message got exception while parsing balance: {e}")
             if new_balance:
                 self.handle_new_balance(new_balance, False) # refresh balance on display BUT don't trigger a full fetch_payments
                 transaction = payment_notification.get("payment")
