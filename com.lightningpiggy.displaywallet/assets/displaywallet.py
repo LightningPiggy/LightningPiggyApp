@@ -1143,9 +1143,10 @@ class DisplayWallet(Activity):
         # Initialize Confetti
         self.confetti = Confetti(main_screen, self.ICON_PATH, self.ASSET_PATH, self.confetti_duration)
 
-        # ESP32 BOOT button (GPIO0) — short press swaps active wallet, long
-        # press opens Settings. No-op on the desktop build (no machine.Pin).
-        self._start_boot_button_watcher()
+        # (The ESP32 BOOT-button watcher is started from onResume — the
+        # framework always fires onResume right after onStart on launch,
+        # and onResume alone when returning from the background, so one
+        # call site covers both paths.)
 
         # Periodic stale-indicator check — runs every 60 s so the dot
         # appears even across periods with no wallet events (e.g. WiFi
@@ -1156,14 +1157,16 @@ class DisplayWallet(Activity):
 
     def onResume(self, main_screen):
         super().onResume(main_screen)
-        # Re-attach the BOOT-button watcher if it died while LP was in the
-        # background (e.g. MPOS auto-launched the WiFi-picker activity after
-        # a failed reconnect — observed at a new location with no saved
-        # networks in range — and our watcher task got cleaned up alongside
-        # whatever else MPOS tore down). `_start_boot_button_watcher` is
-        # idempotent (heartbeat check) so calling it on every onResume is
-        # cheap when the watcher is already running and is the load-bearing
-        # restart when it isn't.
+        # Start — or re-attach — the ESP32 BOOT-button watcher (short press
+        # swaps the active wallet, long press opens Settings; no-op on
+        # desktop builds without machine.Pin). This is the only call site:
+        # the framework fires onResume right after onStart on launch, and
+        # onResume alone when LP returns from the background — where the
+        # watcher task may have died while another activity was in the
+        # foreground (observed on-device after a trip through the WiFi
+        # settings screen). `_start_boot_button_watcher` is idempotent
+        # (task-handle + heartbeat check) so the common already-running
+        # case is a cheap no-op.
         self._start_boot_button_watcher()
         # Ensure the app's effective theme (local override or OS) is applied.
         # This never writes to OS prefs — see _apply_displaywallet_theme.
