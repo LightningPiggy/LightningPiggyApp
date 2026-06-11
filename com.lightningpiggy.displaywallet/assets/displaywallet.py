@@ -663,6 +663,7 @@ class DisplayWallet(Activity):
     confetti = None
     confetti_duration = 15000
     ASSET_PATH = "M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/"
+    CONFETTI_ASSET_PATH = "M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/confetti/"
     ICON_PATH = "M:apps/com.lightningpiggy.displaywallet/res/mipmap-mdpi/"
 
     # Stale-data indicator — if the wallet has been producing only errors
@@ -1141,7 +1142,7 @@ class DisplayWallet(Activity):
         self.main_ui_set_defaults()
 
         # Initialize Confetti
-        self.confetti = Confetti(main_screen, self.ICON_PATH, self.ASSET_PATH, self.confetti_duration)
+        self.confetti = Confetti(main_screen, self.ICON_PATH, self.CONFETTI_ASSET_PATH, self.confetti_duration)
 
         # ESP32 BOOT button (GPIO0) — short press swaps active wallet, long
         # press opens Settings. No-op on the desktop build (no machine.Pin).
