@@ -40,6 +40,22 @@ from unique_sorted_list import UniqueSortedList
 
 _CACHE_VERSION = 2
 
+# Minimum seconds between cache writes that ONLY refresh `last_updated`
+# (no balance / payments / receive-code change). Wallet.notify_poll_success
+# fires one of these per successful poll — every 60-300 s — and persisting
+# each one rewrites cache.json on flash for no benefit: the live stale
+# indicator runs off an in-RAM timestamp, and the on-disk copy only matters
+# across app restarts, where ±15 min of staleness is invisible (the
+# indicator's thresholds are far coarser). Rate-limiting these writes cuts
+# ESP32 flash wear by roughly an order of magnitude on a healthy wallet.
+# Data writes are never skipped.
+TIMESTAMP_ONLY_WRITE_INTERVAL = 900
+
+# slot_key -> time.time() of the last persisted write (any kind). In-RAM
+# only; resets on app restart, which just means the first timestamp-only
+# write after boot goes through — exactly right.
+_last_write_time = {}
+
 _cache = SharedPreferences("com.lightningpiggy.displaywallet", filename="cache.json")
 
 
@@ -128,7 +144,18 @@ def save_slot(slot_key, creds_fp=None, qr_fp=None,
 
     Every write bumps `last_updated` so the stale-data indicator can
     compute time-since-last-success across app restarts.
+
+    Timestamp-only writes (no data fields passed) are rate-limited to one
+    per TIMESTAMP_ONLY_WRITE_INTERVAL per slot — see the constant's comment
+    for the flash-wear rationale. Data writes always go through.
     """
+    data_write = (balance is not None or payments is not None
+                  or static_receive_code is not None)
+    now = time.time()
+    if not data_write:
+        if now - _last_write_time.get(slot_key, 0) < TIMESTAMP_ONLY_WRITE_INTERVAL:
+            return
+    _last_write_time[slot_key] = now
     slots = _load_slots()
     slot = slots.get(slot_key, {})
     if balance is not None:
