@@ -11,6 +11,7 @@
 - Internal robustness: `str(wallet)` no longer raises (returns the wallet-type name; previously referenced un-imported classes), comparing a payment list against `None` no longer raises TypeError
 - Synchronize confetti.py with MicroPythonOS' copy
 - BOOT button: re-attach the GPIO0 watcher on onResume
+- NostrService: don't use permissive ensure_lightning_prefix, only allow LUD-16
 
 0.5.0
 =====
