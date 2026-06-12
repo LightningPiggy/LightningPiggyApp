@@ -10,6 +10,7 @@
 - Reduce ESP32 flash wear ~10×: cache writes that only refresh the staleness timestamp (one per successful poll, every 60-300 s) are rate-limited to one per 15 minutes; data writes (balance / payments / receive code changes) are never skipped. The live stale indicator runs off RAM and is unaffected; only the across-restart seed gets ±15 min granularity
 - Internal robustness: `str(wallet)` no longer raises (returns the wallet-type name; previously referenced un-imported classes), comparing a payment list against `None` no longer raises TypeError
 - Synchronize confetti.py with MicroPythonOS' copy
+- BOOT button: re-attach the GPIO0 watcher on onResume
 
 0.5.0
 =====
