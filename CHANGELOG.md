@@ -12,7 +12,7 @@
 - Synchronize confetti.py with MicroPythonOS' copy
 - BOOT button: re-attach the GPIO0 watcher on onResume
 - NostrService: don't use permissive ensure_lightning_prefix, only allow LUD-16
-- Test coverage: 56 new unit tests for the money paths — NWC URL parsing (both parser copies verified in lockstep), the balance state machine, live NIP-47 payment notifications (incoming/outgoing/msat rounding), receive-code `lightning:` prefixing, emoji surrogate-pair decoding, zap/LNURLp comment parsing, and the BOOT-button watcher lifecycle
+- Test coverage: 56 new unit tests for the display-critical paths — NWC URL parsing (both parser copies verified in lockstep), the balance state machine, live NIP-47 payment notifications (incoming/outgoing/msat rounding), receive-code `lightning:` prefixing, emoji surrogate-pair decoding, zap/LNURLp comment parsing, and the BOOT-button watcher lifecycle
 
 0.5.0
 =====
