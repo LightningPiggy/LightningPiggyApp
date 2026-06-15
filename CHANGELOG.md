@@ -13,6 +13,7 @@
 - BOOT button: re-attach the GPIO0 watcher on onResume
 - NostrService: don't use permissive ensure_lightning_prefix, only allow LUD-16
 - Test coverage: 56 new unit tests for the display-critical paths — NWC URL parsing (both parser copies verified in lockstep), the balance state machine, live NIP-47 payment notifications (incoming/outgoing/msat rounding), receive-code `lightning:` prefixing, emoji surrogate-pair decoding, zap/LNURLp comment parsing, and the BOOT-button watcher lifecycle
+- Rename the "Lightning Piggy FF2K" hero option to "Fart Face 2000 (FF2K)" so the FF2K abbreviation is spelled out in the Settings → Customise → Hero Image picker. Label only — the stored value (`lightningpiggy_ff2k`) and the `hero_lightningpiggy_ff2k.png` asset are unchanged, so existing selections keep working
 
 0.5.0
 =====

@@ -362,7 +362,7 @@ class CustomiseSettingsActivity(SettingsActivity):
         denom_key = "balance_denomination" + s
         hero_options = [
             ("Lightning Piggy", "lightningpiggy"),
-            ("Lightning Piggy FF2K", "lightningpiggy_ff2k"),
+            ("Fart Face 2000 (FF2K)", "lightningpiggy_ff2k"),
             ("Lightning Penguin", "lightningpenguin"),
             ("Lightning Piggy Logo", "logo"),
             ("None", "none"),
