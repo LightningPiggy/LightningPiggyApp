@@ -1,6 +1,7 @@
 0.5.2
 =====
 - Rename the "Lightning Piggy FF2K" hero option to "Fart Face 2000 (FF2K)" so the FF2K abbreviation is spelled out in the Settings → Customise → Hero Image picker. Label only — the stored value (`lightningpiggy_ff2k`) and the `hero_lightningpiggy_ff2k.png` asset are unchanged, so existing selections keep working
+- Default "Transactions Shown" is now 21 (was 6) — a fresh install / unset slot shows a full screen of transactions out of the box. Applies to all wallet types (LNBits `limit=`, NWC `list_transactions`, on-chain `pageSize=`). Users who already set the slider keep their value; anyone who wants a shorter list can still dial it down to 1..21
 
 0.5.1
 =====

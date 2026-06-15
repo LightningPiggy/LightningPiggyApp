@@ -148,7 +148,7 @@ class NostrManager:
         # Shown" slider, 1..21) via NWCWallet's PAYMENTS_TO_SHOW property —
         # without that link, NWC would always fetch the class default while
         # LNBits (limit=) and on-chain (pageSize=) honour the user setting.
-        self._nwc_list_limit = 6
+        self._nwc_list_limit = 21
 
         # Nostr app state
         self.events = []

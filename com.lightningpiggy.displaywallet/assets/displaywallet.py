@@ -394,17 +394,17 @@ class CustomiseSettingsActivity(SettingsActivity):
         # no keyboard required. The slider widget enforces the range
         # natively; the `_on_payments_to_show_changed` callback still
         # clamps as defence-in-depth so a future change to the stored
-        # value via another code path can't escape the bounds. Default 6
-        # matches the historical hard-coded class constant on each wallet
-        # type so users who never touch this setting see the same behaviour
-        # as before. Save persists the slider's integer value as a string.
+        # value via another code path can't escape the bounds. Default 21
+        # (the slider max) shows a full screen of transactions out of the
+        # box; users who want a shorter list can dial it down. Save
+        # persists the slider's integer value as a string.
         payments_to_show_key = "payments_to_show" + s
         payments_to_show_setting = {
             "title": "Transactions Shown", "key": payments_to_show_key,
             "ui": "slider",
             "min": 1,
             "max": 21,
-            "default_value": "6",
+            "default_value": "21",
             "changed_callback": callbacks.get("payments_to_show"),
         }
         self.settings = [
@@ -1804,7 +1804,7 @@ class DisplayWallet(Activity):
             self.error_cb(f"No or unsupported wallet type configured: '{wallet_type}'")
             return
         # Per-slot user setting overrides each wallet class's hard-coded
-        # `PAYMENTS_TO_SHOW = 6` default. LNBits / NWC use this as the
+        # `PAYMENTS_TO_SHOW = 21` default. LNBits / NWC use this as the
         # `limit=` parameter on their list_transactions backend call;
         # onchain fetches all transactions from Blockbook regardless,
         # so the cap there is enforced at display time via head_str
@@ -1999,12 +1999,12 @@ class DisplayWallet(Activity):
 
     PAYMENTS_TO_SHOW_MIN = 1
     PAYMENTS_TO_SHOW_MAX = 21
-    PAYMENTS_TO_SHOW_DEFAULT = 6
+    PAYMENTS_TO_SHOW_DEFAULT = 21
 
     def _payments_to_show(self):
         """Return the active slot's `payments_to_show` setting as an int,
         clamped to [PAYMENTS_TO_SHOW_MIN, PAYMENTS_TO_SHOW_MAX]. Falls
-        back to PAYMENTS_TO_SHOW_DEFAULT (6) when the pref is empty,
+        back to PAYMENTS_TO_SHOW_DEFAULT (21) when the pref is empty,
         unset, or non-numeric — keeps the wallet usable even if the
         user types nonsense into the text field."""
         _, s = self._active_slot_and_suffix()

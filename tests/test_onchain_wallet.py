@@ -521,24 +521,24 @@ class TestOnchainWalletPageSize(unittest.TestCase):
         self.assertIn("details=txslight", self.captured["url"])
         self.assertFalse("details=txs&" in self.captured["url"])
 
-    def test_pageSize_defaults_to_six_when_unset(self):
+    def test_pageSize_defaults_to_21_when_unset(self):
         # Wallet constructed but DisplayWallet hasn't yet stamped the
-        # per-slot value — class default `PAYMENTS_TO_SHOW = 6` applies.
+        # per-slot value — class default `PAYMENTS_TO_SHOW = 21` applies.
         w = OnchainWallet("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")
         self._fetch(w)
-        self.assertIn("pageSize=6", self.captured["url"])
+        self.assertIn("pageSize=21", self.captured["url"])
 
     def test_pageSize_treats_zero_as_unset_and_uses_default(self):
         # `0` from a future code path would otherwise turn into
         # `?pageSize=0` which Blockbook interprets as "no limit" — the
         # exact unbounded-fetch case this PR closes. The fetch helper
         # treats 0 as equivalent to None/unset and falls back to the
-        # class default (6), matching the intent of the slider's 1..21
+        # default (21), matching the intent of the slider's 1..21
         # range (a user can't pick 0 through the UI anyway).
         w = OnchainWallet("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")
         w.PAYMENTS_TO_SHOW = 0
         self._fetch(w)
-        self.assertIn("pageSize=6", self.captured["url"])
+        self.assertIn("pageSize=21", self.captured["url"])
 
     def test_pageSize_clamped_at_100_max(self):
         # The settings slider is bounded 1..21 — this clamp is for
