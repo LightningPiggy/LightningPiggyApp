@@ -211,6 +211,28 @@ def _should_show_wallet_setting(setting):
     return True
 
 
+def _slot_credentials_present(prefs, slot):
+    """True iff `slot` has both a wallet_type AND the credentials its type
+    requires to actually run. Per-type required fields:
+        lnbits  → url + readkey   (LN address is optional)
+        nwc     → nwc_url         (LN address is optional)
+        onchain → xpub OR address (stored in `onchain_xpub`; blockbook_url
+                                   defaults; receive addr is optional)
+    The `wallet_type<slot>` pref alone isn't enough: opening Wallet 2
+    settings pre-seeds wallet_type_2 = "onchain" before the user enters an
+    xpub, so a slot can have a type but no credentials."""
+    s = _slot_suffix(slot)
+    wt = prefs.get_string("wallet_type" + s)
+    if wt == "lnbits":
+        return (bool(prefs.get_string("lnbits_url" + s))
+                and bool(prefs.get_string("lnbits_readkey" + s)))
+    if wt == "nwc":
+        return bool(prefs.get_string("nwc_url" + s))
+    if wt == "onchain":
+        return bool(prefs.get_string("onchain_xpub" + s))
+    return False
+
+
 class WalletSettingsActivity(SettingsActivity):
     """Sub-settings screen for wallet configuration. `_slot` in the parent's
     setting dict selects slot 1 (default, unsuffixed keys) or slot 2 (_2)."""
@@ -220,6 +242,11 @@ class WalletSettingsActivity(SettingsActivity):
         parent_setting = extras.get("setting") or {}
         self.slot = parent_setting.get("_slot", 1)
         s = _slot_suffix(self.slot)
+        # Whether this slot already had a runnable wallet when settings opened.
+        # If it goes from unconfigured -> configured during this session (the
+        # user just *added* a wallet here), onResume makes it the active slot
+        # so the device opens into the new wallet (see _maybe_activate_added_wallet).
+        self._slot_was_configured = _slot_credentials_present(self.prefs, self.slot)
         # Optional callback passed from the parent settings dict. Used by the
         # three "Optional ... Address" overrides (LNBits / NWC / onchain) to
         # trigger an immediate QR redraw on save — without this the new value
@@ -302,6 +329,22 @@ class WalletSettingsActivity(SettingsActivity):
     def onResume(self, screen):
         super().onResume(screen)
         _add_floating_back_button(screen, self.finish)
+        self._maybe_activate_added_wallet()
+
+    def _maybe_activate_added_wallet(self):
+        """If the user just added a wallet to this slot (it transitioned from
+        unconfigured to configured during this settings session), make it the
+        active wallet slot so the device opens into the newly-added wallet
+        instead of the previously-active one. Editing an already-configured
+        slot does NOT switch the active wallet."""
+        now_configured = _slot_credentials_present(self.prefs, self.slot)
+        if now_configured and not self._slot_was_configured:
+            if self.prefs.get_string("active_wallet_slot", "1") != str(self.slot):
+                editor = self.prefs.edit()
+                editor.put_string("active_wallet_slot", str(self.slot))
+                editor.commit()
+                print("Newly-added wallet in slot {} is now the active wallet".format(self.slot))
+        self._slot_was_configured = now_configured
 
 
 class _AppThemeView:
@@ -1293,16 +1336,7 @@ class DisplayWallet(Activity):
                                        either form, classified at
                                        wallet construction)
         """
-        s = _slot_suffix(slot)
-        wt = self.prefs.get_string("wallet_type" + s)
-        if wt == "lnbits":
-            return (bool(self.prefs.get_string("lnbits_url" + s))
-                    and bool(self.prefs.get_string("lnbits_readkey" + s)))
-        if wt == "nwc":
-            return bool(self.prefs.get_string("nwc_url" + s))
-        if wt == "onchain":
-            return bool(self.prefs.get_string("onchain_xpub" + s))
-        return False
+        return _slot_credentials_present(self.prefs, slot)
 
     def _active_slot_and_suffix(self):
         """Return (slot_str, suffix) for the currently active wallet slot.
