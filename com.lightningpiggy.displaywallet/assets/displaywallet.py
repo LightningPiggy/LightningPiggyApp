@@ -1833,6 +1833,16 @@ class DisplayWallet(Activity):
     def went_online(self):
         if self.wallet and self.wallet.is_running():
             print("wallet is already running, nothing to do") # might have come from the QR activity
+            # Make sure the config key is stamped while a wallet is running.
+            # If it's None here (e.g. went_online was re-entered via the
+            # onResume network-callback registration before the previous start
+            # finished stamping it), onResume's "_active_wallet_key != key"
+            # check would read None != key on every settings round-trip and
+            # needlessly restart the wallet — repainting the stale cached
+            # balance before the fresh fetch (the "balance momentarily
+            # changes" flicker).
+            if getattr(self, '_active_wallet_key', None) is None:
+                self._active_wallet_key = self._wallet_config_key()
             return
         slot, s = self._active_slot_and_suffix()
         wallet_type = self.prefs.get_string("wallet_type" + s)
