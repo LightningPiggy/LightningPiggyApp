@@ -879,16 +879,14 @@ class DisplayWallet(Activity):
         self.lightning_bolt.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, 0, -4)
         self.lightning_bolt.add_flag(lv.obj.FLAG.HIDDEN)
         # Hidden easter egg: tapping the wallet-type indicator three times in
-        # quick succession launches the Lightning Piggy Jump mini-game.
-        # The indicator is created AFTER the balance line and QR, so leaving
-        # it foreground (no move_background) puts it on top for both drawing
-        # and — crucially — click hit-testing, so taps reliably reach it.
-        # The only widgets it overlaps are the thin balance underline and
-        # the QR's left quiet-zone border; it does NOT overlap realistic
-        # balance numbers (those end far to the left of x≈200), so the
-        # foreground placement carries no practical visual cost. The glyph
-        # is small (~15×29 px) so `set_ext_click_area` enlarges the touch
-        # target into the empty gap below/left of it.
+        # quick succession launches the Lightning Piggy Jump mini-game. The
+        # glyph is small (~15×29 px) so `set_ext_click_area` enlarges the
+        # touch target into the empty gap below/left of it. NOTE: the balance
+        # labels are moved to the foreground below so a long balance string
+        # (millions of sats, ₿/milli-BTC denominations) renders OVER the logo
+        # instead of behind it. In that overlap a tap lands on the balance
+        # label, but the indicator's uncovered glyph plus its extended click
+        # area still reach the egg, and short balances don't overlap at all.
         self.lightning_bolt.add_flag(lv.obj.FLAG.CLICKABLE)
         self.lightning_bolt.set_ext_click_area(self.EGG_EXT_CLICK)
         self.lightning_bolt.add_event_cb(self._egg_tap, lv.EVENT.CLICKED, None)
@@ -899,6 +897,13 @@ class DisplayWallet(Activity):
         self.chain_link.add_flag(lv.obj.FLAG.CLICKABLE)
         self.chain_link.set_ext_click_area(self.EGG_EXT_CLICK)
         self.chain_link.add_event_cb(self._egg_tap, lv.EVENT.CLICKED, None)
+        # The balance number is the headline and must stay readable: bring the
+        # balance + unit labels to the front so a long value renders in front
+        # of the ⚡/chain-link wallet-type indicator instead of disappearing
+        # behind it. (Both indicators were created after these labels, which
+        # had put them on top; move_foreground() overrides that draw order.)
+        self.balance_label.move_foreground()
+        self.balance_unit_label.move_foreground()
         # Payments live inside a fixed-height container that scrolls
         # vertically when the text overflows. Without this wrapper, a
         # long zap comment or many on-chain tx lines would push the
