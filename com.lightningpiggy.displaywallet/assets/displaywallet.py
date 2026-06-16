@@ -1455,6 +1455,11 @@ class DisplayWallet(Activity):
 
     _BOOT_LONG_PRESS_MS = 800
     _BOOT_DEBOUNCE_MS = 30
+    # Minimum gap between two accepted presses. Guards against a single
+    # physical press being registered twice (mechanical release bounce),
+    # which otherwise flipped the active wallet slot and immediately flipped
+    # it back ("bounces back and doesn't switch").
+    _BOOT_PRESS_COOLDOWN_MS = 400
 
     def _start_boot_button_watcher(self):
         """Wire up GPIO0 (BOOT button) for short/long press detection. Silent
@@ -1532,14 +1537,32 @@ class DisplayWallet(Activity):
                         # bounce — released too fast
                         continue
                     t0 = time.ticks_ms()
-                    # Wait for release
-                    while pin.value() == 0 and self._boot_button_keep_running:
-                        await TaskManager.sleep(0.02)
+                    # Wait for a DEBOUNCED release: the button only counts as
+                    # up once the pin reads HIGH and stays HIGH for one debounce
+                    # window. The old code broke out on the first HIGH reading
+                    # and handled the press while the button was still bouncing,
+                    # so release bounce was seen as a second press.
+                    while self._boot_button_keep_running:
+                        if pin.value() == 0:          # pressed / bounced low
+                            await TaskManager.sleep(0.02)
+                            continue
+                        await TaskManager.sleep(debounce_s)
+                        if pin.value() != 0:          # still HIGH -> stably released
+                            break
                     duration = time.ticks_diff(time.ticks_ms(), t0)
-                    if duration >= self._BOOT_LONG_PRESS_MS:
-                        self._on_boot_button_long_press()
+                    # Cooldown guard: ignore a press that lands within
+                    # _BOOT_PRESS_COOLDOWN_MS of the previous one, so any
+                    # residual double-detection can't flip-flop the wallet.
+                    now = time.ticks_ms()
+                    last = getattr(self, "_boot_last_press_ms", None)
+                    if last is not None and time.ticks_diff(now, last) < self._BOOT_PRESS_COOLDOWN_MS:
+                        print("BOOT: press within {}ms cooldown, ignoring".format(self._BOOT_PRESS_COOLDOWN_MS))
                     else:
-                        self._on_boot_button_short_press()
+                        self._boot_last_press_ms = now
+                        if duration >= self._BOOT_LONG_PRESS_MS:
+                            self._on_boot_button_long_press()
+                        else:
+                            self._on_boot_button_short_press()
             except Exception as e:
                 # Don't let one bad press tear out the whole watcher — log
                 # and continue. The next iteration polls the pin again.
