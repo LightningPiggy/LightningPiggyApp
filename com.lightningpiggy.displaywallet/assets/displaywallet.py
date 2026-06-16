@@ -457,9 +457,9 @@ class CustomiseSettingsActivity(SettingsActivity):
              "changed_callback": callbacks.get("denomination")},
             hero_setting,
             hero_name_setting,
-            payments_to_show_setting,
             {"title": "Theme", "key": "theme_override", "activity_class": True,
              "placeholder": theme_label},
+            payments_to_show_setting,
         ]
         screen = lv.obj()
         screen.set_style_pad_all(DisplayMetrics.pct_of_width(2), lv.PART.MAIN)
