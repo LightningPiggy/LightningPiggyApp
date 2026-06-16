@@ -3,7 +3,7 @@
 - Rename the "Lightning Piggy FF2K" hero option to "Fart Face 2000 (FF2K)" so the FF2K abbreviation is spelled out in the Settings → Customise → Hero Image picker. Label only — the stored value (`lightningpiggy_ff2k`) and the `hero_lightningpiggy_ff2k.png` asset are unchanged, so existing selections keep working
 - Default "Transactions Shown" is now 21 (was 6) — a fresh install / unset slot shows a full screen of transactions out of the box. Applies to all wallet types (LNBits `limit=`, NWC `list_transactions`, on-chain `pageSize=`). Users who already set the slider keep their value; anyone who wants a shorter list can still dial it down to 1..21
 - Adding a wallet now opens the device into it: when you configure a slot that had no wallet yet (e.g. adding the on-chain wallet in slot 2), it becomes the active wallet so the home screen shows the wallet you just added instead of staying on the previous one. Merely editing an already-configured wallet does not change the active slot
-- Fix the balance number rendering behind the ⚡/chain-link wallet-type logo when it's long enough to overlap it (millions of sats, or wide denominations like the ₿ prefix / milli-BTC): the balance text now draws in front of the logo so it stays readable
+- Fix the balance number rendering behind the ⚡/chain-link wallet-type logo when it's long enough to overlap it (millions of sats, or wide denominations like the ₿ prefix / milli-BTC): the balance text now draws in front of the logo, on a small rounded panel matching the screen background so the logo is cleanly hidden behind the digits instead of showing through the gaps. The panel hugs the text (so it never covers the balance underline) while the balance keeps its generous tap target
 
 0.5.1
 =====

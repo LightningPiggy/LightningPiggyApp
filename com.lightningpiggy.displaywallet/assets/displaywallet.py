@@ -806,32 +806,27 @@ class DisplayWallet(Activity):
         # 2. Visual hierarchy. The balance NUMBER is the headline; the
         #    unit is metadata. Typographically that's how it should look.
         #
-        # Width: SIZE_CONTENT so the label hugs the text width — lets
-        # the unit label position cleanly to the right via OUT_RIGHT_*.
-        # Height: explicit 45 px keeps the tap target generous (iOS/Material
-        # min ~44–48). The text renders top-left so the extra space below
-        # is invisible empty padding that's still clickable.
+        # SIZE_CONTENT in both axes so the label hugs the text exactly. The
+        # opaque occlusion panel (added further below) fills the whole label
+        # box, so the box must not extend past the text — otherwise the panel
+        # would cover the balance underline that sits just below at y=35.
         self.balance_label = lv.label(self.main_screen)
         self.balance_label.set_text("")
         self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
         self.balance_label.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
-        self.balance_label.set_size(lv.SIZE_CONTENT, 45)
+        self.balance_label.set_size(lv.SIZE_CONTENT, lv.SIZE_CONTENT)
         self.balance_label.add_flag(lv.obj.FLAG.CLICKABLE)
         self.balance_label.add_event_cb(self.balance_label_clicked_cb, lv.EVENT.CLICKED, None)
         # Smaller unit suffix. Font 16 vs the number's 24 — half-size-ish.
-        # Both labels are 45 px tall and aligned via OUT_RIGHT_BOTTOM, which
-        # in LVGL means "place outside-right of ref with widget BOTTOM
-        # matching ref BOTTOM". Their text renders top-left inside the
-        # 45-tall bounding box: the big balance text fills y=0..29, the
-        # small unit text would fill y=0..19 if we did nothing. dy=10
-        # shifts the unit label down 10 px so its text occupies y=10..29
-        # — sharing a bottom edge with the balance text at y=29
-        # (approximate typographic baseline alignment).
+        # Both labels hug their text (SIZE_CONTENT) and the unit is bottom-
+        # aligned to the number via OUT_RIGHT_BOTTOM (dy=0) so their baselines
+        # share a bottom edge. Hugging the text keeps each one's occlusion
+        # panel above the balance underline at y=35 instead of covering it.
         self.balance_unit_label = lv.label(self.main_screen)
         self.balance_unit_label.set_text("")
         self.balance_unit_label.set_style_text_font(lv.font_montserrat_16, lv.PART.MAIN)
-        self.balance_unit_label.set_height(45)
-        self.balance_unit_label.align_to(self.balance_label, lv.ALIGN.OUT_RIGHT_BOTTOM, 2, 10)
+        self.balance_unit_label.set_height(lv.SIZE_CONTENT)
+        self.balance_unit_label.align_to(self.balance_label, lv.ALIGN.OUT_RIGHT_BOTTOM, -2, 0)
         self.balance_unit_label.add_flag(lv.obj.FLAG.CLICKABLE)
         self.balance_unit_label.add_event_cb(self.balance_label_clicked_cb, lv.EVENT.CLICKED, None)
         self.receive_qr = lv.qrcode(self.main_screen)
@@ -904,6 +899,30 @@ class DisplayWallet(Activity):
         # had put them on top; move_foreground() overrides that draw order.)
         self.balance_label.move_foreground()
         self.balance_unit_label.move_foreground()
+        # Where a long balance overlaps the ⚡/chain-link logo, give the
+        # balance + unit labels an opaque panel the same colour as the home
+        # screen, with a little horizontal padding. The logo no longer shows
+        # through the gaps between glyphs — the text sits on a clean plate
+        # that hides the logo behind it — and the panel is invisible
+        # elsewhere because it matches the screen background. The colour is
+        # refreshed on theme toggle in _apply_qr_theme.
+        plate = self._balance_plate_color()
+        for _bal in (self.balance_label, self.balance_unit_label):
+            _bal.set_style_bg_opa(lv.OPA.COVER, lv.PART.MAIN)
+            _bal.set_style_bg_color(plate, lv.PART.MAIN)
+            _bal.set_style_pad_left(1, lv.PART.MAIN)
+            _bal.set_style_pad_right(1, lv.PART.MAIN)
+            # No vertical padding: the panel must hug the text top-to-bottom
+            # so it never reaches down into the balance underline at y=35.
+            _bal.set_style_pad_top(0, lv.PART.MAIN)
+            _bal.set_style_pad_bottom(0, lv.PART.MAIN)
+            _bal.set_style_radius(8, lv.PART.MAIN)
+        # The labels now hug their text so the panel clears the underline, but
+        # tapping the balance (cycles denomination) wants a generous target.
+        # Extend only the CLICK area — this doesn't affect drawing/the panel —
+        # to restore the previous ~45 px tall touch zone.
+        self.balance_label.set_ext_click_area(8)        # ~29 px text -> ~45 px
+        self.balance_unit_label.set_ext_click_area(13)  # ~19 px text -> ~45 px
         # Payments live inside a fixed-height container that scrolls
         # vertically when the text overflows. Without this wrapper, a
         # long zap comment or many on-chain tx lines would push the
@@ -2157,6 +2176,12 @@ class DisplayWallet(Activity):
             return (lv.color_white(), lv.color_black())
         return (lv.color_black(), lv.color_white())
 
+    def _balance_plate_color(self):
+        """Background colour for the balance-text occlusion panel — matches
+        the home screen so the panel is invisible except where it covers the
+        wallet-type logo behind a long balance string."""
+        return lv.color_white() if AppearanceManager.is_light_mode() else lv.color_black()
+
     def _apply_qr_theme(self):
         """Reapply theme-dependent styles (screen bg, QR colors, icon tints)."""
         # Screen background follows light/dark mode — otherwise the hardcoded
@@ -2165,6 +2190,11 @@ class DisplayWallet(Activity):
             self.main_screen.set_style_bg_color(lv.color_white(), lv.PART.MAIN)
         else:
             self.main_screen.set_style_bg_color(lv.color_black(), lv.PART.MAIN)
+        # Keep the balance-text occlusion panel matching the (possibly just
+        # toggled) screen background.
+        plate = self._balance_plate_color()
+        self.balance_label.set_style_bg_color(plate, lv.PART.MAIN)
+        self.balance_unit_label.set_style_bg_color(plate, lv.PART.MAIN)
         dark, light = self._qr_colors()
         self.receive_qr.set_dark_color(dark)
         self.receive_qr.set_light_color(light)
@@ -2254,7 +2284,7 @@ class DisplayWallet(Activity):
          # Re-align the unit label every time we update because the number
          # label's content-fitted width changes with each new value \u2014 the
          # unit needs to follow.
-         self.balance_unit_label.align_to(self.balance_label, lv.ALIGN.OUT_RIGHT_BOTTOM, 2, 10)
+         self.balance_unit_label.align_to(self.balance_label, lv.ALIGN.OUT_RIGHT_BOTTOM, -2, 0)
 
     def balance_updated_cb(self, sats_added=0):
         print(f"balance_updated_cb(sats_added={sats_added})")
