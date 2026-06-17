@@ -2369,16 +2369,27 @@ class DisplayWallet(Activity):
         # the current balance; the animator then rolls from begin -> end
         # over the confetti duration as usual.
         self.display_balance(balance)
-        WidgetAnimator.change_widget(
-            self.balance_label,
-            anim_type="interpolate",
-            duration=self.confetti_duration,
-            delay=0,
-            begin_value=balance - sats_added,
-            end_value=balance,
-            display_change=self.display_balance
-        )
-    
+        # The count-up animation is only meaningful when sats actually moved,
+        # and LVGL's animator stores its values as 32-bit ints. A balance (or
+        # its start value) above 2**31-1 sats (~21.47 BTC) overflows: the
+        # animator ticks display_balance with the clamped 2147483647, which
+        # renders as "21.47 BTC" mid-roll before snapping back to the real
+        # value — exactly the "107 -> 21 -> 107" flash on large on-chain
+        # balances. Skip the animator in both cases; the display_balance call
+        # above already painted the correct full-precision value.
+        _INT32_MAX = 2147483647
+        begin_value = balance - sats_added
+        if sats_added != 0 and balance <= _INT32_MAX and begin_value <= _INT32_MAX:
+            WidgetAnimator.change_widget(
+                self.balance_label,
+                anim_type="interpolate",
+                duration=self.confetti_duration,
+                delay=0,
+                begin_value=begin_value,
+                end_value=balance,
+                display_change=self.display_balance
+            )
+
     def redraw_payments_cb(self):
         # Called from the wallet's polling task. MicroPython asyncio is
         # single-threaded and cooperative, so this runs on the same event
