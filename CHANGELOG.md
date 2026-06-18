@@ -1,3 +1,7 @@
+0.6.0
+=====
+- Prefer new "flat" structure for MANIFEST.JSON and icon_64x64.png
+
 0.5.2
 =====
 - Rename the "Lightning Piggy FF2K" hero option to "Fart Face 2000 (FF2K)" so the FF2K abbreviation is spelled out in the Settings → Customise → Hero Image picker. Label only — the stored value (`lightningpiggy_ff2k`) and the `hero_lightningpiggy_ff2k.png` asset are unchanged, so existing selections keep working
