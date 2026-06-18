@@ -10,7 +10,7 @@ from unique_sorted_list import UniqueSortedList
 
 class LNBitsWallet(Wallet):
 
-    PAYMENTS_TO_SHOW = 6
+    PAYMENTS_TO_SHOW = 21
     PERIODIC_FETCH_BALANCE_SECONDS = 120 # seconds — LNBits websocket pushes cover real-time payments, this poll is a heartbeat / silent-disconnect check
 
     ws = None

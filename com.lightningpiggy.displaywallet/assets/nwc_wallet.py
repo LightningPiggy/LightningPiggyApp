@@ -50,7 +50,7 @@ class NWCWallet(Wallet):
 
     def __init__(self, nwc_url):
         super().__init__()
-        self._payments_to_show_value = 6
+        self._payments_to_show_value = 21
         self.nwc_url = nwc_url
         if not nwc_url:
             raise ValueError("NWC URL is not set.")

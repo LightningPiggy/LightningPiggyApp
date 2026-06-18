@@ -211,6 +211,28 @@ def _should_show_wallet_setting(setting):
     return True
 
 
+def _slot_credentials_present(prefs, slot):
+    """True iff `slot` has both a wallet_type AND the credentials its type
+    requires to actually run. Per-type required fields:
+        lnbits  → url + readkey   (LN address is optional)
+        nwc     → nwc_url         (LN address is optional)
+        onchain → xpub OR address (stored in `onchain_xpub`; blockbook_url
+                                   defaults; receive addr is optional)
+    The `wallet_type<slot>` pref alone isn't enough: opening Wallet 2
+    settings pre-seeds wallet_type_2 = "onchain" before the user enters an
+    xpub, so a slot can have a type but no credentials."""
+    s = _slot_suffix(slot)
+    wt = prefs.get_string("wallet_type" + s)
+    if wt == "lnbits":
+        return (bool(prefs.get_string("lnbits_url" + s))
+                and bool(prefs.get_string("lnbits_readkey" + s)))
+    if wt == "nwc":
+        return bool(prefs.get_string("nwc_url" + s))
+    if wt == "onchain":
+        return bool(prefs.get_string("onchain_xpub" + s))
+    return False
+
+
 class WalletSettingsActivity(SettingsActivity):
     """Sub-settings screen for wallet configuration. `_slot` in the parent's
     setting dict selects slot 1 (default, unsuffixed keys) or slot 2 (_2)."""
@@ -220,6 +242,11 @@ class WalletSettingsActivity(SettingsActivity):
         parent_setting = extras.get("setting") or {}
         self.slot = parent_setting.get("_slot", 1)
         s = _slot_suffix(self.slot)
+        # Whether this slot already had a runnable wallet when settings opened.
+        # If it goes from unconfigured -> configured during this session (the
+        # user just *added* a wallet here), onResume makes it the active slot
+        # so the device opens into the new wallet (see _maybe_activate_added_wallet).
+        self._slot_was_configured = _slot_credentials_present(self.prefs, self.slot)
         # Optional callback passed from the parent settings dict. Used by the
         # three "Optional ... Address" overrides (LNBits / NWC / onchain) to
         # trigger an immediate QR redraw on save — without this the new value
@@ -302,6 +329,22 @@ class WalletSettingsActivity(SettingsActivity):
     def onResume(self, screen):
         super().onResume(screen)
         _add_floating_back_button(screen, self.finish)
+        self._maybe_activate_added_wallet()
+
+    def _maybe_activate_added_wallet(self):
+        """If the user just added a wallet to this slot (it transitioned from
+        unconfigured to configured during this settings session), make it the
+        active wallet slot so the device opens into the newly-added wallet
+        instead of the previously-active one. Editing an already-configured
+        slot does NOT switch the active wallet."""
+        now_configured = _slot_credentials_present(self.prefs, self.slot)
+        if now_configured and not self._slot_was_configured:
+            if self.prefs.get_string("active_wallet_slot", "1") != str(self.slot):
+                editor = self.prefs.edit()
+                editor.put_string("active_wallet_slot", str(self.slot))
+                editor.commit()
+                print("Newly-added wallet in slot {} is now the active wallet".format(self.slot))
+        self._slot_was_configured = now_configured
 
 
 class _AppThemeView:
@@ -362,7 +405,7 @@ class CustomiseSettingsActivity(SettingsActivity):
         denom_key = "balance_denomination" + s
         hero_options = [
             ("Lightning Piggy", "lightningpiggy"),
-            ("Lightning Piggy FF2K", "lightningpiggy_ff2k"),
+            ("Fart Face 2000 (FF2K)", "lightningpiggy_ff2k"),
             ("Lightning Penguin", "lightningpenguin"),
             ("Lightning Piggy Logo", "logo"),
             ("None", "none"),
@@ -394,17 +437,17 @@ class CustomiseSettingsActivity(SettingsActivity):
         # no keyboard required. The slider widget enforces the range
         # natively; the `_on_payments_to_show_changed` callback still
         # clamps as defence-in-depth so a future change to the stored
-        # value via another code path can't escape the bounds. Default 6
-        # matches the historical hard-coded class constant on each wallet
-        # type so users who never touch this setting see the same behaviour
-        # as before. Save persists the slider's integer value as a string.
+        # value via another code path can't escape the bounds. Default 21
+        # (the slider max) shows a full screen of transactions out of the
+        # box; users who want a shorter list can dial it down. Save
+        # persists the slider's integer value as a string.
         payments_to_show_key = "payments_to_show" + s
         payments_to_show_setting = {
             "title": "Transactions Shown", "key": payments_to_show_key,
             "ui": "slider",
             "min": 1,
             "max": 21,
-            "default_value": "6",
+            "default_value": "21",
             "changed_callback": callbacks.get("payments_to_show"),
         }
         self.settings = [
@@ -414,9 +457,9 @@ class CustomiseSettingsActivity(SettingsActivity):
              "changed_callback": callbacks.get("denomination")},
             hero_setting,
             hero_name_setting,
-            payments_to_show_setting,
             {"title": "Theme", "key": "theme_override", "activity_class": True,
              "placeholder": theme_label},
+            payments_to_show_setting,
         ]
         screen = lv.obj()
         screen.set_style_pad_all(DisplayMetrics.pct_of_width(2), lv.PART.MAIN)
@@ -763,32 +806,27 @@ class DisplayWallet(Activity):
         # 2. Visual hierarchy. The balance NUMBER is the headline; the
         #    unit is metadata. Typographically that's how it should look.
         #
-        # Width: SIZE_CONTENT so the label hugs the text width — lets
-        # the unit label position cleanly to the right via OUT_RIGHT_*.
-        # Height: explicit 45 px keeps the tap target generous (iOS/Material
-        # min ~44–48). The text renders top-left so the extra space below
-        # is invisible empty padding that's still clickable.
+        # SIZE_CONTENT in both axes so the label hugs the text exactly. The
+        # opaque occlusion panel (added further below) fills the whole label
+        # box, so the box must not extend past the text — otherwise the panel
+        # would cover the balance underline that sits just below at y=35.
         self.balance_label = lv.label(self.main_screen)
         self.balance_label.set_text("")
         self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
         self.balance_label.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
-        self.balance_label.set_size(lv.SIZE_CONTENT, 45)
+        self.balance_label.set_size(lv.SIZE_CONTENT, lv.SIZE_CONTENT)
         self.balance_label.add_flag(lv.obj.FLAG.CLICKABLE)
         self.balance_label.add_event_cb(self.balance_label_clicked_cb, lv.EVENT.CLICKED, None)
         # Smaller unit suffix. Font 16 vs the number's 24 — half-size-ish.
-        # Both labels are 45 px tall and aligned via OUT_RIGHT_BOTTOM, which
-        # in LVGL means "place outside-right of ref with widget BOTTOM
-        # matching ref BOTTOM". Their text renders top-left inside the
-        # 45-tall bounding box: the big balance text fills y=0..29, the
-        # small unit text would fill y=0..19 if we did nothing. dy=10
-        # shifts the unit label down 10 px so its text occupies y=10..29
-        # — sharing a bottom edge with the balance text at y=29
-        # (approximate typographic baseline alignment).
+        # Both labels hug their text (SIZE_CONTENT) and the unit is bottom-
+        # aligned to the number via OUT_RIGHT_BOTTOM (dy=0) so their baselines
+        # share a bottom edge. Hugging the text keeps each one's occlusion
+        # panel above the balance underline at y=35 instead of covering it.
         self.balance_unit_label = lv.label(self.main_screen)
         self.balance_unit_label.set_text("")
         self.balance_unit_label.set_style_text_font(lv.font_montserrat_16, lv.PART.MAIN)
-        self.balance_unit_label.set_height(45)
-        self.balance_unit_label.align_to(self.balance_label, lv.ALIGN.OUT_RIGHT_BOTTOM, 2, 10)
+        self.balance_unit_label.set_height(lv.SIZE_CONTENT)
+        self.balance_unit_label.align_to(self.balance_label, lv.ALIGN.OUT_RIGHT_BOTTOM, -2, 0)
         self.balance_unit_label.add_flag(lv.obj.FLAG.CLICKABLE)
         self.balance_unit_label.add_event_cb(self.balance_label_clicked_cb, lv.EVENT.CLICKED, None)
         self.receive_qr = lv.qrcode(self.main_screen)
@@ -836,16 +874,14 @@ class DisplayWallet(Activity):
         self.lightning_bolt.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, 0, -4)
         self.lightning_bolt.add_flag(lv.obj.FLAG.HIDDEN)
         # Hidden easter egg: tapping the wallet-type indicator three times in
-        # quick succession launches the Lightning Piggy Jump mini-game.
-        # The indicator is created AFTER the balance line and QR, so leaving
-        # it foreground (no move_background) puts it on top for both drawing
-        # and — crucially — click hit-testing, so taps reliably reach it.
-        # The only widgets it overlaps are the thin balance underline and
-        # the QR's left quiet-zone border; it does NOT overlap realistic
-        # balance numbers (those end far to the left of x≈200), so the
-        # foreground placement carries no practical visual cost. The glyph
-        # is small (~15×29 px) so `set_ext_click_area` enlarges the touch
-        # target into the empty gap below/left of it.
+        # quick succession launches the Lightning Piggy Jump mini-game. The
+        # glyph is small (~15×29 px) so `set_ext_click_area` enlarges the
+        # touch target into the empty gap below/left of it. NOTE: the balance
+        # labels are moved to the foreground below so a long balance string
+        # (millions of sats, ₿/milli-BTC denominations) renders OVER the logo
+        # instead of behind it. In that overlap a tap lands on the balance
+        # label, but the indicator's uncovered glyph plus its extended click
+        # area still reach the egg, and short balances don't overlap at all.
         self.lightning_bolt.add_flag(lv.obj.FLAG.CLICKABLE)
         self.lightning_bolt.set_ext_click_area(self.EGG_EXT_CLICK)
         self.lightning_bolt.add_event_cb(self._egg_tap, lv.EVENT.CLICKED, None)
@@ -856,6 +892,37 @@ class DisplayWallet(Activity):
         self.chain_link.add_flag(lv.obj.FLAG.CLICKABLE)
         self.chain_link.set_ext_click_area(self.EGG_EXT_CLICK)
         self.chain_link.add_event_cb(self._egg_tap, lv.EVENT.CLICKED, None)
+        # The balance number is the headline and must stay readable: bring the
+        # balance + unit labels to the front so a long value renders in front
+        # of the ⚡/chain-link wallet-type indicator instead of disappearing
+        # behind it. (Both indicators were created after these labels, which
+        # had put them on top; move_foreground() overrides that draw order.)
+        self.balance_label.move_foreground()
+        self.balance_unit_label.move_foreground()
+        # Where a long balance overlaps the ⚡/chain-link logo, give the
+        # balance + unit labels an opaque panel the same colour as the home
+        # screen, with a little horizontal padding. The logo no longer shows
+        # through the gaps between glyphs — the text sits on a clean plate
+        # that hides the logo behind it — and the panel is invisible
+        # elsewhere because it matches the screen background. The colour is
+        # refreshed on theme toggle in _apply_qr_theme.
+        plate = self._balance_plate_color()
+        for _bal in (self.balance_label, self.balance_unit_label):
+            _bal.set_style_bg_opa(lv.OPA.COVER, lv.PART.MAIN)
+            _bal.set_style_bg_color(plate, lv.PART.MAIN)
+            _bal.set_style_pad_left(1, lv.PART.MAIN)
+            _bal.set_style_pad_right(1, lv.PART.MAIN)
+            # No vertical padding: the panel must hug the text top-to-bottom
+            # so it never reaches down into the balance underline at y=35.
+            _bal.set_style_pad_top(0, lv.PART.MAIN)
+            _bal.set_style_pad_bottom(0, lv.PART.MAIN)
+            _bal.set_style_radius(8, lv.PART.MAIN)
+        # The labels now hug their text so the panel clears the underline, but
+        # tapping the balance (cycles denomination) wants a generous target.
+        # Extend only the CLICK area — this doesn't affect drawing/the panel —
+        # to restore the previous ~45 px tall touch zone.
+        self.balance_label.set_ext_click_area(8)        # ~29 px text -> ~45 px
+        self.balance_unit_label.set_ext_click_area(13)  # ~19 px text -> ~45 px
         # Payments live inside a fixed-height container that scrolls
         # vertically when the text overflows. Without this wrapper, a
         # long zap comment or many on-chain tx lines would push the
@@ -1293,16 +1360,7 @@ class DisplayWallet(Activity):
                                        either form, classified at
                                        wallet construction)
         """
-        s = _slot_suffix(slot)
-        wt = self.prefs.get_string("wallet_type" + s)
-        if wt == "lnbits":
-            return (bool(self.prefs.get_string("lnbits_url" + s))
-                    and bool(self.prefs.get_string("lnbits_readkey" + s)))
-        if wt == "nwc":
-            return bool(self.prefs.get_string("nwc_url" + s))
-        if wt == "onchain":
-            return bool(self.prefs.get_string("onchain_xpub" + s))
-        return False
+        return _slot_credentials_present(self.prefs, slot)
 
     def _active_slot_and_suffix(self):
         """Return (slot_str, suffix) for the currently active wallet slot.
@@ -1397,6 +1455,11 @@ class DisplayWallet(Activity):
 
     _BOOT_LONG_PRESS_MS = 800
     _BOOT_DEBOUNCE_MS = 30
+    # Minimum gap between two accepted presses. Guards against a single
+    # physical press being registered twice (mechanical release bounce),
+    # which otherwise flipped the active wallet slot and immediately flipped
+    # it back ("bounces back and doesn't switch").
+    _BOOT_PRESS_COOLDOWN_MS = 400
 
     def _start_boot_button_watcher(self):
         """Wire up GPIO0 (BOOT button) for short/long press detection. Silent
@@ -1474,14 +1537,32 @@ class DisplayWallet(Activity):
                         # bounce — released too fast
                         continue
                     t0 = time.ticks_ms()
-                    # Wait for release
-                    while pin.value() == 0 and self._boot_button_keep_running:
-                        await TaskManager.sleep(0.02)
+                    # Wait for a DEBOUNCED release: the button only counts as
+                    # up once the pin reads HIGH and stays HIGH for one debounce
+                    # window. The old code broke out on the first HIGH reading
+                    # and handled the press while the button was still bouncing,
+                    # so release bounce was seen as a second press.
+                    while self._boot_button_keep_running:
+                        if pin.value() == 0:          # pressed / bounced low
+                            await TaskManager.sleep(0.02)
+                            continue
+                        await TaskManager.sleep(debounce_s)
+                        if pin.value() != 0:          # still HIGH -> stably released
+                            break
                     duration = time.ticks_diff(time.ticks_ms(), t0)
-                    if duration >= self._BOOT_LONG_PRESS_MS:
-                        self._on_boot_button_long_press()
+                    # Cooldown guard: ignore a press that lands within
+                    # _BOOT_PRESS_COOLDOWN_MS of the previous one, so any
+                    # residual double-detection can't flip-flop the wallet.
+                    now = time.ticks_ms()
+                    last = getattr(self, "_boot_last_press_ms", None)
+                    if last is not None and time.ticks_diff(now, last) < self._BOOT_PRESS_COOLDOWN_MS:
+                        print("BOOT: press within {}ms cooldown, ignoring".format(self._BOOT_PRESS_COOLDOWN_MS))
                     else:
-                        self._on_boot_button_short_press()
+                        self._boot_last_press_ms = now
+                        if duration >= self._BOOT_LONG_PRESS_MS:
+                            self._on_boot_button_long_press()
+                        else:
+                            self._on_boot_button_short_press()
             except Exception as e:
                 # Don't let one bad press tear out the whole watcher — log
                 # and continue. The next iteration polls the pin again.
@@ -1752,6 +1833,16 @@ class DisplayWallet(Activity):
     def went_online(self):
         if self.wallet and self.wallet.is_running():
             print("wallet is already running, nothing to do") # might have come from the QR activity
+            # Make sure the config key is stamped while a wallet is running.
+            # If it's None here (e.g. went_online was re-entered via the
+            # onResume network-callback registration before the previous start
+            # finished stamping it), onResume's "_active_wallet_key != key"
+            # check would read None != key on every settings round-trip and
+            # needlessly restart the wallet — repainting the stale cached
+            # balance before the fresh fetch (the "balance momentarily
+            # changes" flicker).
+            if getattr(self, '_active_wallet_key', None) is None:
+                self._active_wallet_key = self._wallet_config_key()
             return
         slot, s = self._active_slot_and_suffix()
         wallet_type = self.prefs.get_string("wallet_type" + s)
@@ -1804,7 +1895,7 @@ class DisplayWallet(Activity):
             self.error_cb(f"No or unsupported wallet type configured: '{wallet_type}'")
             return
         # Per-slot user setting overrides each wallet class's hard-coded
-        # `PAYMENTS_TO_SHOW = 6` default. LNBits / NWC use this as the
+        # `PAYMENTS_TO_SHOW = 21` default. LNBits / NWC use this as the
         # `limit=` parameter on their list_transactions backend call;
         # onchain fetches all transactions from Blockbook regardless,
         # so the cap there is enforced at display time via head_str
@@ -1999,12 +2090,12 @@ class DisplayWallet(Activity):
 
     PAYMENTS_TO_SHOW_MIN = 1
     PAYMENTS_TO_SHOW_MAX = 21
-    PAYMENTS_TO_SHOW_DEFAULT = 6
+    PAYMENTS_TO_SHOW_DEFAULT = 21
 
     def _payments_to_show(self):
         """Return the active slot's `payments_to_show` setting as an int,
         clamped to [PAYMENTS_TO_SHOW_MIN, PAYMENTS_TO_SHOW_MAX]. Falls
-        back to PAYMENTS_TO_SHOW_DEFAULT (6) when the pref is empty,
+        back to PAYMENTS_TO_SHOW_DEFAULT (21) when the pref is empty,
         unset, or non-numeric — keeps the wallet usable even if the
         user types nonsense into the text field."""
         _, s = self._active_slot_and_suffix()
@@ -2118,6 +2209,12 @@ class DisplayWallet(Activity):
             return (lv.color_white(), lv.color_black())
         return (lv.color_black(), lv.color_white())
 
+    def _balance_plate_color(self):
+        """Background colour for the balance-text occlusion panel — matches
+        the home screen so the panel is invisible except where it covers the
+        wallet-type logo behind a long balance string."""
+        return lv.color_white() if AppearanceManager.is_light_mode() else lv.color_black()
+
     def _apply_qr_theme(self):
         """Reapply theme-dependent styles (screen bg, QR colors, icon tints)."""
         # Screen background follows light/dark mode — otherwise the hardcoded
@@ -2126,6 +2223,11 @@ class DisplayWallet(Activity):
             self.main_screen.set_style_bg_color(lv.color_white(), lv.PART.MAIN)
         else:
             self.main_screen.set_style_bg_color(lv.color_black(), lv.PART.MAIN)
+        # Keep the balance-text occlusion panel matching the (possibly just
+        # toggled) screen background.
+        plate = self._balance_plate_color()
+        self.balance_label.set_style_bg_color(plate, lv.PART.MAIN)
+        self.balance_unit_label.set_style_bg_color(plate, lv.PART.MAIN)
         dark, light = self._qr_colors()
         self.receive_qr.set_dark_color(dark)
         self.receive_qr.set_light_color(light)
@@ -2215,7 +2317,7 @@ class DisplayWallet(Activity):
          # Re-align the unit label every time we update because the number
          # label's content-fitted width changes with each new value \u2014 the
          # unit needs to follow.
-         self.balance_unit_label.align_to(self.balance_label, lv.ALIGN.OUT_RIGHT_BOTTOM, 2, 10)
+         self.balance_unit_label.align_to(self.balance_label, lv.ALIGN.OUT_RIGHT_BOTTOM, -2, 0)
 
     def balance_updated_cb(self, sats_added=0):
         print(f"balance_updated_cb(sats_added={sats_added})")
@@ -2267,16 +2369,27 @@ class DisplayWallet(Activity):
         # the current balance; the animator then rolls from begin -> end
         # over the confetti duration as usual.
         self.display_balance(balance)
-        WidgetAnimator.change_widget(
-            self.balance_label,
-            anim_type="interpolate",
-            duration=self.confetti_duration,
-            delay=0,
-            begin_value=balance - sats_added,
-            end_value=balance,
-            display_change=self.display_balance
-        )
-    
+        # The count-up animation is only meaningful when sats actually moved,
+        # and LVGL's animator stores its values as 32-bit ints. A balance (or
+        # its start value) above 2**31-1 sats (~21.47 BTC) overflows: the
+        # animator ticks display_balance with the clamped 2147483647, which
+        # renders as "21.47 BTC" mid-roll before snapping back to the real
+        # value — exactly the "107 -> 21 -> 107" flash on large on-chain
+        # balances. Skip the animator in both cases; the display_balance call
+        # above already painted the correct full-precision value.
+        _INT32_MAX = 2147483647
+        begin_value = balance - sats_added
+        if sats_added != 0 and balance <= _INT32_MAX and begin_value <= _INT32_MAX:
+            WidgetAnimator.change_widget(
+                self.balance_label,
+                anim_type="interpolate",
+                duration=self.confetti_duration,
+                delay=0,
+                begin_value=begin_value,
+                end_value=balance,
+                display_change=self.display_balance
+            )
+
     def redraw_payments_cb(self):
         # Called from the wallet's polling task. MicroPython asyncio is
         # single-threaded and cooperative, so this runs on the same event

@@ -243,7 +243,7 @@ class OnchainWallet(Wallet):
     external indexer; funds custody is unaffected.
     """
 
-    PAYMENTS_TO_SHOW = 6
+    PAYMENTS_TO_SHOW = 21
     PERIODIC_FETCH_SECONDS_UNCONFIRMED = 60   # while any tx is pending
     PERIODIC_FETCH_SECONDS_CONFIRMED = 300    # when everything's confirmed
     DEFAULT_BLOCKBOOK_URL = "https://btc1.trezor.io"
@@ -424,7 +424,7 @@ class OnchainWallet(Wallet):
         # case a future code path sets a larger value — at typical
         # ~5 KB per tx in txslight that's ~500 KB of JSON, still inside
         # the heap with margin.
-        page_size = max(1, min(int(self.PAYMENTS_TO_SHOW or 6), 100))
+        page_size = max(1, min(int(self.PAYMENTS_TO_SHOW or 21), 100))
         if self.mode == "xpub":
             url = "{}/api/v2/xpub/{}?details=txslight&tokens=derived&pageSize={}".format(
                 self.blockbook_url, self.xpub, page_size)
