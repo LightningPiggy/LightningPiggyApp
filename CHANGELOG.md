@@ -1,6 +1,7 @@
 0.6.0
 =====
 - Prefer new "flat" structure for MANIFEST.JSON and icon_64x64.png
+- Add support for non-touchscreen devices by calling add_focus_border on widgets that need to be interactive
 
 0.5.2
 =====

@@ -2,7 +2,7 @@ import time
 
 import lvgl as lv
 
-from mpos import Activity, AppearanceManager, Intent, ConnectivityManager, MposKeyboard, NumberFormat, DisplayMetrics, SharedPreferences, SettingsActivity, TaskManager, WidgetAnimator, FontManager
+from mpos import Activity, add_focus_border, AppearanceManager, Intent, ConnectivityManager, MposKeyboard, NumberFormat, DisplayMetrics, SharedPreferences, SettingsActivity, TaskManager, WidgetAnimator, FontManager
 
 from confetti import Confetti
 from fullscreen_qr import FullscreenQR
@@ -41,13 +41,11 @@ def _add_floating_back_button(screen, finish_callback):
     back_btn.set_style_border_width(0, lv.PART.MAIN)
     back_btn.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
     back_btn.add_event_cb(lambda e: finish_callback(), lv.EVENT.CLICKED, None)
+    add_focus_border(back_btn)
     back_icon = lv.label(back_btn)
     back_icon.set_text(lv.SYMBOL.NEW_LINE)
     back_icon.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
     back_icon.center()
-    focusgroup = lv.group_get_default()
-    if focusgroup:
-        focusgroup.add_obj(back_btn)
 
 
 def _migrate_legacy_symbol_denom(prefs):
@@ -782,6 +780,7 @@ class DisplayWallet(Activity):
         self.balance_label.set_size(lv.SIZE_CONTENT, lv.SIZE_CONTENT)
         self.balance_label.add_flag(lv.obj.FLAG.CLICKABLE)
         self.balance_label.add_event_cb(self.balance_label_clicked_cb, lv.EVENT.CLICKED, None)
+        add_focus_border(self.balance_label)
         # Smaller unit suffix. Font 16 vs the number's 24 — half-size-ish.
         # Both labels hug their text (SIZE_CONTENT) and the unit is bottom-
         # aligned to the number via OUT_RIGHT_BOTTOM (dy=0) so their baselines
@@ -794,6 +793,7 @@ class DisplayWallet(Activity):
         self.balance_unit_label.align_to(self.balance_label, lv.ALIGN.OUT_RIGHT_BOTTOM, -2, 0)
         self.balance_unit_label.add_flag(lv.obj.FLAG.CLICKABLE)
         self.balance_unit_label.add_event_cb(self.balance_label_clicked_cb, lv.EVENT.CLICKED, None)
+        add_focus_border(self.balance_unit_label)
         self.receive_qr = lv.qrcode(self.main_screen)
         self.receive_qr.set_size(DisplayMetrics.pct_of_width(self.receive_qr_pct_of_display)) # bigger QR results in simpler code (less error correction?)
         dark, light = self._qr_colors()
@@ -818,6 +818,7 @@ class DisplayWallet(Activity):
         self.receive_qr.set_quiet_zone(True)
         self.receive_qr.add_flag(lv.obj.FLAG.CLICKABLE)
         self.receive_qr.add_event_cb(self.qr_clicked_cb,lv.EVENT.CLICKED,None)
+        add_focus_border(self.receive_qr)
         # Wallet-type indicator on the right side of the balance area, rendered
         # behind the balance text: yellow ⚡ for Lightning (LNBits, NWC),
         # pink chain link for on-chain. Exactly one is visible at a time;
@@ -850,6 +851,7 @@ class DisplayWallet(Activity):
         self.lightning_bolt.add_flag(lv.obj.FLAG.CLICKABLE)
         self.lightning_bolt.set_ext_click_area(self.EGG_EXT_CLICK)
         self.lightning_bolt.add_event_cb(self._egg_tap, lv.EVENT.CLICKED, None)
+        add_focus_border(self.lightning_bolt)
         self.chain_link = lv.image(self.main_screen)
         self.chain_link.set_src(f"{self.ASSET_PATH}chain_link.png")
         self.chain_link.align_to(self.receive_qr, lv.ALIGN.OUT_LEFT_TOP, 0, -4)
@@ -857,6 +859,7 @@ class DisplayWallet(Activity):
         self.chain_link.add_flag(lv.obj.FLAG.CLICKABLE)
         self.chain_link.set_ext_click_area(self.EGG_EXT_CLICK)
         self.chain_link.add_event_cb(self._egg_tap, lv.EVENT.CLICKED, None)
+        add_focus_border(self.lightning_bolt)
         # The balance number is the headline and must stay readable: bring the
         # balance + unit labels to the front so a long value renders in front
         # of the ⚡/chain-link wallet-type indicator instead of disappearing
@@ -928,6 +931,7 @@ class DisplayWallet(Activity):
         # font while the longer Lightning list still worked.
         self.payments_container.add_flag(lv.obj.FLAG.CLICKABLE)
         self.payments_container.add_event_cb(self.payments_label_clicked, lv.EVENT.CLICKED, None)
+        add_focus_border(self.payments_container)
         self.payments_label = lv.label(self.payments_container)
         self.payments_label.set_text("")
         # Label width follows its container (the 1.1× narrowing now
@@ -940,6 +944,7 @@ class DisplayWallet(Activity):
         self.payments_label.set_long_mode(lv.label.LONG_MODE.WRAP)
         self.payments_label.add_flag(lv.obj.FLAG.CLICKABLE)
         self.payments_label.add_event_cb(self.payments_label_clicked,lv.EVENT.CLICKED,None)
+        add_focus_border(self.payments_label)
         # Hero image below QR code
         # Hero image area — container is always clickable, image inside may be hidden
         self.hero_container = lv.obj(self.main_screen)
@@ -949,6 +954,7 @@ class DisplayWallet(Activity):
         self.hero_container.set_scrollbar_mode(lv.SCROLLBAR_MODE.OFF)
         self.hero_container.add_flag(lv.obj.FLAG.CLICKABLE)
         self.hero_container.add_event_cb(self.hero_image_clicked_cb, lv.EVENT.CLICKED, None)
+        add_focus_border(self.hero_container)
         self.hero_image = lv.image(self.hero_container)
         self.hero_image.center()
         self._update_hero_image()
@@ -1038,6 +1044,7 @@ class DisplayWallet(Activity):
         settings_button.align(lv.ALIGN.BOTTOM_RIGHT, 0, 0)
         settings_button.add_flag(lv.obj.FLAG.CLICKABLE)
         settings_button.set_style_bg_opa(lv.OPA.TRANSP, lv.PART.MAIN)
+        settings_button.set_style_shadow_opa(lv.OPA.TRANSP, lv.PART.MAIN)
         settings_button.set_style_border_width(0, lv.PART.MAIN)
         settings_button.add_event_cb(self.settings_button_tap,lv.EVENT.CLICKED,None)
         self.settings_icon = lv.label(settings_button)
@@ -1050,9 +1057,6 @@ class DisplayWallet(Activity):
         # itself look uncomfortably close to the screen corner. Widget
         # bounds (and therefore the tap target) are unchanged.
         self.settings_icon.align(lv.ALIGN.CENTER, 4, 4)
-        focusgroup = lv.group_get_default()
-        if focusgroup:
-            focusgroup.add_obj(settings_button)
 
         # Track wallet-mode widgets so they can be hidden/shown as a group
         self.wallet_container_widgets = [balance_line, self.balance_label, self.balance_unit_label, self.receive_qr, self.lightning_bolt, self.chain_link, self.payments_container, self.hero_container, self.hero_name_label, settings_button]
@@ -1139,6 +1143,7 @@ class DisplayWallet(Activity):
         welcome_setup_btn.set_style_border_width(1, lv.PART.MAIN)
         welcome_setup_btn.set_style_border_color(self._icon_color(), lv.PART.MAIN)
         welcome_setup_btn.add_event_cb(self.settings_button_tap, lv.EVENT.CLICKED, None)
+        add_focus_border(welcome_setup_btn)
         welcome_setup_label = lv.label(welcome_setup_btn)
         welcome_setup_label.set_text(lv.SYMBOL.SETTINGS + " Setup")
         welcome_setup_label.set_style_text_font(lv.font_montserrat_16, lv.PART.MAIN)
