@@ -670,9 +670,9 @@ class DisplayWallet(Activity):
     # confetti:
     confetti = None
     confetti_duration = 15000
-    ASSET_PATH = "M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/"
-    CONFETTI_ASSET_PATH = "M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/confetti/"
-    ICON_PATH = "M:apps/com.lightningpiggy.displaywallet/res/mipmap-mdpi/"
+    ICON_PATH = "M:apps/com.lightningpiggy.displaywallet/"
+    ASSET_PATH = ICON_PATH + "res/drawable-mdpi/"
+    CONFETTI_ASSET_PATH = ASSET_PATH + "confetti/"
 
     # Stale-data indicator — if the wallet has been producing only errors
     # (no successful balance/payments refresh) for this long, surface a
@@ -1161,7 +1161,7 @@ class DisplayWallet(Activity):
         self.splash_container.add_flag(lv.obj.FLAG.HIDDEN)
 
         splash_logo = lv.image(self.splash_container)
-        splash_logo.set_src(f"{self.ICON_PATH}lightningpiggy-logo.png")
+        splash_logo.set_src(f"{self.ASSET_PATH}lightningpiggy-logo.png")
         # Scale logo to 80% of screen width (original is 467x190)
         splash_target_width = DisplayMetrics.pct_of_width(80)
         splash_scale = splash_target_width / 467

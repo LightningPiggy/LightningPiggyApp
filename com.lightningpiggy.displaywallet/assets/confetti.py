@@ -16,7 +16,7 @@ class Confetti:
         
         Args:
             screen: The LVGL screen/display object
-            icon_path: Path to icon assets (e.g., "M:apps/com.lightningpiggy.displaywallet/res/mipmap-mdpi/")
+            icon_path: Path to icon assets (e.g., "M:apps/com.lightningpiggy.displaywallet/")
             asset_path: Path to confetti assets (e.g., "M:apps/com.lightningpiggy.displaywallet/res/drawable-mdpi/")
             max_confetti: Maximum number of confetti pieces to display
         """
@@ -98,7 +98,6 @@ class Confetti:
 
         # Stop spawning after duration
         lv.timer_create(self.stop, self.duration, None).set_repeat_count(1)
-
 
     def stop(self, timer=None):
         """Stop the confetti animation."""
