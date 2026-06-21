@@ -2,41 +2,7 @@ import time
 
 import lvgl as lv
 
-from mpos import Activity, Intent, ConnectivityManager, MposKeyboard, DisplayMetrics, SharedPreferences, SettingsActivity, TaskManager, WidgetAnimator, FontManager
-
-# TEMPORARY DIAGNOSTIC / UX FIX — the stock mpos SettingActivity.radio_event_handler
-# lets a user click an already-selected radio button to UN-select it, saving an
-# empty string (e.g. wallet_type=""). That breaks the invariant "exactly one
-# wallet is always configured" — after save, the app falls back to the welcome
-# screen even though the user just wanted to bounce off the settings page.
-# Upstream MicroPythonOS fix is ready but not yet shipping in a firmware release;
-# we patch Relay's class method at import time here so our app enforces the
-# one-selection invariant locally. Remove once the upstream fix is in the
-# frozen firmware.
-try:
-    import mpos.ui.setting_activity as _mpos_sa
-    _orig_radio_event_handler = _mpos_sa.SettingActivity.radio_event_handler
-    def _patched_radio_event_handler(self, event):
-        target_obj = event.get_target_obj()
-        target_obj_state = target_obj.get_state()
-        checked = target_obj_state & lv.STATE.CHECKED
-        current_checkbox_index = target_obj.get_index()
-        if not checked and getattr(self, 'active_radio_index', -1) == current_checkbox_index:
-            # User clicked the already-selected option — re-check it so
-            # radio-group invariant (exactly one selected) holds.
-            print("radio: ignoring un-check of active option (radios require exactly one)")
-            target_obj.add_state(lv.STATE.CHECKED)
-            return
-        return _orig_radio_event_handler(self, event)
-    _mpos_sa.SettingActivity.radio_event_handler = _patched_radio_event_handler
-except Exception as _e:
-    print("Failed to patch SettingActivity.radio_event_handler:", _e)
-try:
-    from mpos import NumberFormat
-    _has_number_format = True
-except ImportError:
-    _has_number_format = False
-from mpos import AppearanceManager
+from mpos import Activity, AppearanceManager, Intent, ConnectivityManager, MposKeyboard, NumberFormat, DisplayMetrics, SharedPreferences, SettingsActivity, TaskManager, WidgetAnimator, FontManager
 
 from confetti import Confetti
 from fullscreen_qr import FullscreenQR
@@ -49,7 +15,6 @@ from lnbits_wallet import LNBitsWallet
 from nwc_wallet import NWCWallet
 from onchain_wallet import OnchainWallet
 from wallet import ensure_lightning_prefix
-
 
 def _apply_screen_theme(screen):
     """Force an explicit screen bg that matches the app's main display colour —
@@ -2263,13 +2228,6 @@ class DisplayWallet(Activity):
         self.payments_label_current_font = (self.payments_label_current_font + 1) % len(self.payments_label_fonts)
         self.update_payments_label_font()
 
-    def float_to_string(self, value, decimals):
-        if _has_number_format:
-            return NumberFormat.format_number(value, decimals)
-        # Fallback for firmware without NumberFormat
-        s = "{:.{}f}".format(value, decimals)
-        return s.rstrip("0").rstrip(".")
-
     def display_balance(self, balance):
          self._last_balance = balance
          # Slot-aware denom read: slot 1 uses `balance_denomination`,
@@ -2293,19 +2251,19 @@ class DisplayWallet(Activity):
              unit_text = " sat" if sats == 1 else " sats"
          elif denom == "bits":
              balance_bits = round(balance / 100, 2)
-             number_text = self.float_to_string(balance_bits, 2)
+             number_text = NumberFormat.format_number(balance_bits, 2)
              unit_text = " bit" if balance_bits == 1 else " bits"
          elif denom == "ubtc":
              balance_ubtc = round(balance / 100, 2)
-             number_text = self.float_to_string(balance_ubtc, 2)
+             number_text = NumberFormat.format_number(balance_ubtc, 2)
              unit_text = " micro-BTC"
          elif denom == "mbtc":
              balance_mbtc = round(balance / 100000, 5)
-             number_text = self.float_to_string(balance_mbtc, 5)
+             number_text = NumberFormat.format_number(balance_mbtc, 5)
              unit_text = " milli-BTC"
          elif denom == "btc":
              balance_btc = round(balance / 100000000, 8)
-             number_text = self.float_to_string(balance_btc, 8)
+             number_text = NumberFormat.format_number(balance_btc, 8)
              unit_text = " BTC"
          else:
              # Unknown denomination \u2014 defensive fallback that mirrors the
