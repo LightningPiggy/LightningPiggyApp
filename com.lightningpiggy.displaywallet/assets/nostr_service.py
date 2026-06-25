@@ -143,6 +143,25 @@ def _make_subscription_id(prefix):
     return prefix + str(int(time.time())) + "_" + str(_sub_id_counter)
 
 
+def _filter_identity(filter_obj):
+    """Return the filter without time-window fields, for identity comparison."""
+    identity = filter_obj.to_json_object()
+    identity.pop("since", None)
+    identity.pop("until", None)
+    identity.pop("limit", None)
+    return identity
+
+
+def _filters_identity_equal(a, b):
+    """Compare two Filters objects ignoring since/until/limit."""
+    if len(a.data) != len(b.data):
+        return False
+    for fa, fb in zip(a.data, b.data):
+        if _filter_identity(fa) != _filter_identity(fb):
+            return False
+    return True
+
+
 def _parse_nsec(nsec):
     if nsec.startswith("nsec1"):
         return PrivateKey.from_nsec(nsec)
@@ -214,6 +233,10 @@ class NostrManager:
         self._nwc_lud16 = None
         self._nwc_configured = False
         self._nwc_nwc_url = None
+
+        # Set when new relays are configured after the manager started; the
+        # main loop picks them up and hot-adds them to the running relay pool.
+        self._relays_dirty = False
 
         # Event callbacks: kind -> [callbacks]
         self._event_handlers = {}
@@ -339,6 +362,7 @@ class NostrManager:
         else:
             self._default_relays = [url for url in relays if url]
         self._nostr_configured = True
+        self._relays_dirty = True
         self._ensure_main_task()
 
     def subscribe_channel(self, channel_id, name=None, callback=None, since=None, limit=None):
@@ -381,6 +405,18 @@ class NostrManager:
         print("NostrManager: published channel message to {}".format(channel_id[:16]))
         return event.id
 
+    def _publish_signed_dm(self, private_key, recipient_hex, content, kind=4, reference_event_id=None):
+        """Build, sign and publish an encrypted direct message."""
+        dm = EncryptedDirectMessage(
+            recipient_pubkey=recipient_hex,
+            cleartext_content=content,
+            kind=kind,
+            reference_event_id=reference_event_id,
+        )
+        private_key.sign_event(dm)
+        self.relay_manager.publish_event(dm)
+        return dm.id
+
     def publish_dm(self, recipient_pubkey_or_npub, content, reference_event_id=None):
         """Sign and publish a NIP-04 encrypted direct message (kind 4)."""
         if self._nostr_private_key is None:
@@ -390,15 +426,14 @@ class NostrManager:
         if self.relay_manager is None:
             raise RuntimeError("Relay manager is not ready yet")
         recipient_hex = _pubkey_to_hex(recipient_pubkey_or_npub)
-        dm = EncryptedDirectMessage(
-            recipient_pubkey=recipient_hex,
-            cleartext_content=content,
+        dm_id = self._publish_signed_dm(
+            self._nostr_private_key,
+            recipient_hex,
+            content,
             reference_event_id=reference_event_id,
         )
-        self._nostr_private_key.sign_event(dm)
-        self.relay_manager.publish_event(dm)
         print("NostrManager: published DM to {}".format(recipient_hex[:16]))
-        return dm.id
+        return dm_id
 
     def get_own_pubkey_hex(self):
         """Return the configured identity's public key in hex, or None."""
@@ -424,10 +459,12 @@ class NostrManager:
         client fetch only recent events instead of the full relay history.
 
         If a subscription with the same name is already registered, the callback
-        and filter window are refreshed but no new request is sent. The stored
-        filter is used on the next reconnect or when the subscription is first
+        and filter window are refreshed. A new request is sent only when the
+        subscription's identity (kinds, authors, event/pubkey refs, etc.)
+        changes, not when only the time window or limit moves. The stored filter
+        is used on the next reconnect or when the subscription is first
         published. This prevents activities from re-subscribing every time they
-        resume, even when the moving ``since`` window changes.
+        resume.
         """
         if since is not None or limit is not None:
             for f in filters.data:
@@ -445,11 +482,17 @@ class NostrManager:
         if existing is not None:
             if callback is not None:
                 existing.callback = callback
-            # ponytail: subscription name is the identity in this app;
-            # callers use stable names (dms, channel-<id>, dm-<pair>).
-            # Refresh the filter window for reconnect, but don't re-publish
-            # the same subscription while already connected.
+            # ponytail: callers use stable names (dms, channel-<id>, dm-<pair>).
+            # Re-publish only when the subscription identity changes, not when
+            # only the time window or limit moves.
+            identity_changed = not _filters_identity_equal(existing.filters, filters)
             existing.filters = filters
+            if identity_changed and self.connected and self.relay_manager is not None:
+                sub_id = self._subscription_ids.get(name)
+                if sub_id is None:
+                    sub_id = _make_subscription_id("mpos_sub_")
+                    self._subscription_ids[name] = sub_id
+                self._publish_subscription(existing, sub_id)
             return
 
         sub = NostrSubscription(name, filters, callback)
@@ -484,6 +527,7 @@ class NostrManager:
         self._nwc_lud16 = lud16
         self._nwc_nwc_url = nwc_url
         self._nwc_configured = True
+        self._relays_dirty = True
         self._ensure_main_task()
 
     def _parse_nwc_url(self, nwc_url):
@@ -610,6 +654,14 @@ class NostrManager:
 
             if not self.keep_running:
                 break
+
+            if self._relays_dirty:
+                try:
+                    await self._sync_relays()
+                except Exception as e:
+                    print("NostrManager: relay sync error: {}".format(e))
+                    import sys
+                    sys.print_exception(e)
 
             now = time.time()
 
@@ -795,19 +847,66 @@ class NostrManager:
 
         self._polls_since_last_event = 0
 
+    async def _sync_relays(self):
+        """Hot-add relays configured after the manager started.
+
+        Existing relays stay connected; new ones are opened and all current
+        subscriptions are re-published so the new relays receive them too.
+        """
+        self._relays_dirty = False
+        if self.relay_manager is None:
+            return
+
+        new_urls = []
+        existing = set(self.relay_manager.relays.keys())
+        for url in self._default_relays + self._nwc_relays:
+            if url and url not in existing:
+                self.relay_manager.add_relay(url)
+                new_urls.append(url)
+        if not new_urls:
+            return
+
+        print("NostrManager: adding new relays: {}".format(new_urls))
+        await self.relay_manager.open_connections({"cert_reqs": ssl.CERT_NONE})
+
+        new_relays = [self.relay_manager.relays[url] for url in new_urls]
+        for _ in range(300):
+            await TaskManager.sleep(0.1)
+            if not self.keep_running:
+                return
+            if all(r.connected or r.error_counter > 0 for r in new_relays):
+                break
+
+        # Re-publish existing subscriptions so the new relays receive them.
+        for sub in self._subscriptions:
+            sub_id = self._subscription_ids.get(sub.name)
+            if sub_id is None:
+                sub_id = _make_subscription_id("mpos_sub_")
+                self._subscription_ids[sub.name] = sub_id
+            self._publish_subscription(sub, sub_id)
+
+        if self._nwc_configured and self._nwc_sub_id:
+            nwc_filters = Filters([Filter(
+                kinds=[23195, 23196],
+                authors=[self._nwc_wallet_pubkey],
+                pubkey_refs=[self._nwc_private_key.public_key.hex()]
+            )])
+            self.relay_manager.add_subscription(self._nwc_sub_id, nwc_filters)
+            self.relay_manager.publish_message(json.dumps(
+                [ClientMessageType.REQUEST, self._nwc_sub_id] + nwc_filters.to_json_array()))
+
     # --- NWC request methods ---
 
     def nwc_fetch_balance(self):
         if not self._nwc_configured:
             return
         balance_request = {"method": "get_balance", "params": {}}
-        dm = EncryptedDirectMessage(
-            recipient_pubkey=self._nwc_wallet_pubkey,
-            cleartext_content=json.dumps(balance_request),
-            kind=23194
+        self._publish_signed_dm(
+            self._nwc_private_key,
+            self._nwc_wallet_pubkey,
+            json.dumps(balance_request),
+            kind=23194,
         )
-        self._nwc_private_key.sign_event(dm)
-        self.relay_manager.publish_event(dm)
 
     def nwc_fetch_payments(self):
         if not self._nwc_configured:
@@ -816,13 +915,12 @@ class NostrManager:
             "method": "list_transactions",
             "params": {"limit": self._nwc_list_limit}
         }
-        dm = EncryptedDirectMessage(
-            recipient_pubkey=self._nwc_wallet_pubkey,
-            cleartext_content=json.dumps(list_transactions),
-            kind=23194
+        self._publish_signed_dm(
+            self._nwc_private_key,
+            self._nwc_wallet_pubkey,
+            json.dumps(list_transactions),
+            kind=23194,
         )
-        self._nwc_private_key.sign_event(dm)
-        self.relay_manager.publish_event(dm)
 
 
 class NostrClientService(Service):
