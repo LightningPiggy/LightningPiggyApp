@@ -2,13 +2,26 @@ import ssl
 import json
 import time
 
+import logging
+
 from mpos import Service, TaskManager
 
 from nostr.relay_manager import RelayManager
 from nostr.message_type import ClientMessageType
 from nostr.filter import Filter, Filters
-from nostr.event import EncryptedDirectMessage
+from nostr.event import Event, EncryptedDirectMessage
 from nostr.key import PrivateKey
+
+from chat_model import (
+    Message,
+    channel_id_from_event,
+    chat_id_for_event,
+    peer_from_dm_event,
+)
+from constants import APP_FULLNAME, DEFAULT_CHANNEL_ID, KIND_DM, KIND_CHANNEL_MESSAGE
+from event_store import EventStore
+
+logger = logging.getLogger(__name__)
 
 EVENT_KIND_NAMES = {
     0: "SET_METADATA",
@@ -52,6 +65,15 @@ def format_tags(tags):
     return ""
 
 
+class NostrSubscription:
+    """A generic Nostr subscription managed by NostrManager."""
+
+    def __init__(self, name, filters, callback=None):
+        self.name = name
+        self.filters = filters
+        self.callback = callback
+
+
 class NostrEvent:
     def __init__(self, event_obj, private_key=None):
         self.event = event_obj
@@ -92,6 +114,8 @@ class NostrEvent:
         return self.content
 
     def __str__(self):
+        if self.kind == 42:
+            return self._format_channel_message()
         kind_name = self.get_kind_name()
         timestamp = self.get_formatted_timestamp()
         tags_str = self.get_formatted_tags()
@@ -103,9 +127,33 @@ class NostrEvent:
             result += f"\n{tags_str}"
         return result
 
+    def _format_channel_message(self):
+        timestamp = self.get_formatted_timestamp()
+        pubkey = (self.public_key[:16] + "...") if self.public_key else "?"
+        content = self.get_display_content()
+        return f"[{timestamp}] {pubkey}\n{content}"
+
+
+_sub_id_counter = 0
+
 
 def _make_subscription_id(prefix):
-    return prefix + str(round(time.time()))
+    global _sub_id_counter
+    _sub_id_counter += 1
+    return prefix + str(int(time.time())) + "_" + str(_sub_id_counter)
+
+
+def _parse_nsec(nsec):
+    if nsec.startswith("nsec1"):
+        return PrivateKey.from_nsec(nsec)
+    return PrivateKey(bytes.fromhex(nsec))
+
+
+def _pubkey_to_hex(pubkey_or_npub):
+    if pubkey_or_npub.startswith("npub1"):
+        from nostr.key import PublicKey
+        return PublicKey.from_npub(pubkey_or_npub).hex()
+    return pubkey_or_npub
 
 
 _orig_relay_on_error = None
@@ -153,9 +201,9 @@ class NostrManager:
         # Nostr app state
         self.events = []
         self._nostr_private_key = None
-        self._nostr_relay = None
-        self._nostr_follow_hex = None
-        self._nostr_sub_id = None
+        self._default_relays = []
+        self._subscriptions = []
+        self._subscription_ids = {}
         self._nostr_configured = False
 
         # NWC state
@@ -169,6 +217,10 @@ class NostrManager:
 
         # Event callbacks: kind -> [callbacks]
         self._event_handlers = {}
+
+        # Post-event callbacks run after normal handlers/subscriptions so
+        # background persistence can store events already processed by the UI.
+        self._post_event_handlers = {}
 
         # NWC-specific callbacks (set by NWCWallet)
         self._nwc_balance_cb = None
@@ -207,6 +259,9 @@ class NostrManager:
             except Exception as e:
                 print("NostrManager: error closing connections: {}".format(e))
         self._main_task = None
+        self._default_relays = []
+        self._subscriptions = []
+        self._subscription_ids = {}
         self._nostr_configured = False
         self._nwc_configured = False
         self._relays_configured = False
@@ -231,6 +286,23 @@ class NostrManager:
                 cb for cb in self._event_handlers[kind] if cb != callback
             ]
 
+    def register_post_event_handler(self, kind, callback):
+        """Register a callback that runs after normal UI event handlers.
+
+        Post handlers receive the same NostrEvent instance and are intended
+        for background persistence/notification work that should not race
+        with foreground UI updates.
+        """
+        if kind not in self._post_event_handlers:
+            self._post_event_handlers[kind] = []
+        self._post_event_handlers[kind].append(callback)
+
+    def unregister_post_event_handler(self, kind, callback):
+        if kind in self._post_event_handlers:
+            self._post_event_handlers[kind] = [
+                cb for cb in self._post_event_handlers[kind] if cb != callback
+            ]
+
     def set_nwc_callbacks(self, balance_cb=None, payments_cb=None, notification_cb=None):
         self._nwc_balance_cb = balance_cb
         self._nwc_payments_cb = payments_cb
@@ -253,20 +325,146 @@ class NostrManager:
 
     # --- Configuration ---
 
-    def configure_nostr(self, nsec, relay, follow_npub):
-        """Configure and start the nostr app subscription."""
-        self._nostr_relay = relay
-        if nsec.startswith("nsec1"):
-            self._nostr_private_key = PrivateKey.from_nsec(nsec)
+    # --- Identity and subscriptions ---
+
+    def configure_identity(self, nsec, relays=None):
+        """Set the user's private key and default relay(s).
+
+        relays may be a single URL string or a list of URLs."""
+        self._nostr_private_key = _parse_nsec(nsec)
+        if relays is None:
+            self._default_relays = []
+        elif isinstance(relays, str):
+            self._default_relays = [relays] if relays else []
         else:
-            self._nostr_private_key = PrivateKey(bytes.fromhex(nsec))
-        follow_npub_hex = follow_npub
-        if follow_npub.startswith("npub1"):
-            from nostr.key import PublicKey
-            follow_npub_hex = PublicKey.from_npub(follow_npub).hex()
-        self._nostr_follow_hex = follow_npub_hex
+            self._default_relays = [url for url in relays if url]
         self._nostr_configured = True
         self._ensure_main_task()
+
+    def subscribe_channel(self, channel_id, name=None, callback=None, since=None, limit=None):
+        """Subscribe to a NIP-28 public group chat channel."""
+        sub_name = name or f"channel-{channel_id[:8]}"
+        filters = Filters([Filter(kinds=[42], event_refs=[channel_id], since=since, limit=limit)])
+        self.add_subscription(sub_name, filters, callback)
+
+    def subscribe_profile(self, pubkey_or_npub, callback=None, since=None, limit=None):
+        """Subscribe to events published by a single profile."""
+        hex_pubkey = _pubkey_to_hex(pubkey_or_npub)
+        filters = Filters([Filter(authors=[hex_pubkey], since=since, limit=limit)])
+        self.add_subscription(f"profile-{hex_pubkey[:16]}", filters, callback)
+
+    def subscribe_dms(self, callback=None, since=None, limit=None):
+        """Subscribe to NIP-04 direct messages addressed to the configured identity."""
+        if self._nostr_private_key is None:
+            raise RuntimeError("Identity must be configured before subscribing to DMs")
+        own_hex = self._nostr_private_key.public_key.hex()
+        filters = Filters([Filter(kinds=[4], pubkey_refs=[own_hex], since=since, limit=limit)])
+        self.add_subscription("dms", filters, callback)
+
+    def publish_channel_message(self, channel_id, content):
+        """Sign and publish a NIP-28 channel message (kind 42)."""
+        if self._nostr_private_key is None:
+            raise RuntimeError("Identity must be configured before publishing messages")
+        if not content:
+            raise ValueError("Message content cannot be empty")
+        if self.relay_manager is None:
+            raise RuntimeError("Relay manager is not ready yet")
+        event = Event(
+            content=content,
+            public_key=self._nostr_private_key.public_key.hex(),
+            kind=42,
+            tags=[["e", channel_id, "", "root"]],
+        )
+        event.__post_init__()
+        self._nostr_private_key.sign_event(event)
+        self.relay_manager.publish_event(event)
+        print("NostrManager: published channel message to {}".format(channel_id[:16]))
+        return event.id
+
+    def publish_dm(self, recipient_pubkey_or_npub, content, reference_event_id=None):
+        """Sign and publish a NIP-04 encrypted direct message (kind 4)."""
+        if self._nostr_private_key is None:
+            raise RuntimeError("Identity must be configured before publishing messages")
+        if not content:
+            raise ValueError("Message content cannot be empty")
+        if self.relay_manager is None:
+            raise RuntimeError("Relay manager is not ready yet")
+        recipient_hex = _pubkey_to_hex(recipient_pubkey_or_npub)
+        dm = EncryptedDirectMessage(
+            recipient_pubkey=recipient_hex,
+            cleartext_content=content,
+            reference_event_id=reference_event_id,
+        )
+        self._nostr_private_key.sign_event(dm)
+        self.relay_manager.publish_event(dm)
+        print("NostrManager: published DM to {}".format(recipient_hex[:16]))
+        return dm.id
+
+    def get_own_pubkey_hex(self):
+        """Return the configured identity's public key in hex, or None."""
+        if self._nostr_private_key is None:
+            return None
+        return self._nostr_private_key.public_key.hex()
+
+    def close_subscription(self, name):
+        """Remove a named subscription and close it on relays."""
+        self._subscriptions = [s for s in self._subscriptions if s.name != name]
+        self._subscription_ids.pop(name, None)
+        if self.relay_manager is not None:
+            try:
+                self.relay_manager.close_subscription(name)
+            except Exception as e:
+                print("NostrManager: error closing subscription '{}': {}".format(name, e))
+
+    def add_subscription(self, name, filters, callback=None, since=None, limit=None):
+        """Add a generic subscription, reusing an existing one with the same name.
+
+        Optional ``since`` and ``limit`` are applied to every Filter in the
+        supplied Filters object that does not already set them. This lets the
+        client fetch only recent events instead of the full relay history.
+
+        If a subscription with the same name is already registered, the callback
+        and filter window are refreshed but no new request is sent. The stored
+        filter is used on the next reconnect or when the subscription is first
+        published. This prevents activities from re-subscribing every time they
+        resume, even when the moving ``since`` window changes.
+        """
+        if since is not None or limit is not None:
+            for f in filters.data:
+                if since is not None and f.since is None:
+                    f.since = since
+                if limit is not None and f.limit is None:
+                    f.limit = limit
+
+        existing = None
+        for s in self._subscriptions:
+            if s.name == name:
+                existing = s
+                break
+
+        if existing is not None:
+            if callback is not None:
+                existing.callback = callback
+            # ponytail: subscription name is the identity in this app;
+            # callers use stable names (dms, channel-<id>, dm-<pair>).
+            # Refresh the filter window for reconnect, but don't re-publish
+            # the same subscription while already connected.
+            existing.filters = filters
+            return
+
+        sub = NostrSubscription(name, filters, callback)
+        self._subscriptions.append(sub)
+        if self.connected and self.relay_manager is not None:
+            sub_id = _make_subscription_id("mpos_sub_")
+            self._subscription_ids[name] = sub_id
+            self._publish_subscription(sub, sub_id)
+
+    def _publish_subscription(self, sub, sub_id):
+        self.relay_manager.add_subscription(sub_id, sub.filters)
+        req = [ClientMessageType.REQUEST, sub_id]
+        req.extend(sub.filters.to_json_array())
+        self.relay_manager.publish_message(json.dumps(req))
+        print("NostrManager: subscribed to '{}'".format(sub.name))
 
     def configure_nwc(self, nwc_url):
         """Configure and start NWC subscriptions."""
@@ -336,8 +534,8 @@ class NostrManager:
         self.relay_manager = RelayManager()
 
         # Add all configured relays
-        if self._nostr_configured and self._nostr_relay:
-            self.relay_manager.add_relay(self._nostr_relay)
+        for relay in self._default_relays:
+            self.relay_manager.add_relay(relay)
         for relay in self._nwc_relays:
             self.relay_manager.add_relay(relay)
 
@@ -345,15 +543,12 @@ class NostrManager:
             print("NostrManager: no relays configured, waiting...")
             while self.keep_running and not self._relays_configured:
                 await TaskManager.sleep(0.5)
-                if self._nostr_relay or self._nwc_relays:
+                if self._default_relays or self._nwc_relays:
                     self._relays_configured = True
             if not self.keep_running:
                 return
-            # _nostr_relay is a single URL string, not a list — iterating
-            # it (as this code once did) would add each CHARACTER as a
-            # relay. Mirror the add at the top of _run().
-            if self._nostr_configured and self._nostr_relay:
-                self.relay_manager.add_relay(self._nostr_relay)
+            for relay in self._default_relays:
+                self.relay_manager.add_relay(relay)
             for relay in self._nwc_relays:
                 self.relay_manager.add_relay(relay)
             if not self.relay_manager.relays:
@@ -383,18 +578,12 @@ class NostrManager:
         print("NostrManager: {} relay(s) connected".format(nrconnected))
         self.connected = True
 
-        # Set up nostr app subscription
-        if self._nostr_configured and self._nostr_follow_hex:
-            self._nostr_sub_id = _make_subscription_id("micropython_nostr_")
-            filters = Filters([Filter(
-                authors=[self._nostr_follow_hex],
-            )])
-            self.relay_manager.add_subscription(self._nostr_sub_id, filters)
-            req = [ClientMessageType.REQUEST, self._nostr_sub_id]
-            req.extend(filters.to_json_array())
-            self.relay_manager.publish_message(json.dumps(req))
-            print("NostrManager: subscribed to events from {}".format(
-                self._nostr_follow_hex[:16]))
+        # Set up generic subscriptions
+        self._subscription_ids = {}
+        for sub in self._subscriptions:
+            sub_id = _make_subscription_id("mpos_sub_")
+            self._subscription_ids[sub.name] = sub_id
+            self._publish_subscription(sub, sub_id)
 
         # Set up NWC subscription
         if self._nwc_configured:
@@ -446,31 +635,44 @@ class NostrManager:
                     print("NostrManager: fetch_payments error: {}".format(e))
 
             # --- Process incoming events ---
-            if self.relay_manager.message_pool.has_events():
-                event_msg = self.relay_manager.message_pool.get_event()
-                event = event_msg.event
-                print("NostrManager: received event kind={} from {}".format(
-                    event.kind, event.public_key[:16]))
+            try:
+                if self.relay_manager.message_pool.has_events():
+                    event_msg = self.relay_manager.message_pool.get_event()
+                    event = event_msg.event
+                    print("NostrManager: received event kind={} from {}".format(
+                        event.kind, event.public_key[:16]))
 
-                try:
-                    self._process_event(event)
-                except Exception as e:
-                    print("NostrManager: error processing event: {}".format(e))
-                    import sys
-                    sys.print_exception(e)
+                    try:
+                        self._process_event(event)
+                    except Exception as e:
+                        print("NostrManager: error processing event: {}".format(e))
+                        import sys
+                        sys.print_exception(e)
 
-            if self.relay_manager.message_pool.has_notices():
-                notice = self.relay_manager.message_pool.get_notice()
-                print("NostrManager: relay notice: {}".format(notice))
-                if notice and hasattr(notice, 'content') and self._error_cb:
-                    self._error_cb("Relay: {}".format(notice.content))
+                if self.relay_manager.message_pool.has_notices():
+                    notice = self.relay_manager.message_pool.get_notice()
+                    print("NostrManager: relay notice: {}".format(notice))
+                    if notice and hasattr(notice, 'content') and self._error_cb:
+                        self._error_cb("Relay: {}".format(notice.content))
+            except Exception as e:
+                print("NostrManager: message poll error: {}".format(e))
+                import sys
+                sys.print_exception(e)
+                await TaskManager.sleep(1)
 
     def _process_event(self, event):
         """Route a single event to all relevant handlers."""
 
+        # NWC events are private and handled separately.
+        if event.kind in (23195, 23196) and self._nwc_configured:
+            self._process_nwc_event(event)
+            return
+
+        # Build the shared wrapper once; decrypt DMs if a private key is set.
+        nostr_event = NostrEvent(event, self._nostr_private_key)
+
         # Route by kind to registered callbacks
         if event.kind in self._event_handlers:
-            nostr_event = NostrEvent(event, self._nostr_private_key)
             for cb in self._event_handlers[event.kind]:
                 try:
                     cb(nostr_event)
@@ -478,20 +680,31 @@ class NostrManager:
                     print("NostrManager: event handler error: {}".format(e))
 
         # Store in events list for NostrApp
-        nostr_event = NostrEvent(event, self._nostr_private_key)
         self.events.append(nostr_event)
         if len(self.events) > self.EVENTS_TO_SHOW:
             self.events = self.events[-self.EVENTS_TO_SHOW:]
+
+        # Per-subscription callbacks
+        for sub in self._subscriptions:
+            try:
+                if sub.callback and sub.filters.match(event):
+                    sub.callback(nostr_event)
+            except Exception as e:
+                print("NostrManager: subscription callback error: {}".format(e))
+
+        # Post-event background handlers (e.g. persistence) run after UI handlers.
+        if event.kind in self._post_event_handlers:
+            for cb in self._post_event_handlers[event.kind]:
+                try:
+                    cb(nostr_event)
+                except Exception as e:
+                    print("NostrManager: post-event handler error: {}".format(e))
 
         if self._events_updated_cb:
             try:
                 self._events_updated_cb()
             except Exception as e:
                 print("NostrManager: events_updated callback error: {}".format(e))
-
-        # Handle NWC events (kinds 23195/23196)
-        if event.kind in (23195, 23196) and self._nwc_configured:
-            self._process_nwc_event(event)
 
     def _process_nwc_event(self, event):
         """Decrypt and process an NWC response/notification event."""
@@ -563,13 +776,12 @@ class NostrManager:
             if self.relay_manager.connected_or_errored_relays() == len(old_relay_urls) if old_relay_urls else True:
                 break
 
-        # Re-subscribe
-        if self._nostr_configured and self._nostr_follow_hex:
-            self._nostr_sub_id = _make_subscription_id("micropython_nostr_")
-            filters = Filters([Filter(authors=[self._nostr_follow_hex])])
-            self.relay_manager.add_subscription(self._nostr_sub_id, filters)
-            self.relay_manager.publish_message(json.dumps(
-                [ClientMessageType.REQUEST, self._nostr_sub_id] + filters.to_json_array()))
+        # Re-subscribe generic subscriptions
+        self._subscription_ids = {}
+        for sub in self._subscriptions:
+            sub_id = _make_subscription_id("mpos_sub_")
+            self._subscription_ids[sub.name] = sub_id
+            self._publish_subscription(sub, sub_id)
         if self._nwc_configured:
             self._nwc_sub_id = _make_subscription_id("micropython_nwc_")
             nwc_filters = Filters([Filter(
@@ -615,10 +827,77 @@ class NostrManager:
 
 class NostrClientService(Service):
 
+    def __init__(self):
+        super().__init__()
+        self._store = None
+        self._persist_cb = None
+
     def onStart(self, intent):
         print("NostrClientService: starting NostrManager")
-        NostrManager.get_instance().start()
+        manager = NostrManager.get_instance()
+        manager.start()
+        self._store = EventStore(APP_FULLNAME)
+        self._persist_cb = lambda e: self._persist_event(e)
+        manager.register_post_event_handler(KIND_DM, self._persist_cb)
+        manager.register_post_event_handler(KIND_CHANNEL_MESSAGE, self._persist_cb)
 
     def onDestroy(self):
         print("NostrClientService: stopping NostrManager")
-        NostrManager.get_instance().stop()
+        manager = NostrManager.get_instance()
+        if self._persist_cb is not None:
+            manager.unregister_post_event_handler(KIND_DM, self._persist_cb)
+            manager.unregister_post_event_handler(
+                KIND_CHANNEL_MESSAGE, self._persist_cb
+            )
+            self._persist_cb = None
+        if self._store is not None:
+            self._store.flush_index()
+        manager.stop()
+
+    def _persist_event(self, nostr_event):
+        """Persist an event that made it past the UI handlers.
+
+        This runs as a post-event handler, so normal UI callbacks already had
+        a chance to store and display the message. If there are no UI
+        handlers, we store it here so the chat list/chat still show the
+        message when the user re-opens the app.
+        """
+        if self._store is None:
+            return
+        try:
+            manager = NostrManager.get_instance()
+            own = manager.get_own_pubkey_hex()
+            chat_id = chat_id_for_event(nostr_event.event, own)
+            if chat_id is None:
+                return
+
+            kind = nostr_event.kind
+            if kind == KIND_DM:
+                content = nostr_event.get_display_content()
+            else:
+                content = nostr_event.content
+
+            chat = self._store.get_chat(chat_id)
+            if chat is None:
+                if kind == KIND_DM:
+                    peer = peer_from_dm_event(nostr_event.event, own)
+                    chat = self._store.get_or_create_dm(own or "", peer)
+                else:
+                    channel_id = channel_id_from_event(nostr_event.event)
+                    chat = self._store.get_or_create_channel(
+                        channel_id or DEFAULT_CHANNEL_ID
+                    )
+
+            message = Message(
+                event_id=nostr_event.event.id,
+                ts=nostr_event.created_at,
+                pubkey=nostr_event.public_key,
+                content=content,
+                kind=kind,
+            )
+            self._store.add_message(chat_id, message, mark_unread=True)
+        except Exception as e:
+            logger.error("Failed to persist Nostr event: %s", e)
+            import sys
+
+            sys.print_exception(e)
