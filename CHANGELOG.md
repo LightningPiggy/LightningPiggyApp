@@ -1,3 +1,7 @@
+Next version
+=====
+- Rework nostr_service.py (also used by com_micropythonos_nostr app)
+
 0.6.0
 =====
 - Prefer new "flat" structure for MANIFEST.JSON and icon_64x64.png
