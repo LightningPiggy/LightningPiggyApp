@@ -23,28 +23,62 @@ try:
         DEFAULT_CHANNEL_ID,
         KIND_CHANNEL_MESSAGE,
         KIND_DM,
+        KIND_NIP17_CHAT,
         Message,
         channel_id_from_event,
         chat_id_for_event,
+        nip17_group_chat_id,
+        participants_from_nip17_event,
         peer_from_dm_event,
+        subject_from_nip17_event,
     )
-    from .event_store import EventStore
+    from .event_store import EventStore, _current_nostr_ts
 except ImportError:
     try:
         from chat_model import (
             DEFAULT_CHANNEL_ID,
             KIND_CHANNEL_MESSAGE,
             KIND_DM,
+            KIND_NIP17_CHAT,
             Message,
             channel_id_from_event,
             chat_id_for_event,
+            nip17_group_chat_id,
+            participants_from_nip17_event,
             peer_from_dm_event,
+            subject_from_nip17_event,
         )
-        from event_store import EventStore
+        from event_store import EventStore, _current_nostr_ts
     except ImportError:
-        Message = channel_id_from_event = chat_id_for_event = peer_from_dm_event = None
-        DEFAULT_CHANNEL_ID = KIND_CHANNEL_MESSAGE = KIND_DM = None
+        Message = (
+            channel_id_from_event
+        ) = chat_id_for_event = peer_from_dm_event = nip17_group_chat_id = None
+        participants_from_nip17_event = subject_from_nip17_event = None
+        DEFAULT_CHANNEL_ID = KIND_CHANNEL_MESSAGE = KIND_DM = KIND_NIP17_CHAT = None
         EventStore = None
+
+try:
+    from nostr.nip17 import decrypt_gift_wrap_to_rumor, make_nip17_messages
+except ImportError:
+    decrypt_gift_wrap_to_rumor = None
+    make_nip17_messages = None
+
+# NIP-65 relay list metadata and NIP-17 DM relay list / private messages.
+KIND_RELAY_LIST = 10002
+KIND_DM_RELAY_LIST = 10050
+KIND_NIP17_SEAL = 13
+KIND_NIP17_CHAT = 14
+KIND_NIP17_FILE = 15
+KIND_NIP17_GIFT_WRAP = 1059
+KIND_NIP17_GIFT_WRAP_EPHEMERAL = 21059
+
+NIP17_KINDS = (
+    KIND_NIP17_SEAL,
+    KIND_NIP17_CHAT,
+    KIND_NIP17_FILE,
+    KIND_NIP17_GIFT_WRAP,
+    KIND_NIP17_GIFT_WRAP_EPHEMERAL,
+)
 
 EVENT_KIND_NAMES = {
     0: "SET_METADATA",
@@ -53,6 +87,13 @@ EVENT_KIND_NAMES = {
     3: "CONTACTS",
     4: "ENCRYPTED_DM",
     5: "DELETE",
+    13: "NIP17_SEAL",
+    14: "NIP17_CHAT",
+    15: "NIP17_FILE",
+    10002: "RELAY_LIST",
+    10050: "DM_RELAY_LIST",
+    1059: "GIFT_WRAP",
+    21059: "GIFT_WRAP_EPHEMERAL",
 }
 
 
@@ -191,6 +232,21 @@ def _parse_nsec(nsec):
     return PrivateKey(bytes.fromhex(nsec))
 
 
+def _normalize_relays(relays):
+    """Return a deduplicated list of relay URL strings."""
+    if relays is None:
+        return []
+    if isinstance(relays, str):
+        relays = [relays]
+    seen = set()
+    out = []
+    for url in relays:
+        if url and url not in seen:
+            seen.add(url)
+            out.append(url)
+    return out
+
+
 def _pubkey_to_hex(pubkey_or_npub):
     if pubkey_or_npub.startswith("npub1"):
         from nostr.key import PublicKey
@@ -244,6 +300,10 @@ class NostrManager:
         self.events = []
         self._nostr_private_key = None
         self._default_relays = []
+        self._current_nsec = None
+        self._configured_relays = []
+        self._relay_list_pending = False
+        self._relay_list_published_for = None
         self._subscriptions = []
         self._subscription_ids = {}
         self._nostr_configured = False
@@ -373,19 +433,32 @@ class NostrManager:
 
     # --- Identity and subscriptions ---
 
+    def _relay_config_key(self, nsec, relays):
+        """Return an identity-normalised config key for relay-list publishing."""
+        return (nsec, tuple(relays))
+
     def configure_identity(self, nsec, relays=None):
         """Set the user's private key and default relay(s).
 
         relays may be a single URL string or a list of URLs."""
+        normalised = _normalize_relays(relays)
+        same_config = (
+            self._nostr_configured
+            and nsec == self._current_nsec
+            and normalised == self._configured_relays
+        )
+        if same_config and not self._relay_list_pending:
+            self._ensure_main_task()
+            return
+
         self._nostr_private_key = _parse_nsec(nsec)
-        if relays is None:
-            self._default_relays = []
-        elif isinstance(relays, str):
-            self._default_relays = [relays] if relays else []
-        else:
-            self._default_relays = [url for url in relays if url]
+        self._current_nsec = nsec
+        self._default_relays = list(normalised)
+        self._configured_relays = list(normalised)
+        if not same_config:
+            self._relays_dirty = True
+        self._relay_list_pending = True
         self._nostr_configured = True
-        self._relays_dirty = True
         self._ensure_main_task()
 
     def subscribe_channel(self, channel_id, name=None, callback=None, since=None, limit=None):
@@ -407,6 +480,60 @@ class NostrManager:
         own_hex = self._nostr_private_key.public_key.hex()
         filters = Filters([Filter(kinds=[4], pubkey_refs=[own_hex], since=since, limit=limit)])
         self.add_subscription("dms", filters, callback)
+
+    def subscribe_nip17_dms(self, callback=None, since=None, limit=None):
+        """Subscribe to NIP-17 / NIP-59 message kinds for debugging.
+
+        We do not decrypt gift wraps here yet; this subscription lets us log
+        when these events arrive from relays.
+        """
+        if self._nostr_private_key is None:
+            raise RuntimeError("Identity must be configured before subscribing to DMs")
+        own_hex = self._nostr_private_key.public_key.hex()
+        filters = Filters([
+            Filter(
+                kinds=[KIND_NIP17_GIFT_WRAP, KIND_NIP17_GIFT_WRAP_EPHEMERAL],
+                pubkey_refs=[own_hex],
+                since=since,
+                limit=limit,
+            ),
+            Filter(
+                kinds=[KIND_DM_RELAY_LIST, KIND_RELAY_LIST],
+                authors=[own_hex],
+                since=since,
+                limit=limit,
+            ),
+        ])
+        self.add_subscription("nip17-debug", filters, callback)
+
+    def publish_relay_list(self):
+        """Publish NIP-65 (kind 10002) and NIP-17 (kind 10050) relay lists."""
+        if self._nostr_private_key is None or self.relay_manager is None:
+            return None
+        if not self._default_relays:
+            return None
+        own_hex = self._nostr_private_key.public_key.hex()
+        relay_tags = [["r", url] for url in self._default_relays if url]
+        dm_relay_tags = [["relay", url] for url in self._default_relays if url]
+        ids = []
+        for kind, tags in ((KIND_RELAY_LIST, relay_tags), (KIND_DM_RELAY_LIST, dm_relay_tags)):
+            event = Event(
+                content="",
+                public_key=own_hex,
+                kind=kind,
+                tags=tags,
+            )
+            event.__post_init__()
+            self._nostr_private_key.sign_event(event)
+            self.relay_manager.publish_event(event)
+            ids.append(event.id)
+        key = self._relay_config_key(self._current_nsec, self._configured_relays)
+        self._relay_list_published_for = key
+        self._relay_list_pending = False
+        print(
+            "NostrManager: published relay lists ({})".format(len(ids))
+        )
+        return ids
 
     def publish_channel_message(self, channel_id, content):
         """Sign and publish a NIP-28 channel message (kind 42)."""
@@ -457,6 +584,57 @@ class NostrManager:
         )
         print("NostrManager: published DM to {}".format(recipient_hex[:16]))
         return dm_id
+
+    def publish_nip17_message(
+        self, content, recipients, subject=None, reply_to=None, created_at=None
+    ):
+        """Sign and publish a NIP-17 gift-wrapped chat message (kind 14).
+
+        Returns a list of the published kind 1059 event ids.
+        """
+        if self._nostr_private_key is None:
+            raise RuntimeError("Identity must be configured before publishing messages")
+        if not content:
+            raise ValueError("Message content cannot be empty")
+        if self.relay_manager is None:
+            raise RuntimeError("Relay manager is not ready yet")
+        if not recipients:
+            raise ValueError("Recipients cannot be empty")
+        if make_nip17_messages is None:
+            raise RuntimeError("NIP-17 support is not available")
+
+        hex_recipients = [_pubkey_to_hex(r) for r in recipients]
+        # Capture the wall-clock timestamp once, before the pure-Python
+        # ChaCha20 loop can starve the ESP32 scheduler and make time.time()
+        # stale.
+        if created_at is None:
+            created_at = _current_nostr_ts()
+        gift_events = make_nip17_messages(
+            self._nostr_private_key,
+            content,
+            hex_recipients,
+            subject=subject,
+            reply_to=reply_to,
+            created_at=created_at,
+        )
+        ids = []
+        for gift in gift_events:
+            event = Event(
+                content=gift["content"],
+                public_key=gift["pubkey"],
+                created_at=gift["created_at"],
+                kind=gift["kind"],
+                tags=gift["tags"],
+                signature=gift["sig"],
+            )
+            self.relay_manager.publish_event(event)
+            ids.append(gift["id"])
+        print(
+            "NostrManager: published NIP-17 message to {} recipient(s)".format(
+                len(ids)
+            )
+        )
+        return ids
 
     def get_own_pubkey_hex(self):
         """Return the configured identity's public key in hex, or None."""
@@ -669,6 +847,12 @@ class NostrManager:
                 # Don't use permissive ensure_lightning_prefix, only allow LUD-16
                 self._handle_nwc_static_receive_code((self._nwc_lud16))
 
+        if self._relay_list_pending:
+            try:
+                self.publish_relay_list()
+            except Exception as e:
+                print("NostrManager: relay list publish error: {}".format(e))
+
         self._last_nwc_poll = time.time() - self.NWC_POLL_SECONDS
 
         # Main processing loop
@@ -735,6 +919,27 @@ class NostrManager:
                 sys.print_exception(e)
                 await TaskManager.sleep(1)
 
+    def _decrypt_nip17_gift_wrap(self, event):
+        """Unwrap a kind 1059/21059 gift-wrap into a kind 14 rumor event."""
+        if decrypt_gift_wrap_to_rumor is None or self._nostr_private_key is None:
+            return None
+        try:
+            rumor = decrypt_gift_wrap_to_rumor(event, self._nostr_private_key)
+            if not rumor:
+                return None
+            return Event(
+                content=rumor.get("content", ""),
+                public_key=rumor.get("pubkey", ""),
+                created_at=rumor.get("created_at", event.created_at),
+                kind=rumor.get("kind", KIND_NIP17_CHAT),
+                tags=rumor.get("tags", []),
+                signature=None,
+            )
+        except Exception as e:
+            if __debug__:
+                logger.debug("Failed to unwrap gift-wrap event: %s", e)
+            return None
+
     def _process_event(self, event):
         """Route a single event to all relevant handlers."""
 
@@ -742,6 +947,27 @@ class NostrManager:
         if event.kind in (23195, 23196) and self._nwc_configured:
             self._process_nwc_event(event)
             return
+
+        if event.kind in NIP17_KINDS or event.kind in (KIND_RELAY_LIST, KIND_DM_RELAY_LIST):
+            print(
+                "NostrManager: received {} (kind={}) from {}"
+                .format(get_kind_name(event.kind), event.kind, event.public_key[:16])
+            )
+
+        if event.kind in (KIND_NIP17_GIFT_WRAP, KIND_NIP17_GIFT_WRAP_EPHEMERAL):
+            decrypted_event = self._decrypt_nip17_gift_wrap(event)
+            if decrypted_event is None:
+                return
+            # Preserve the original gift-wrap id so the same message deduplicates.
+            # Event.id is a computed property; assign an instance attribute to
+            # shadow it for downstream code that reads event.id.
+            decrypted_event.id = event.id
+            event = decrypted_event
+            print(
+                "NostrManager: unwrapped NIP-17 message from {}".format(
+                    event.public_key[:16]
+                )
+            )
 
         # Build the shared wrapper once; decrypt DMs if a private key is set.
         nostr_event = NostrEvent(event, self._nostr_private_key)
@@ -918,6 +1144,12 @@ class NostrManager:
             self.relay_manager.publish_message(json.dumps(
                 [ClientMessageType.REQUEST, self._nwc_sub_id] + nwc_filters.to_json_array()))
 
+        if self._relay_list_pending:
+            try:
+                self.publish_relay_list()
+            except Exception as e:
+                print("NostrManager: relay list publish error: {}".format(e))
+
     # --- NWC request methods ---
 
     def nwc_fetch_balance(self):
@@ -961,6 +1193,7 @@ class NostrClientService(Service):
         self._persist_cb = lambda e: self._persist_event(e)
         manager.register_post_event_handler(KIND_DM, self._persist_cb)
         manager.register_post_event_handler(KIND_CHANNEL_MESSAGE, self._persist_cb)
+        manager.register_post_event_handler(KIND_NIP17_CHAT, self._persist_cb)
 
     def onDestroy(self):
         print("NostrClientService: stopping NostrManager")
@@ -969,6 +1202,9 @@ class NostrClientService(Service):
             manager.unregister_post_event_handler(KIND_DM, self._persist_cb)
             manager.unregister_post_event_handler(
                 KIND_CHANNEL_MESSAGE, self._persist_cb
+            )
+            manager.unregister_post_event_handler(
+                KIND_NIP17_CHAT, self._persist_cb
             )
             self._persist_cb = None
         if self._store is not None:
@@ -1003,6 +1239,14 @@ class NostrClientService(Service):
                 if kind == KIND_DM:
                     peer = peer_from_dm_event(nostr_event.event, own)
                     chat = self._store.get_or_create_dm(own or "", peer)
+                elif kind == KIND_NIP17_CHAT:
+                    participants = participants_from_nip17_event(
+                        nostr_event.event, own
+                    )
+                    title = subject_from_nip17_event(nostr_event.event)
+                    chat = self._store.get_or_create_nip17_group(
+                        participants, title=title
+                    )
                 else:
                     channel_id = channel_id_from_event(nostr_event.event)
                     chat = self._store.get_or_create_channel(
