@@ -12,50 +12,8 @@ from nostr.filter import Filter, Filters
 from nostr.event import Event, EncryptedDirectMessage
 from nostr.key import PrivateKey
 
-logger = logging.getLogger(__name__)
 
-# Imported both by the Nostr app (as a package) and by displaywallet (as a flat
-# module).  Try the sibling modules that actually live with us; fall back to
-# flat imports so displaywallet can reuse NostrManager without the chat/storage
-# helpers it does not ship.
-try:
-    from .chat_model import (
-        DEFAULT_CHANNEL_ID,
-        KIND_CHANNEL_MESSAGE,
-        KIND_DM,
-        KIND_NIP17_CHAT,
-        Message,
-        channel_id_from_event,
-        chat_id_for_event,
-        nip17_group_chat_id,
-        participants_from_nip17_event,
-        peer_from_dm_event,
-        subject_from_nip17_event,
-    )
-    from .event_store import EventStore, _current_nostr_ts
-except ImportError:
-    try:
-        from chat_model import (
-            DEFAULT_CHANNEL_ID,
-            KIND_CHANNEL_MESSAGE,
-            KIND_DM,
-            KIND_NIP17_CHAT,
-            Message,
-            channel_id_from_event,
-            chat_id_for_event,
-            nip17_group_chat_id,
-            participants_from_nip17_event,
-            peer_from_dm_event,
-            subject_from_nip17_event,
-        )
-        from event_store import EventStore, _current_nostr_ts
-    except ImportError:
-        Message = (
-            channel_id_from_event
-        ) = chat_id_for_event = peer_from_dm_event = nip17_group_chat_id = None
-        participants_from_nip17_event = subject_from_nip17_event = None
-        DEFAULT_CHANNEL_ID = KIND_CHANNEL_MESSAGE = KIND_DM = KIND_NIP17_CHAT = None
-        EventStore = None
+logger = logging.getLogger(__name__)
 
 try:
     from nostr.nip17 import decrypt_gift_wrap_to_rumor, make_nip17_messages
@@ -320,6 +278,13 @@ class NostrManager:
         # Set when new relays are configured after the manager started; the
         # main loop picks them up and hot-adds them to the running relay pool.
         self._relays_dirty = False
+
+        # Track per-relay connected state so we can re-send subscriptions when
+        # a relay (re)connects. On ESP32 the first SSL handshake often errors
+        # and the websocket reconnects a few seconds later, after the initial
+        # subscription broadcast has already been dropped.
+        self._relay_connected_state = {}
+        self._nwc_filters = None
 
         # Event callbacks: kind -> [callbacks]
         self._event_handlers = {}
@@ -608,7 +573,7 @@ class NostrManager:
         # ChaCha20 loop can starve the ESP32 scheduler and make time.time()
         # stale.
         if created_at is None:
-            created_at = _current_nostr_ts()
+            created_at = Event.epoch_seconds()
         gift_events = make_nip17_messages(
             self._nostr_private_key,
             content,
@@ -708,7 +673,45 @@ class NostrManager:
         req = [ClientMessageType.REQUEST, sub_id]
         req.extend(sub.filters.to_json_array())
         self.relay_manager.publish_message(json.dumps(req))
-        print("NostrManager: subscribed to '{}'".format(sub.name))
+        print("NostrManager: subscribed to '{}' with filters {}".format(
+            sub.name, sub.filters.to_json_array()))
+
+    def _send_subscriptions_to_relays(self, urls):
+        """Re-send all active subscriptions to a specific set of relays.
+
+        Used when a relay (re)connects after the initial broadcast, so the
+        relay does not silently drop events.
+        """
+        if self.relay_manager is None or not urls:
+            return
+        for sub in self._subscriptions:
+            sub_id = self._subscription_ids.get(sub.name)
+            if sub_id is None:
+                sub_id = _make_subscription_id("mpos_sub_")
+                self._subscription_ids[sub.name] = sub_id
+            self.relay_manager.add_subscription(sub_id, sub.filters)
+            req = [ClientMessageType.REQUEST, sub_id]
+            req.extend(sub.filters.to_json_array())
+            req_json = json.dumps(req)
+            for url in urls:
+                relay = self.relay_manager.relays.get(url)
+                if relay is not None and relay.connected:
+                    relay.publish(req_json)
+        if self._nwc_configured and self._nwc_sub_id:
+            if self._nwc_filters is None:
+                self._nwc_filters = Filters([Filter(
+                    kinds=[23195, 23196],
+                    authors=[self._nwc_wallet_pubkey],
+                    pubkey_refs=[self._nwc_private_key.public_key.hex()]
+                )])
+            self.relay_manager.add_subscription(self._nwc_sub_id, self._nwc_filters)
+            req = [ClientMessageType.REQUEST, self._nwc_sub_id]
+            req.extend(self._nwc_filters.to_json_array())
+            req_json = json.dumps(req)
+            for url in urls:
+                relay = self.relay_manager.relays.get(url)
+                if relay is not None and relay.connected:
+                    relay.publish(req_json)
 
     def configure_nwc(self, nwc_url):
         """Configure and start NWC subscriptions."""
@@ -804,10 +807,13 @@ class NostrManager:
         self.connected = False
         nrconnected = 0
 
+        # Wait for at least one *actually* connected relay. On ESP32 the first
+        # SSL handshake often fails and is retried, so counting errored relays
+        # as connected makes us broadcast subscriptions while disconnected.
         for _ in range(300):
             await TaskManager.sleep(0.1)
-            nrconnected = self.relay_manager.connected_or_errored_relays()
-            if nrconnected == len(self.relay_manager.relays) or not self.keep_running:
+            nrconnected = self.relay_manager.connected_relays()
+            if nrconnected > 0 or not self.keep_running:
                 break
 
         if nrconnected == 0:
@@ -820,7 +826,11 @@ class NostrManager:
         if not self.keep_running:
             return
 
+        connected, disconnected = self.relay_manager.connection_summary()
         print("NostrManager: {} relay(s) connected".format(nrconnected))
+        print("NostrManager: connected relays: {}".format(connected))
+        if disconnected:
+            print("NostrManager: disconnected relays: {}".format(disconnected))
         self.connected = True
 
         # Set up generic subscriptions
@@ -833,19 +843,23 @@ class NostrManager:
         # Set up NWC subscription
         if self._nwc_configured:
             self._nwc_sub_id = _make_subscription_id("micropython_nwc_")
-            nwc_filters = Filters([Filter(
+            self._nwc_filters = Filters([Filter(
                 kinds=[23195, 23196],
                 authors=[self._nwc_wallet_pubkey],
                 pubkey_refs=[self._nwc_private_key.public_key.hex()]
             )])
-            self.relay_manager.add_subscription(self._nwc_sub_id, nwc_filters)
+            self.relay_manager.add_subscription(self._nwc_sub_id, self._nwc_filters)
             req = [ClientMessageType.REQUEST, self._nwc_sub_id]
-            req.extend(nwc_filters.to_json_array())
+            req.extend(self._nwc_filters.to_json_array())
             self.relay_manager.publish_message(json.dumps(req))
             print("NostrManager: subscribed to NWC responses")
             if self._nwc_lud16 and "@" in self._nwc_lud16:
                 # Don't use permissive ensure_lightning_prefix, only allow LUD-16
                 self._handle_nwc_static_receive_code((self._nwc_lud16))
+
+        self._relay_connected_state = {
+            url: relay.connected for url, relay in self.relay_manager.relays.items()
+        }
 
         if self._relay_list_pending:
             try:
@@ -869,6 +883,17 @@ class NostrManager:
                     print("NostrManager: relay sync error: {}".format(e))
                     import sys
                     sys.print_exception(e)
+
+            # Detect relays that (re)connected after the initial open and
+            # re-send subscriptions. On ESP32 the websocket often reconnects
+            # after the first SSL error, and subscriptions sent earlier while
+            # disconnected are dropped by the relay.
+            if self.relay_manager is not None:
+                for url, relay in self.relay_manager.relays.items():
+                    was = self._relay_connected_state.get(url, False)
+                    if relay.connected and not was:
+                        self._send_subscriptions_to_relays([url])
+                    self._relay_connected_state[url] = relay.connected
 
             now = time.time()
 
@@ -898,11 +923,11 @@ class NostrManager:
                 if self.relay_manager.message_pool.has_events():
                     event_msg = self.relay_manager.message_pool.get_event()
                     event = event_msg.event
-                    print("NostrManager: received event kind={} from {}".format(
-                        event.kind, event.public_key[:16]))
+                    print("NostrManager: received event kind={} from {} via {}".format(
+                        event.kind, event.public_key[:16], event_msg.url))
 
                     try:
-                        self._process_event(event)
+                        self._process_event(event, relay_url=event_msg.url)
                     except Exception as e:
                         print("NostrManager: error processing event: {}".format(e))
                         import sys
@@ -936,11 +961,14 @@ class NostrManager:
                 signature=None,
             )
         except Exception as e:
-            if __debug__:
-                logger.debug("Failed to unwrap gift-wrap event: %s", e)
+            logger.warning(
+                "Failed to unwrap gift-wrap event %s: %s",
+                getattr(event, "id", "?"),
+                e,
+            )
             return None
 
-    def _process_event(self, event):
+    def _process_event(self, event, relay_url=None):
         """Route a single event to all relevant handlers."""
 
         # NWC events are private and handled separately.
@@ -950,13 +978,17 @@ class NostrManager:
 
         if event.kind in NIP17_KINDS or event.kind in (KIND_RELAY_LIST, KIND_DM_RELAY_LIST):
             print(
-                "NostrManager: received {} (kind={}) from {}"
-                .format(get_kind_name(event.kind), event.kind, event.public_key[:16])
+                "NostrManager: received {} (kind={}) from {} via {}"
+                .format(get_kind_name(event.kind), event.kind, event.public_key[:16], relay_url)
             )
 
         if event.kind in (KIND_NIP17_GIFT_WRAP, KIND_NIP17_GIFT_WRAP_EPHEMERAL):
             decrypted_event = self._decrypt_nip17_gift_wrap(event)
             if decrypted_event is None:
+                print(
+                    "NostrManager: failed to unwrap NIP-17 message from {} via {}".format(
+                        event.public_key[:16], relay_url)
+                )
                 return
             # Preserve the original gift-wrap id so the same message deduplicates.
             # Event.id is a computed property; assign an instance attribute to
@@ -964,13 +996,21 @@ class NostrManager:
             decrypted_event.id = event.id
             event = decrypted_event
             print(
-                "NostrManager: unwrapped NIP-17 message from {}".format(
-                    event.public_key[:16]
+                "NostrManager: unwrapped NIP-17 message from {}: {!r}".format(
+                    event.public_key[:16], event.content
                 )
             )
 
         # Build the shared wrapper once; decrypt DMs if a private key is set.
         nostr_event = NostrEvent(event, self._nostr_private_key)
+
+        # Log plaintext for DMs / NIP-17 chat messages so we can see what arrived.
+        if event.kind in (4, KIND_NIP17_CHAT):
+            print(
+                "NostrManager: plaintext message from {} via {}: {!r}".format(
+                    event.public_key[:16], relay_url, nostr_event.get_display_content()
+                )
+            )
 
         # Route by kind to registered callbacks
         if event.kind in self._event_handlers:
@@ -1062,6 +1102,7 @@ class NostrManager:
 
         old_relay_urls = list(self.relay_manager.relays.keys()) if hasattr(self.relay_manager, 'relays') else []
         self.relay_manager = RelayManager()
+        self._relay_connected_state = {}
         for url in old_relay_urls:
             self.relay_manager.add_relay(url)
 
@@ -1074,25 +1115,16 @@ class NostrManager:
             await TaskManager.sleep(0.1)
             if not self.keep_running:
                 return
-            if self.relay_manager.connected_or_errored_relays() == len(old_relay_urls) if old_relay_urls else True:
+            if self.relay_manager.connected_relays() > 0:
                 break
 
-        # Re-subscribe generic subscriptions
+        connected = [url for url, relay in self.relay_manager.relays.items() if relay.connected]
         self._subscription_ids = {}
-        for sub in self._subscriptions:
-            sub_id = _make_subscription_id("mpos_sub_")
-            self._subscription_ids[sub.name] = sub_id
-            self._publish_subscription(sub, sub_id)
-        if self._nwc_configured:
-            self._nwc_sub_id = _make_subscription_id("micropython_nwc_")
-            nwc_filters = Filters([Filter(
-                kinds=[23195, 23196],
-                authors=[self._nwc_wallet_pubkey],
-                pubkey_refs=[self._nwc_private_key.public_key.hex()]
-            )])
-            self.relay_manager.add_subscription(self._nwc_sub_id, nwc_filters)
-            self.relay_manager.publish_message(json.dumps(
-                [ClientMessageType.REQUEST, self._nwc_sub_id] + nwc_filters.to_json_array()))
+        if connected:
+            self._send_subscriptions_to_relays(connected)
+        self._relay_connected_state = {
+            url: relay.connected for url, relay in self.relay_manager.relays.items()
+        }
 
         self._polls_since_last_event = 0
 
@@ -1135,14 +1167,18 @@ class NostrManager:
             self._publish_subscription(sub, sub_id)
 
         if self._nwc_configured and self._nwc_sub_id:
-            nwc_filters = Filters([Filter(
+            self._nwc_filters = Filters([Filter(
                 kinds=[23195, 23196],
                 authors=[self._nwc_wallet_pubkey],
                 pubkey_refs=[self._nwc_private_key.public_key.hex()]
             )])
-            self.relay_manager.add_subscription(self._nwc_sub_id, nwc_filters)
+            self.relay_manager.add_subscription(self._nwc_sub_id, self._nwc_filters)
             self.relay_manager.publish_message(json.dumps(
-                [ClientMessageType.REQUEST, self._nwc_sub_id] + nwc_filters.to_json_array()))
+                [ClientMessageType.REQUEST, self._nwc_sub_id] + self._nwc_filters.to_json_array()))
+
+        self._relay_connected_state.update({
+            url: relay.connected for url, relay in self.relay_manager.relays.items()
+        })
 
         if self._relay_list_pending:
             try:
@@ -1179,90 +1215,20 @@ class NostrManager:
 
 
 class NostrClientService(Service):
+    """Generic boot-time starter for the shared NostrManager.
 
-    def __init__(self):
-        super().__init__()
-        self._store = None
-        self._persist_cb = None
+    This service intentionally does no app-specific setup: no shared
+    preferences, no default relays, no persistence. Apps that need a
+    particular relay set or behavior should provide their own boot service
+    and call NostrManager's configuration methods directly.
+    """
 
     def onStart(self, intent):
-        print("NostrClientService: starting NostrManager")
-        manager = NostrManager.get_instance()
-        manager.start()
-        self._store = EventStore(self.appFullName)
-        self._persist_cb = lambda e: self._persist_event(e)
-        manager.register_post_event_handler(KIND_DM, self._persist_cb)
-        manager.register_post_event_handler(KIND_CHANNEL_MESSAGE, self._persist_cb)
-        manager.register_post_event_handler(KIND_NIP17_CHAT, self._persist_cb)
+        if __debug__:
+            logger.debug("NostrClientService: starting NostrManager")
+        NostrManager.get_instance().start()
 
     def onDestroy(self):
-        print("NostrClientService: stopping NostrManager")
-        manager = NostrManager.get_instance()
-        if self._persist_cb is not None:
-            manager.unregister_post_event_handler(KIND_DM, self._persist_cb)
-            manager.unregister_post_event_handler(
-                KIND_CHANNEL_MESSAGE, self._persist_cb
-            )
-            manager.unregister_post_event_handler(
-                KIND_NIP17_CHAT, self._persist_cb
-            )
-            self._persist_cb = None
-        if self._store is not None:
-            self._store.flush_index()
-        manager.stop()
-
-    def _persist_event(self, nostr_event):
-        """Persist an event that made it past the UI handlers.
-
-        This runs as a post-event handler, so normal UI callbacks already had
-        a chance to store and display the message. If there are no UI
-        handlers, we store it here so the chat list/chat still show the
-        message when the user re-opens the app.
-        """
-        if self._store is None:
-            return
-        try:
-            manager = NostrManager.get_instance()
-            own = manager.get_own_pubkey_hex()
-            chat_id = chat_id_for_event(nostr_event.event, own)
-            if chat_id is None:
-                return
-
-            kind = nostr_event.kind
-            if kind == KIND_DM:
-                content = nostr_event.get_display_content()
-            else:
-                content = nostr_event.content
-
-            chat = self._store.get_chat(chat_id)
-            if chat is None:
-                if kind == KIND_DM:
-                    peer = peer_from_dm_event(nostr_event.event, own)
-                    chat = self._store.get_or_create_dm(own or "", peer)
-                elif kind == KIND_NIP17_CHAT:
-                    participants = participants_from_nip17_event(
-                        nostr_event.event, own
-                    )
-                    title = subject_from_nip17_event(nostr_event.event)
-                    chat = self._store.get_or_create_nip17_group(
-                        participants, title=title
-                    )
-                else:
-                    channel_id = channel_id_from_event(nostr_event.event)
-                    chat = self._store.get_or_create_channel(
-                        channel_id or DEFAULT_CHANNEL_ID
-                    )
-
-            message = Message(
-                event_id=nostr_event.event.id,
-                ts=nostr_event.created_at,
-                pubkey=nostr_event.public_key,
-                content=content,
-                kind=kind,
-            )
-            self._store.add_message(chat_id, message, mark_unread=True)
-        except Exception as e:
-            logger.error("Failed to persist Nostr event: %s", e)
-            import sys
-
-            sys.print_exception(e)
+        if __debug__:
+            logger.debug("NostrClientService: stopping NostrManager")
+        NostrManager.get_instance().stop()
