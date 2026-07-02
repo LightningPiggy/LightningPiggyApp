@@ -1,4 +1,4 @@
-Next version
+0.6.1
 =====
 - Rework nostr_service.py (also used by com_micropythonos_nostr app)
 
