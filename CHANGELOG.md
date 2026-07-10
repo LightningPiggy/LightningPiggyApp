@@ -1,3 +1,7 @@
+0.7.0
+=====
+- Sync nostr_service.py with com_micropythonos_nostr app
+
 0.6.1
 =====
 - Rework nostr_service.py (also used by com_micropythonos_nostr app)
