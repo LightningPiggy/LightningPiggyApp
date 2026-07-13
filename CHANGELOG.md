@@ -1,3 +1,7 @@
+0.7.1
+=====
+- Update confetti.py
+
 0.7.0
 =====
 - Sync nostr_service.py with com_micropythonos_nostr app
