@@ -1,3 +1,7 @@
+0.7.3
+=====
+- Correct the publisher name from "LightningPiggy Foundation" to "The Lightning Piggy Project"
+
 0.7.2
 =====
 - Sync nostr_service.py with com_micropythonos_nostr app
