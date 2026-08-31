@@ -405,6 +405,7 @@ class CustomiseSettingsActivity(SettingsActivity):
         denom_key = "balance_denomination" + s
         hero_options = [
             ("Lightning Piggy", "lightningpiggy"),
+            ("Lightning Piggy Love", "lightningpiggy_love"),
             ("Fart Face 2000 (FF2K)", "lightningpiggy_ff2k"),
             ("Lightning Penguin", "lightningpenguin"),
             ("Lightning Piggy Logo", "logo"),
@@ -2555,7 +2556,7 @@ class DisplayWallet(Activity):
         intent.putExtra("settings", settings_rows)
         self.startActivity(intent)
 
-    HERO_CYCLE = ["lightningpiggy", "lightningpiggy_ff2k", "lightningpenguin", "logo", "none"]
+    HERO_CYCLE = ["lightningpiggy", "lightningpiggy_love", "lightningpiggy_ff2k", "lightningpenguin", "logo", "none"]
     DENOMINATION_CYCLE = ["sats", "₿ symbol", "bits", "ubtc", "mbtc", "btc"]
 
     def _is_screen_locked(self):
