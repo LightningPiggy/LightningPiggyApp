@@ -1,6 +1,7 @@
 0.7.3
 =====
 - Correct the publisher name from "LightningPiggy Foundation" to "The Lightning Piggy Project"
+- Surface NWC error replies instead of hanging on "Connecting to nwc backend...": a NIP-47 error like UNAUTHORIZED (e.g. a retired wallet connection) is now shown on the payments area so you know to create a new connection, instead of the app silently waiting forever. Includes wiring the NostrManager error callback (never connected before, so relay errors were also invisible) and a sync of nostr_service.py with MicroPythonOS (identical repeated errors are shown once; an error reply also resets the relay silence watchdog)
 
 0.7.2
 =====
