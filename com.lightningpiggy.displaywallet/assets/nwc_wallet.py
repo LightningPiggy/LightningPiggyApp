@@ -80,6 +80,11 @@ class NWCWallet(Wallet):
             payments_cb=self._mgr_payments_cb,
             notification_cb=self._mgr_notification_cb,
         )
+        # Route NostrManager errors (relay failures, and NIP-47 error replies
+        # like UNAUTHORIZED for a retired connection) to the wallet error
+        # callback. Without this the manager had nowhere to send them and the
+        # UI sat on "Connecting to nwc backend..." forever.
+        mgr.set_error_callback(self._mgr_error_cb)
 
         try:
             mgr.configure_nwc(self.nwc_url)
@@ -87,6 +92,9 @@ class NWCWallet(Wallet):
             self.handle_error("Couldn't configure NWC: {}".format(e))
             import sys
             sys.print_exception(e)
+
+    def _mgr_error_cb(self, message):
+        self.handle_error(message)
 
     def _mgr_balance_cb(self, new_balance):
         self.handle_new_balance(new_balance)
