@@ -1,3 +1,7 @@
+0.7.3
+=====
+- Density-aware hero mascot: on hdpi-class screens (min dimension >= 300, e.g. the 480x320 3.5 inch panel) the hero renders at 1.5x so it keeps its intended share of the screen instead of shrinking. Pixel-perfect 120x150 art is picked up automatically from res/drawable-hdpi/ when present; until then the existing mdpi art is upscaled at runtime as a fallback. Classic 320x240 screens are unchanged
+
 0.7.2
 =====
 - Sync nostr_service.py with com_micropythonos_nostr app

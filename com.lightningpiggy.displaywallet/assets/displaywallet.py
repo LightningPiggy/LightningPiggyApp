@@ -79,6 +79,43 @@ def _migrate_legacy_symbol_denom(prefs):
     return migrated
 
 
+# --- Hero image density selection -----------------------------------------
+# Hero art is authored for the classic 320x240 ("mdpi") screen at 80x100 px.
+# Larger boards (e.g. the 480x320 3.5" panel) belong to a 1.5x density class
+# ("hdpi"); pixel-perfect 120x150 art for it lives in res/drawable-hdpi/.
+# Class selection uses the screen's SMALLER dimension so portrait/landscape
+# variants of the same panel resolve identically.
+HERO_BASE_W = 80
+HERO_BASE_H = 100
+_HDPI_MIN_DIMENSION = 300  # min(width, height) >= this -> hdpi class
+
+
+def _hero_density_factor(width, height):
+    """1.0 on classic (mdpi) screens, 1.5 on hdpi-class screens."""
+    return 1.5 if min(width, height) >= _HDPI_MIN_DIMENSION else 1.0
+
+
+def _resolve_hero_src(icon_path, hero, factor, path_exists):
+    """Pick the hero PNG and LVGL zoom (256 = 1.0x) for a density factor.
+
+    Prefers art authored for the screen's own density class (rendered
+    unscaled). While hdpi art doesn't exist yet for a given hero, falls
+    back to the mdpi file upscaled at runtime: slightly soft, but the
+    mascot keeps its intended proportion on big screens instead of
+    rendering as a postage stamp. `path_exists` is injected for
+    testability; it receives the path WITHOUT the LVGL "M:" driver
+    prefix (that prefix is for the image decoder, not the filesystem).
+    """
+    mdpi = icon_path + "res/drawable-mdpi/hero_" + hero + ".png"
+    if factor == 1.0:
+        return mdpi, 256
+    hdpi = icon_path + "res/drawable-hdpi/hero_" + hero + ".png"
+    fs_path = hdpi[2:] if hdpi.startswith("M:") else hdpi
+    if path_exists(fs_path):
+        return hdpi, 256
+    return mdpi, int(256 * factor)
+
+
 def _slot_suffix(slot):
     """Suffix appended to per-slot pref keys: '' for slot 1 (preserves
     backward-compat with single-wallet builds — slot 1 keeps using
@@ -1991,6 +2028,15 @@ class DisplayWallet(Activity):
             return lv.color_white()
         return lv.color_black()
 
+    @staticmethod
+    def _asset_exists(path):
+        import os
+        try:
+            os.stat(path)
+            return True
+        except OSError:
+            return False
+
     def _update_hero_image(self):
         """Show or hide the hero image based on the active slot's settings."""
         _, s = self._active_slot_and_suffix()
@@ -1999,7 +2045,13 @@ class DisplayWallet(Activity):
         qr_size = DisplayMetrics.pct_of_width(self.receive_qr_pct_of_display)
         qr_bottom_y = qr_size + 16
         screen_h = DisplayMetrics.height()
-        container_h = 100
+        # Density-aware mascot size: native 80x100 on classic screens,
+        # 1.5x (120x150) on hdpi-class screens so the hero keeps its
+        # intended share of a bigger panel instead of shrinking.
+        factor = _hero_density_factor(DisplayMetrics.width(), screen_h)
+        container_w = int(HERO_BASE_W * factor)
+        container_h = int(HERO_BASE_H * factor)
+        self.hero_container.set_size(container_w, container_h)
         gap = (screen_h - qr_bottom_y - container_h) // 2
         # `gap - 6` (was gap - 10) gives the hero an extra ~4 px of
         # clearance below the QR widget, so the QR's bottom quiet zone
@@ -2007,7 +2059,15 @@ class DisplayWallet(Activity):
         # is anchored near the top-right of the screen.
         self.hero_container.align_to(self.receive_qr, lv.ALIGN.OUT_BOTTOM_MID, 0, gap - 6)
         if hero and hero != "none":
-            self.hero_image.set_src(f"{self.ASSET_PATH}hero_{hero}.png")
+            src, zoom = _resolve_hero_src(self.ICON_PATH, hero, factor,
+                                          self._asset_exists)
+            self.hero_image.set_src(src)
+            # zoom != 256 only on the mdpi-fallback path: scale around the
+            # source image's center so the art stays centered in the
+            # container. Always set both so switching hero/screen never
+            # inherits a stale zoom from a previous selection.
+            self.hero_image.set_pivot(HERO_BASE_W // 2, HERO_BASE_H // 2)
+            self.hero_image.set_scale(zoom)
             self.hero_image.center()
             self.hero_image.remove_flag(lv.obj.FLAG.HIDDEN)
         else:
