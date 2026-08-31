@@ -1,5 +1,7 @@
 0.7.3
 =====
+- New hero: "Lightning Piggy Love" (heart-eyes piggy), available in the Settings -> Customise -> Hero Image picker, with art for both screen densities
+- Density-aware hero mascot: on hdpi-class screens (min dimension >= 300, e.g. the 480x320 3.5 inch panel) the hero renders at 1.5x so it keeps its intended share of the screen instead of shrinking. Pixel-perfect 120x150 art is picked up automatically from res/drawable-hdpi/ when present; until then the existing mdpi art is upscaled at runtime as a fallback. Classic 320x240 screens are unchanged
 - Correct the publisher name from "LightningPiggy Foundation" to "The Lightning Piggy Project"
 - Surface NWC error replies instead of hanging on "Connecting to nwc backend...": a NIP-47 error like UNAUTHORIZED (e.g. a retired wallet connection) is now shown on the payments area so you know to create a new connection, instead of the app silently waiting forever. Includes wiring the NostrManager error callback (never connected before, so relay errors were also invisible) and a sync of nostr_service.py with MicroPythonOS (identical repeated errors are shown once; an error reply also resets the relay silence watchdog)
 
