@@ -1,5 +1,7 @@
 # Lightning Piggy
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/LightningPiggy/LightningPiggyApp)
+
 MicroPythonOS display wallet: shows balance, transactions, a receive QR code,
 and more. Supports LNBits, Nostr Wallet Connect, and on-chain (xpub via
 Blockbook) wallet types. See https://www.LightningPiggy.com.
