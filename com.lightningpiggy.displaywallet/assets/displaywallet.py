@@ -301,7 +301,7 @@ class WalletSettingsActivity(SettingsActivity):
         self.settings = [
             wallet_type_setting,
             {"title": "LNBits URL", "key": "lnbits_url" + s,
-             "placeholder": "https://demo.lnpiggy.com", "should_show": _should_show_wallet_setting, "_slot": self.slot},
+             "placeholder": "https://demo.lnbits.com", "should_show": _should_show_wallet_setting, "_slot": self.slot},
             {"title": "LNBits Read Key", "key": "lnbits_readkey" + s,
              "placeholder": "fd92e3f8168ba314dc22e54182784045", "should_show": _should_show_wallet_setting, "_slot": self.slot},
             {"title": "Optional LN Address", "key": "lnbits_static_receive_code" + s,
