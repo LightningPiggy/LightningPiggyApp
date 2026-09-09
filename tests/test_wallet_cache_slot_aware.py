@@ -130,7 +130,7 @@ class TestComputeFingerprints(unittest.TestCase):
         prefs_override = _StubPrefs({
             "lnbits_url": "https://lnbits.example.com",
             "lnbits_readkey": "ABCDEF1234",
-            "lnbits_static_receive_code": "oink@demo.lnpiggy.com",
+            "lnbits_static_receive_code": "oink@demo.lnbits.com",
         })
         creds_no, qr_no = wallet_cache.compute_fingerprints("lnbits", prefs_no_override, slot=1)
         creds_o, qr_o = wallet_cache.compute_fingerprints("lnbits", prefs_override, slot=1)

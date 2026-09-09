@@ -1,3 +1,7 @@
+0.7.4
+=====
+- Wallet setup: the LNBits URL field now suggests https://demo.lnbits.com instead of the stale https://demo.lnpiggy.com (example data in comments and tests updated to match)
+
 0.7.3
 =====
 - New hero: "Lightning Piggy Love" (heart-eyes piggy), available in the Settings -> Customise -> Hero Image picker, with art for both screen densities
