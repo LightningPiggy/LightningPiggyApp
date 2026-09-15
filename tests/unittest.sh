@@ -80,6 +80,13 @@ chmod +x "$binary"
 # make sure no autostart is configured:
 rm -f "$fs"/data/com.micropythonos.settings/config.json
 
+# MicroPythonOS main.py (since its "skip stale lib/ override" change) purges
+# every mpos* module from sys.modules while deciding whether lib/ may shadow
+# the frozen tree. That throws away the TaskManager on which we called
+# disable() above, so the re-imported one starts the asyncio loop for real
+# and never returns: the harness hangs at boot. Re-issue disable() on the
+# fresh module right before main.py hands over to mpos.main.
+main_src=$(sed 's/^    import mpos.main  # noqa: F401$/    import mpos ; mpos.TaskManager.disable() ; import mpos.main  # noqa: F401/' main.py)
 one_test() {
 	file="$1"
 	if [ ! -f "$file" ]; then
@@ -103,13 +110,13 @@ one_test() {
 		# Desktop execution
 		if [ $is_graphical -eq 1 ]; then
 			echo "Graphical test: include main.py"
-			"$binary" -X heapsize=$heapsize -c "import sys ; sys.path.insert(0, 'lib') ; sys.path.append(\"$tests_abs_path\") ; sys.path.append(\"$lp_assets\") ; import mpos ; mpos.TaskManager.disable() ; $(cat main.py)
+			"$binary" -X heapsize=$heapsize -c "import sys ; sys.path.insert(0, 'lib') ; sys.path.append(\"$tests_abs_path\") ; sys.path.append(\"$lp_assets\") ; import mpos ; mpos.TaskManager.disable() ; $main_src
 $(cat $file)
 result = unittest.main() ; sys.exit(0 if result.wasSuccessful() else 1) "
 	           result=$?
 		else
 			echo "Regular test: no boot files"
-			"$binary" -X heapsize=$heapsize -c "import sys ; sys.path.insert(0, 'lib') ; sys.path.append(\"$lp_assets\") ; import mpos ; mpos.TaskManager.disable() ; $(cat main.py)
+			"$binary" -X heapsize=$heapsize -c "import sys ; sys.path.insert(0, 'lib') ; sys.path.append(\"$lp_assets\") ; import mpos ; mpos.TaskManager.disable() ; $main_src
 $(cat $file)
 result = unittest.main() ; sys.exit(0 if result.wasSuccessful() else 1) "
 	           result=$?
@@ -131,7 +138,7 @@ result = unittest.main() ; sys.exit(0 if result.wasSuccessful() else 1) "
 		echo "$test logging to $testlog"
 		if [ $is_graphical -eq 1 ]; then
 			# Graphical test: system already initialized, just add test paths
-			"$mpremote" exec "import sys ; sys.path.insert(0, 'lib') ; sys.path.append('tests') ; sys.path.append('apps/com.lightningpiggy.displaywallet/assets') ; import mpos ; mpos.TaskManager.disable() ; $(cat main.py)
+			"$mpremote" exec "import sys ; sys.path.insert(0, 'lib') ; sys.path.append('tests') ; sys.path.append('apps/com.lightningpiggy.displaywallet/assets') ; import mpos ; mpos.TaskManager.disable() ; $main_src
 $(cat $file)
 result = unittest.main()
 if result.wasSuccessful():
@@ -141,7 +148,7 @@ else:
 " | tee "$testlog"
 		else
 			# Regular test: no boot files
-			"$mpremote" exec "import sys ; sys.path.insert(0, 'lib') ; sys.path.append('tests') ; sys.path.append('apps/com.lightningpiggy.displaywallet/assets') ; import mpos ; mpos.TaskManager.disable() ; $(cat main.py)
+			"$mpremote" exec "import sys ; sys.path.insert(0, 'lib') ; sys.path.append('tests') ; sys.path.append('apps/com.lightningpiggy.displaywallet/assets') ; import mpos ; mpos.TaskManager.disable() ; $main_src
 $(cat $file)
 result = unittest.main()
 if result.wasSuccessful():
