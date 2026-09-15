@@ -1,6 +1,7 @@
 0.7.6
 =====
 - Density-aware header fonts: on hdpi-class screens (e.g. 480x320 and 640x480) the balance number, unit suffix, bolt icon, gear icon and hero name step up one built-in font size (24 to 28, 16 to 20, 18 to 24, 12 to 14) and the balance underline moves down to match, so the header no longer looks undersized on big panels. Classic 320x240 screens are unchanged; the transactions list keeps its tap-to-cycle size
+- New "Payment Animation" option in Settings -> Customise, below Payment Sound: None or Confetti (default). Controls the confetti burst on a received payment; switching it on plays one burst as a preview
 
 0.7.5
 =====

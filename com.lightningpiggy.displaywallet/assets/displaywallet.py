@@ -151,6 +151,19 @@ def _resolve_hero_src(icon_path, hero, factor, path_exists):
 # alongside the confetti. Value is a single device-wide pref, `payment_sound`:
 # "off" (default), one of the sounds, or "random" (any of them). WAVs live in res/sounds/;
 # see res/sounds/CREDITS.md for their licenses.
+# Payment animation: the confetti burst on a received payment. Device-wide
+# pref `payment_animation`: "confetti" (default) or "none". Unknown values
+# keep today's behaviour (confetti) so a stale pref never silences it.
+PAYMENT_ANIMATION_OPTIONS = [
+    ("None", "none"),
+    ("Confetti", "confetti"),
+]
+
+
+def _payment_animation_enabled(setting):
+    return setting != "none"
+
+
 PAYMENT_SOUND_OPTIONS = [
     ("Off", "off"),
     ("Pig Oink", "oink"),
@@ -535,6 +548,12 @@ class CustomiseSettingsActivity(SettingsActivity):
             "placeholder": _payment_sound_label(self.prefs.get_string("payment_sound", "off")),
             "changed_callback": callbacks.get("payment_sound"),
         }
+        payment_animation_setting = {
+            "title": "Payment Animation", "key": "payment_animation", "ui": "radiobuttons",
+            "ui_options": PAYMENT_ANIMATION_OPTIONS,
+            "default_value": "confetti",
+            "changed_callback": callbacks.get("payment_animation"),
+        }
         self.settings = [
             {"title": "Balance Denomination", "key": denom_key, "ui": "activity",
              "activity_class": DenominationSettingsActivity,
@@ -546,6 +565,7 @@ class CustomiseSettingsActivity(SettingsActivity):
              "placeholder": theme_label},
             payments_to_show_setting,
             payment_sound_setting,
+            payment_animation_setting,
         ]
         screen = lv.obj()
         screen.set_style_pad_all(DisplayMetrics.pct_of_width(2), lv.PART.MAIN)
@@ -2280,6 +2300,18 @@ class DisplayWallet(Activity):
         except Exception as e:
             print(f"payment sound failed: {e}")
 
+    def _payment_animation_enabled(self):
+        return _payment_animation_enabled(self.prefs.get_string("payment_animation", "confetti"))
+
+    def _on_payment_animation_changed(self, new_value):
+        # Preview: switching confetti on fires one burst so the choice is
+        # visible right away (the stock radio screen reports after Save).
+        if _payment_animation_enabled(new_value) and self.confetti:
+            try:
+                self.confetti.start()
+            except Exception as e:
+                print(f"confetti preview failed: {e}")
+
     def _on_payment_sound_changed(self, new_value):
         # Preview the newly chosen sound so the user hears what they picked
         # (for "random" that is one of the two, like a real payment would).
@@ -2556,7 +2588,8 @@ class DisplayWallet(Activity):
             self.fullscreenqr.finish()
 
         if sats_added > 0:
-            self.confetti.start()
+            if self._payment_animation_enabled():
+                self.confetti.start()
             self._play_payment_sound()
 
         balance = self.wallet.last_known_balance
@@ -2725,8 +2758,8 @@ class DisplayWallet(Activity):
              "_callbacks": _wallet_callbacks},
             {"title": "Customise", "key": "customise", "ui": "activity",
              "activity_class": CustomiseSettingsActivity,
-             "placeholder": "Balance denomination, hero image, payment sound",
-             "_callbacks": {"denomination": self._on_denomination_changed, "hero_image": self._on_hero_image_changed, "hero_name": self._on_hero_name_changed, "payments_to_show": self._on_payments_to_show_changed, "payment_sound": self._on_payment_sound_changed}},
+             "placeholder": "Balance denomination, hero image, payment sound and animation",
+             "_callbacks": {"denomination": self._on_denomination_changed, "hero_image": self._on_hero_image_changed, "hero_name": self._on_hero_name_changed, "payments_to_show": self._on_payments_to_show_changed, "payment_sound": self._on_payment_sound_changed, "payment_animation": self._on_payment_animation_changed}},
             {"title": "Screen Lock", "key": "screen_lock", "activity_class": True,
              "placeholder": "On - tapping disabled" if self.prefs.get_string("screen_lock", "off") == "on" else "Off - tapping changes display"},
         ]
