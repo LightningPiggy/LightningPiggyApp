@@ -95,6 +95,36 @@ def _hero_density_factor(width, height):
     return 1.5 if min(width, height) >= _HDPI_MIN_DIMENSION else 1.0
 
 
+# --- Density-aware font step -------------------------------------------------
+# Built-in Montserrat sizes only (the firmware compiles 8..28), so hdpi-class
+# screens step each header font up one notch rather than a true 1.5x. The
+# transactions list keeps its tap-to-cycle default: 21 rows at the next size
+# would overflow a 480 px tall screen.
+_HDPI_FONT_STEP = {8: 10, 10: 12, 12: 14, 14: 16, 16: 20, 18: 24, 20: 24, 24: 28, 28: 28}
+_BALANCE_UNDERLINE_Y = {1.0: 35, 1.5: 41}  # sits just under the balance number
+
+
+def _density_font_size(base, factor):
+    """Montserrat size to use for a base (mdpi) size at the given density."""
+    if factor == 1.0:
+        return base
+    return _HDPI_FONT_STEP.get(base, base)
+
+
+def _balance_underline_y(factor):
+    return _BALANCE_UNDERLINE_Y.get(factor, 35)
+
+
+def _screen_density_factor():
+    return _hero_density_factor(DisplayMetrics.width(), DisplayMetrics.height())
+
+
+def _density_font(base):
+    """lv.font_montserrat_<n> for `base`, stepped up on hdpi screens."""
+    size = _density_font_size(base, _screen_density_factor())
+    return getattr(lv, "font_montserrat_%d" % size)
+
+
 def _resolve_hero_src(icon_path, hero, factor, path_exists):
     """Pick the hero PNG and LVGL zoom (256 = 1.0x) for a density factor.
 
@@ -942,7 +972,8 @@ class DisplayWallet(Activity):
         self.main_screen.set_style_pad_all(0, lv.PART.MAIN)
         # This line needs to be drawn first, otherwise it's over the balance label and steals all the clicks!
         balance_line = lv.line(self.main_screen)
-        balance_line.set_points([{'x':2,'y':35},{'x':DisplayMetrics.pct_of_width(100-self.receive_qr_pct_of_display*1.2),'y':35}],2)
+        _uy = _balance_underline_y(_screen_density_factor())
+        balance_line.set_points([{'x':2,'y':_uy},{'x':DisplayMetrics.pct_of_width(100-self.receive_qr_pct_of_display*1.2),'y':_uy}],2)
         # Balance is split into two labels: a big number (this label) and a
         # smaller unit suffix ("sats" / "bits" / "micro-BTC" / etc.) just
         # to its right. Two reasons:
@@ -963,7 +994,7 @@ class DisplayWallet(Activity):
         self.balance_label = lv.label(self.main_screen)
         self.balance_label.set_text("")
         self.balance_label.align(lv.ALIGN.TOP_LEFT, 2, 0)
-        self.balance_label.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
+        self.balance_label.set_style_text_font(_density_font(24), lv.PART.MAIN)
         self.balance_label.set_size(lv.SIZE_CONTENT, lv.SIZE_CONTENT)
         self.balance_label.add_flag(lv.obj.FLAG.CLICKABLE)
         self.balance_label.add_event_cb(self.balance_label_clicked_cb, lv.EVENT.CLICKED, None)
@@ -975,7 +1006,7 @@ class DisplayWallet(Activity):
         # panel above the balance underline at y=35 instead of covering it.
         self.balance_unit_label = lv.label(self.main_screen)
         self.balance_unit_label.set_text("")
-        self.balance_unit_label.set_style_text_font(lv.font_montserrat_16, lv.PART.MAIN)
+        self.balance_unit_label.set_style_text_font(_density_font(16), lv.PART.MAIN)
         self.balance_unit_label.set_height(lv.SIZE_CONTENT)
         self.balance_unit_label.align_to(self.balance_label, lv.ALIGN.OUT_RIGHT_BOTTOM, -2, 0)
         self.balance_unit_label.add_flag(lv.obj.FLAG.CLICKABLE)
@@ -1015,7 +1046,7 @@ class DisplayWallet(Activity):
         # string is long.
         self.lightning_bolt = lv.label(self.main_screen)
         self.lightning_bolt.set_text(lv.SYMBOL.CHARGE)
-        self.lightning_bolt.set_style_text_font(lv.font_montserrat_24, lv.PART.MAIN)
+        self.lightning_bolt.set_style_text_font(_density_font(24), lv.PART.MAIN)
         self.lightning_bolt.set_style_text_color(lv.color_hex(0xFFD700), lv.PART.MAIN)
         # dx=0 → icon's right edge flush against the QR's left edge.
         # Previously dx=-4 left a small gap; balance strings in longer
@@ -1211,7 +1242,7 @@ class DisplayWallet(Activity):
         # Text aligned CENTER inside the widget so the visible content
         # sits centred under the hero.
         self.hero_name_label = lv.label(self.main_screen)
-        self.hero_name_label.set_style_text_font(lv.font_montserrat_12, lv.PART.MAIN)
+        self.hero_name_label.set_style_text_font(_density_font(12), lv.PART.MAIN)
         # CLIP enforces a hard pixel boundary so nothing escapes the widget
         # bounds (the cog handles the visual occlusion on the right edge).
         self.hero_name_label.set_long_mode(lv.label.LONG_MODE.CLIP)
@@ -1236,7 +1267,7 @@ class DisplayWallet(Activity):
         settings_button.add_event_cb(self.settings_button_tap,lv.EVENT.CLICKED,None)
         self.settings_icon = lv.label(settings_button)
         self.settings_icon.set_text(lv.SYMBOL.SETTINGS)
-        self.settings_icon.set_style_text_font(lv.font_montserrat_18, lv.PART.MAIN)
+        self.settings_icon.set_style_text_font(_density_font(18), lv.PART.MAIN)
         self.settings_icon.set_style_text_color(self._icon_color(), lv.PART.MAIN)
         # Nudge the gear glyph 4 px right + 4 px down inside its 40×40
         # widget (vs `.center()`), freeing a sliver of breathing room on
@@ -1854,7 +1885,7 @@ class DisplayWallet(Activity):
         try:
             line_end_x = DisplayMetrics.pct_of_width(
                 100 - self.receive_qr_pct_of_display * 1.2)
-            line_y = 35
+            line_y = _balance_underline_y(_screen_density_factor())
             dot_half = 4
             # Nudge 6px up from the line centre so the dot sits cleanly in
             # the gap above the line, not overlapping the stroke.

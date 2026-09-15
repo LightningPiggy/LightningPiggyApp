@@ -1,3 +1,7 @@
+0.7.6
+=====
+- Density-aware header fonts: on hdpi-class screens (e.g. 480x320 and 640x480) the balance number, unit suffix, bolt icon, gear icon and hero name step up one built-in font size (24 to 28, 16 to 20, 18 to 24, 12 to 14) and the balance underline moves down to match, so the header no longer looks undersized on big panels. Classic 320x240 screens are unchanged; the transactions list keeps its tap-to-cycle size
+
 0.7.5
 =====
 - New "Payment Sound" option in Settings -> Customise: the piggy can play a sound effect through the speaker when a payment is received (alongside the confetti). Choose Off (default), Pig Oink, Pig Squeal, Hungry Pig, or Random; tapping an option plays it immediately so you can compare them before leaving the screen. Boards without a speaker stay silent. Sounds are open-licensed farm recordings (oink by Secretlondon, CC BY-SA 3.0; squeal by Foleyhaven, CC0; hungry pig by Jofae, CC0), credited in res/sounds/CREDITS.md
