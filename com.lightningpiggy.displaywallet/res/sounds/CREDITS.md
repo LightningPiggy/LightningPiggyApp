@@ -1,19 +1,27 @@
 # Sound effect credits
 
-Both files were converted to 16 kHz mono 16-bit PCM WAV, trimmed to at most
-1.5 s, faded out and peak-normalized for the device speaker. The originals
-are on Wikimedia Commons (mirrored from Freesound).
+All files were converted to 16 kHz mono 16-bit PCM WAV, trimmed, faded and
+peak-normalized for the device speaker. The originals are on Wikimedia
+Commons.
 
-## pig_grunt.wav
-- Source: "Pig grunt - Erdie.ogg", https://commons.wikimedia.org/wiki/File:Pig_grunt_-_Erdie.ogg
-- Original: https://www.freesound.org/people/Erdie/sounds/44274/
-- Author: Erdie
-- License: CC BY 3.0, https://creativecommons.org/licenses/by/3.0/
-- Changes: trimmed, resampled, normalized (see above)
+## pig_oink.wav
+- Source: "Mudchute pig 2.ogg", https://commons.wikimedia.org/wiki/File:Mudchute_pig_2.ogg
+- Author: Secretlondon (recorded at Mudchute City Farm, London)
+- License: CC BY-SA 3.0, https://creativecommons.org/licenses/by-sa/3.0/
+- Changes: resampled, faded, normalized
+
+## pig_double_oink.wav
+- Sources: "Mudchute pig 2.ogg" followed by "Mudchute pig 3.ogg",
+  https://commons.wikimedia.org/wiki/File:Mudchute_pig_2.ogg and
+  https://commons.wikimedia.org/wiki/File:Mudchute_pig_3.ogg
+- Author: Secretlondon (recorded at Mudchute City Farm, London)
+- License: CC BY-SA 3.0, https://creativecommons.org/licenses/by-sa/3.0/
+- Changes: the two oinks joined with a 120 ms gap, resampled, normalized.
+  This derived file is likewise CC BY-SA 3.0.
 
 ## pig_squeal.wav
 - Source: "618483 foleyhaven piglet-squeal-01.flac", https://commons.wikimedia.org/wiki/File:618483_foleyhaven_piglet-squeal-01.flac
 - Original: https://freesound.org/people/Foleyhaven/sounds/618483/
 - Author: Foleyhaven
 - License: CC0 1.0 (public domain dedication), https://creativecommons.org/publicdomain/zero/1.0/
-- Changes: trimmed, resampled, normalized (see above)
+- Changes: trimmed to 1.43 s, resampled, faded, normalized

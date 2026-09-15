@@ -27,7 +27,8 @@ class TestPickPaymentSound(unittest.TestCase):
         self.assertIsNone(_pick_payment_sound(None))
 
     def test_named_sounds(self):
-        self.assertEqual(_pick_payment_sound("grunt"), _SOUND_DIR + "pig_grunt.wav")
+        self.assertEqual(_pick_payment_sound("oink"), _SOUND_DIR + "pig_oink.wav")
+        self.assertEqual(_pick_payment_sound("double_oink"), _SOUND_DIR + "pig_double_oink.wav")
         self.assertEqual(_pick_payment_sound("squeal"), _SOUND_DIR + "pig_squeal.wav")
 
     def test_random_uses_chooser_over_named_sounds(self):
@@ -36,22 +37,23 @@ class TestPickPaymentSound(unittest.TestCase):
             offered.extend(seq)
             return "squeal"
         self.assertEqual(_pick_payment_sound("random", chooser), _SOUND_DIR + "pig_squeal.wav")
-        self.assertEqual(sorted(offered), ["grunt", "squeal"])
+        self.assertEqual(sorted(offered), ["double_oink", "oink", "squeal"])
 
     def test_random_default_chooser_yields_a_real_sound(self):
         for _ in range(20):
             self.assertIn(_pick_payment_sound("random"),
-                          (_SOUND_DIR + "pig_grunt.wav", _SOUND_DIR + "pig_squeal.wav"))
+                          (_SOUND_DIR + "pig_oink.wav", _SOUND_DIR + "pig_double_oink.wav", _SOUND_DIR + "pig_squeal.wav"))
 
     def test_labels(self):
-        self.assertEqual(_payment_sound_label("grunt"), "Pig Grunt")
+        self.assertEqual(_payment_sound_label("oink"), "Pig Oink")
+        self.assertEqual(_payment_sound_label("double_oink"), "Double Oink")
         self.assertEqual(_payment_sound_label("random"), "Random")
         self.assertEqual(_payment_sound_label("off"), "Off")
         self.assertEqual(_payment_sound_label("bogus"), "Off")
 
     def test_picker_options_cover_every_file_plus_off_and_random(self):
         values = [v for _, v in PAYMENT_SOUND_OPTIONS]
-        self.assertEqual(values, ["off", "grunt", "squeal", "random"])
+        self.assertEqual(values, ["off", "oink", "double_oink", "squeal", "random"])
 
 
 if __name__ == "__main__":

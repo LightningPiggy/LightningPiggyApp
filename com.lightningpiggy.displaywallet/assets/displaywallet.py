@@ -119,15 +119,20 @@ def _resolve_hero_src(icon_path, hero, factor, path_exists):
 # --- Payment sound effects ---------------------------------------------------
 # Played through the i2s speaker (if the board has one) when a payment lands,
 # alongside the confetti. Value is a single device-wide pref, `payment_sound`:
-# "off" (default), one of the sounds, or "random". WAVs live in res/sounds/;
+# "off" (default), one of the sounds, or "random" (any of them). WAVs live in res/sounds/;
 # see res/sounds/CREDITS.md for their licenses.
 PAYMENT_SOUND_OPTIONS = [
     ("Off", "off"),
-    ("Pig Grunt", "grunt"),
+    ("Pig Oink", "oink"),
+    ("Double Oink", "double_oink"),
     ("Pig Squeal", "squeal"),
     ("Random", "random"),
 ]
-_PAYMENT_SOUND_FILES = {"grunt": "pig_grunt.wav", "squeal": "pig_squeal.wav"}
+_PAYMENT_SOUND_FILES = {
+    "oink": "pig_oink.wav",
+    "double_oink": "pig_double_oink.wav",
+    "squeal": "pig_squeal.wav",
+}
 _SOUND_DIR = "apps/com.lightningpiggy.displaywallet/res/sounds/"
 
 
