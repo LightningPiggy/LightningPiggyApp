@@ -1,6 +1,6 @@
 0.7.5
 =====
-- New "Payment Sound" option in Settings -> Customise: the piggy can play a sound effect through the speaker when a payment is received (alongside the confetti). Choose Off (default), Pig Grunt, Pig Squeal, or Random; picking an option previews it. Boards without a speaker stay silent. Sounds are open-licensed recordings (CC BY 3.0 grunt by Erdie, CC0 squeal by Foleyhaven), credited in res/sounds/CREDITS.md
+- New "Payment Sound" option in Settings -> Customise: the piggy can play a sound effect through the speaker when a payment is received (alongside the confetti). Choose Off (default), Pig Grunt, Pig Squeal, or Random; tapping an option plays it immediately so you can compare them before leaving the screen. Boards without a speaker stay silent. Sounds are open-licensed recordings (CC BY 3.0 grunt by Erdie, CC0 squeal by Foleyhaven), credited in res/sounds/CREDITS.md
 
 0.7.4
 =====

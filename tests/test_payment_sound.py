@@ -14,7 +14,7 @@ import unittest
 
 for _m in ("displaywallet",):
     sys.modules.pop(_m, None)
-from displaywallet import _pick_payment_sound, PAYMENT_SOUND_OPTIONS, _SOUND_DIR
+from displaywallet import _pick_payment_sound, _payment_sound_label, PAYMENT_SOUND_OPTIONS, _SOUND_DIR
 
 
 class TestPickPaymentSound(unittest.TestCase):
@@ -42,6 +42,12 @@ class TestPickPaymentSound(unittest.TestCase):
         for _ in range(20):
             self.assertIn(_pick_payment_sound("random"),
                           (_SOUND_DIR + "pig_grunt.wav", _SOUND_DIR + "pig_squeal.wav"))
+
+    def test_labels(self):
+        self.assertEqual(_payment_sound_label("grunt"), "Pig Grunt")
+        self.assertEqual(_payment_sound_label("random"), "Random")
+        self.assertEqual(_payment_sound_label("off"), "Off")
+        self.assertEqual(_payment_sound_label("bogus"), "Off")
 
     def test_picker_options_cover_every_file_plus_off_and_random(self):
         values = [v for _, v in PAYMENT_SOUND_OPTIONS]
