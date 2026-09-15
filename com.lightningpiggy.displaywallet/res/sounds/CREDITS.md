@@ -25,3 +25,9 @@ Commons.
 - Author: Foleyhaven
 - License: CC0 1.0 (public domain dedication), https://creativecommons.org/publicdomain/zero/1.0/
 - Changes: trimmed to 1.43 s, resampled, faded, normalized
+
+## pig_hungry.wav
+- Source: "Angry Pig Oinking", https://freesound.org/people/Jofae/sounds/352698/
+- Author: Jofae ("my hungry pig squealing and grunting angrily at me")
+- License: CC0 1.0 (public domain dedication), https://creativecommons.org/publicdomain/zero/1.0/
+- Changes: 1.3 s excerpt from the start of the recording, resampled, faded, normalized
