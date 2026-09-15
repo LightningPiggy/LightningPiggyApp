@@ -1,3 +1,7 @@
+0.7.5
+=====
+- New "Payment Sound" option in Settings -> Customise: the piggy can play a sound effect through the speaker when a payment is received (alongside the confetti). Choose Off (default), Pig Oink, Pig Squeal, Hungry Pig, or Random; tapping an option plays it immediately so you can compare them before leaving the screen. Boards without a speaker stay silent. Sounds are open-licensed farm recordings (oink by Secretlondon, CC BY-SA 3.0; squeal by Foleyhaven, CC0; hungry pig by Jofae, CC0), credited in res/sounds/CREDITS.md
+
 0.7.4
 =====
 - Wallet setup: the LNBits URL field now suggests https://demo.lnbits.com instead of the stale https://demo.lnpiggy.com (example data in comments and tests updated to match)

@@ -116,6 +116,50 @@ def _resolve_hero_src(icon_path, hero, factor, path_exists):
     return mdpi, int(256 * factor)
 
 
+# --- Payment sound effects ---------------------------------------------------
+# Played through the i2s speaker (if the board has one) when a payment lands,
+# alongside the confetti. Value is a single device-wide pref, `payment_sound`:
+# "off" (default), one of the sounds, or "random" (any of them). WAVs live in res/sounds/;
+# see res/sounds/CREDITS.md for their licenses.
+PAYMENT_SOUND_OPTIONS = [
+    ("Off", "off"),
+    ("Pig Oink", "oink"),
+    ("Pig Squeal", "squeal"),
+    ("Hungry Pig", "hungry"),
+    ("Random", "random"),
+]
+_PAYMENT_SOUND_FILES = {
+    "oink": "pig_oink.wav",
+    "squeal": "pig_squeal.wav",
+    "hungry": "pig_hungry.wav",
+}
+_SOUND_DIR = "apps/com.lightningpiggy.displaywallet/res/sounds/"
+
+
+def _payment_sound_label(value):
+    """Human-readable picker label for a `payment_sound` pref value."""
+    for label, v in PAYMENT_SOUND_OPTIONS:
+        if v == value:
+            return label
+    return "Off"
+
+
+def _pick_payment_sound(setting, choice=None):
+    """Map the `payment_sound` pref to a WAV filename, or None for silence.
+
+    `choice` is the picker used for "random" (defaults to random.choice);
+    injected so tests can pin the outcome. Unknown values are treated as
+    "off" so a stale/typo'd pref never crashes the payment path.
+    """
+    if setting == "random":
+        if choice is None:
+            import random
+            choice = random.choice
+        setting = choice(sorted(_PAYMENT_SOUND_FILES))
+    name = _PAYMENT_SOUND_FILES.get(setting)
+    return (_SOUND_DIR + name) if name else None
+
+
 def _slot_suffix(slot):
     """Suffix appended to per-slot pref keys: '' for slot 1 (preserves
     backward-compat with single-wallet builds — slot 1 keeps using
@@ -451,6 +495,16 @@ class CustomiseSettingsActivity(SettingsActivity):
             "default_value": "21",
             "changed_callback": callbacks.get("payments_to_show"),
         }
+        # Custom picker (not the stock radio screen) so a tap samples the
+        # sound immediately: the stock InputActivity only reports the value
+        # after Save, which makes a sound picker feel dead. See
+        # PaymentSoundSettingsActivity.
+        payment_sound_setting = {
+            "title": "Payment Sound", "key": "payment_sound", "ui": "activity",
+            "activity_class": PaymentSoundSettingsActivity,
+            "placeholder": _payment_sound_label(self.prefs.get_string("payment_sound", "off")),
+            "changed_callback": callbacks.get("payment_sound"),
+        }
         self.settings = [
             {"title": "Balance Denomination", "key": denom_key, "ui": "activity",
              "activity_class": DenominationSettingsActivity,
@@ -461,6 +515,7 @@ class CustomiseSettingsActivity(SettingsActivity):
             {"title": "Theme", "key": "theme_override", "activity_class": True,
              "placeholder": theme_label},
             payments_to_show_setting,
+            payment_sound_setting,
         ]
         screen = lv.obj()
         screen.set_style_pad_all(DisplayMetrics.pct_of_width(2), lv.PART.MAIN)
@@ -664,6 +719,100 @@ class DenominationSettingsActivity(Activity):
         else:
             self.finish()
 
+
+
+class PaymentSoundSettingsActivity(Activity):
+    """Payment sound picker where a tap both selects and samples the sound.
+
+    The stock radio-button screen (InputActivity) only hands the value back
+    on Save, so previewing there is impossible. Here every tap persists the
+    choice immediately and plays it via the changed_callback (Random plays
+    one of the two, like a real payment would; Off is silent). There is no
+    Cancel/Save pair: tapping is the decision, Done just leaves.
+    """
+
+    def onCreate(self):
+        extras = self.getIntent().extras or {}
+        self.prefs = extras.get("prefs")
+        self.setting = extras.get("setting") or {}
+        current = self.prefs.get_string("payment_sound", "off")
+
+        screen = lv.obj()
+        screen.set_style_pad_all(DisplayMetrics.pct_of_width(2), lv.PART.MAIN)
+        screen.set_flex_flow(lv.FLEX_FLOW.COLUMN)
+        screen.set_style_border_width(0, lv.PART.MAIN)
+        _apply_screen_theme(screen)
+
+        title = lv.label(screen)
+        title.set_text("Payment Sound")
+        title.set_style_text_font(lv.font_montserrat_16, lv.PART.MAIN)
+
+        hint = lv.label(screen)
+        hint.set_text("Tap an option to hear it")
+        hint.set_style_text_opa(lv.OPA._70, lv.PART.MAIN)
+
+        col = lv.obj(screen)
+        col.set_width(lv.pct(100))
+        col.set_height(lv.SIZE_CONTENT)
+        col.set_style_border_width(0, lv.PART.MAIN)
+        col.set_style_pad_all(0, lv.PART.MAIN)
+        col.set_flex_flow(lv.FLEX_FLOW.COLUMN)
+
+        self.active_index = -1
+        self.checkboxes = []
+        for i, (label_text, value) in enumerate(PAYMENT_SOUND_OPTIONS):
+            cb = lv.checkbox(col)
+            cb.set_text(label_text)
+            cb.set_width(lv.pct(100))
+            style_radio = lv.style_t()
+            style_radio.init()
+            style_radio.set_radius(lv.RADIUS_CIRCLE)
+            cb.add_style(style_radio, lv.PART.INDICATOR)
+            style_radio_chk = lv.style_t()
+            style_radio_chk.init()
+            style_radio_chk.set_bg_image_src(None)
+            cb.add_style(style_radio_chk, lv.PART.INDICATOR | lv.STATE.CHECKED)
+            cb.add_event_cb(lambda e, idx=i: self._choose(idx), lv.EVENT.VALUE_CHANGED, None)
+            if current == value:
+                cb.add_state(lv.STATE.CHECKED)
+                self.active_index = i
+            self.checkboxes.append(cb)
+
+        done_btn = lv.button(screen)
+        done_btn.set_size(lv.pct(100), lv.SIZE_CONTENT)
+        done_label = lv.label(done_btn)
+        done_label.set_text("Done")
+        done_label.center()
+        done_btn.add_event_cb(lambda e: self.finish(), lv.EVENT.CLICKED, None)
+
+        focusgroup = lv.group_get_default()
+        if focusgroup:
+            for cb in self.checkboxes:
+                focusgroup.add_obj(cb)
+            focusgroup.add_obj(done_btn)
+
+        self.setContentView(screen)
+
+    def _choose(self, idx):
+        # Keep exactly one radio checked. Re-tapping the active one keeps it
+        # checked (a checkbox would otherwise toggle off) and samples again.
+        if self.active_index >= 0 and self.active_index != idx:
+            self.checkboxes[self.active_index].remove_state(lv.STATE.CHECKED)
+        self.checkboxes[idx].add_state(lv.STATE.CHECKED)
+        self.active_index = idx
+
+        label_text, new_value = PAYMENT_SOUND_OPTIONS[idx]
+        editor = self.prefs.edit()
+        editor.put_string("payment_sound", new_value)
+        editor.commit()
+        value_label = self.setting.get("value_label")
+        if value_label:
+            value_label.set_text(label_text)
+        # Always call it, even for a re-tap of the same value: the callback
+        # is the preview, and hearing it again is the point.
+        changed_callback = self.setting.get("changed_callback")
+        if changed_callback:
+            changed_callback(new_value)
 
 class DisplayWallet(Activity):
 
@@ -2078,6 +2227,33 @@ class DisplayWallet(Activity):
         # coord read logic is shared between onCreate and hero-image swaps.
         self._reposition_stale_indicator()
 
+    def _play_payment_sound(self, setting=None):
+        """Play the configured payment sound. Never raises: no speaker, a
+        missing file, or an older MPOS without AudioManager just means
+        silence, the balance update must not be affected."""
+        try:
+            if setting is None:
+                setting = self.prefs.get_string("payment_sound", "off")
+            path = _pick_payment_sound(setting)
+            if not path:
+                return
+            from mpos import AudioManager
+            output = AudioManager.find_output_by_kind("i2s")
+            if output is None:
+                return
+            AudioManager.player(
+                file_path=path,
+                stream_type=AudioManager.STREAM_NOTIFICATION,
+                output=output,
+            ).start()
+        except Exception as e:
+            print(f"payment sound failed: {e}")
+
+    def _on_payment_sound_changed(self, new_value):
+        # Preview the newly chosen sound so the user hears what they picked
+        # (for "random" that is one of the two, like a real payment would).
+        self._play_payment_sound(new_value)
+
     def _on_hero_image_changed(self, new_value):
         """Called when hero image setting changes."""
         self._update_hero_image()
@@ -2350,6 +2526,7 @@ class DisplayWallet(Activity):
 
         if sats_added > 0:
             self.confetti.start()
+            self._play_payment_sound()
 
         balance = self.wallet.last_known_balance
         print(f"balance: {balance}")
@@ -2517,8 +2694,8 @@ class DisplayWallet(Activity):
              "_callbacks": _wallet_callbacks},
             {"title": "Customise", "key": "customise", "ui": "activity",
              "activity_class": CustomiseSettingsActivity,
-             "placeholder": "Balance denomination, hero image",
-             "_callbacks": {"denomination": self._on_denomination_changed, "hero_image": self._on_hero_image_changed, "hero_name": self._on_hero_name_changed, "payments_to_show": self._on_payments_to_show_changed}},
+             "placeholder": "Balance denomination, hero image, payment sound",
+             "_callbacks": {"denomination": self._on_denomination_changed, "hero_image": self._on_hero_image_changed, "hero_name": self._on_hero_name_changed, "payments_to_show": self._on_payments_to_show_changed, "payment_sound": self._on_payment_sound_changed}},
             {"title": "Screen Lock", "key": "screen_lock", "activity_class": True,
              "placeholder": "On - tapping disabled" if self.prefs.get_string("screen_lock", "off") == "on" else "Off - tapping changes display"},
         ]
