@@ -124,14 +124,12 @@ def _resolve_hero_src(icon_path, hero, factor, path_exists):
 PAYMENT_SOUND_OPTIONS = [
     ("Off", "off"),
     ("Pig Oink", "oink"),
-    ("Double Oink", "double_oink"),
     ("Pig Squeal", "squeal"),
     ("Hungry Pig", "hungry"),
     ("Random", "random"),
 ]
 _PAYMENT_SOUND_FILES = {
     "oink": "pig_oink.wav",
-    "double_oink": "pig_double_oink.wav",
     "squeal": "pig_squeal.wav",
     "hungry": "pig_hungry.wav",
 }

@@ -10,15 +10,6 @@ Commons.
 - License: CC BY-SA 3.0, https://creativecommons.org/licenses/by-sa/3.0/
 - Changes: resampled, faded, normalized
 
-## pig_double_oink.wav
-- Sources: "Mudchute pig 2.ogg" followed by "Mudchute pig 3.ogg",
-  https://commons.wikimedia.org/wiki/File:Mudchute_pig_2.ogg and
-  https://commons.wikimedia.org/wiki/File:Mudchute_pig_3.ogg
-- Author: Secretlondon (recorded at Mudchute City Farm, London)
-- License: CC BY-SA 3.0, https://creativecommons.org/licenses/by-sa/3.0/
-- Changes: the two oinks joined with a 120 ms gap, resampled, normalized.
-  This derived file is likewise CC BY-SA 3.0.
-
 ## pig_squeal.wav
 - Source: "618483 foleyhaven piglet-squeal-01.flac", https://commons.wikimedia.org/wiki/File:618483_foleyhaven_piglet-squeal-01.flac
 - Original: https://freesound.org/people/Foleyhaven/sounds/618483/
