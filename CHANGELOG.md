@@ -1,3 +1,7 @@
+0.7.7
+=====
+- Payment sound clips re-cut with 45 ms of leading silence, a fade-in, DC-offset removal and a silent tail, following the ClipTV convention so a codec's start-of-playback transient never lands on the sound itself. No audible change on the 3.5 inch board's i2s speaker; matters on codec-driven boards
+
 0.7.6
 =====
 - Density-aware header fonts: on hdpi-class screens (e.g. 480x320 and 640x480) the balance number, unit suffix, bolt icon, gear icon and hero name step up one built-in font size (24 to 28, 16 to 20, 18 to 24, 12 to 14) and the balance underline moves down to match, so the header no longer looks undersized on big panels. Classic 320x240 screens are unchanged; the transactions list keeps its tap-to-cycle size
