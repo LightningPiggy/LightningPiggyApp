@@ -1,3 +1,7 @@
+0.7.5
+=====
+- New "Payment Sound" option in Settings -> Customise: the piggy can play a sound effect through the speaker when a payment is received (alongside the confetti). Choose Off (default), Pig Grunt, Pig Squeal, or Random; picking an option previews it. Boards without a speaker stay silent. Sounds are open-licensed recordings (CC BY 3.0 grunt by Erdie, CC0 squeal by Foleyhaven), credited in res/sounds/CREDITS.md
+
 0.7.4
 =====
 - Wallet setup: the LNBits URL field now suggests https://demo.lnbits.com instead of the stale https://demo.lnpiggy.com (example data in comments and tests updated to match)

@@ -116,6 +116,37 @@ def _resolve_hero_src(icon_path, hero, factor, path_exists):
     return mdpi, int(256 * factor)
 
 
+# --- Payment sound effects ---------------------------------------------------
+# Played through the i2s speaker (if the board has one) when a payment lands,
+# alongside the confetti. Value is a single device-wide pref, `payment_sound`:
+# "off" (default), one of the sounds, or "random". WAVs live in res/sounds/;
+# see res/sounds/CREDITS.md for their licenses.
+PAYMENT_SOUND_OPTIONS = [
+    ("Off", "off"),
+    ("Pig Grunt", "grunt"),
+    ("Pig Squeal", "squeal"),
+    ("Random", "random"),
+]
+_PAYMENT_SOUND_FILES = {"grunt": "pig_grunt.wav", "squeal": "pig_squeal.wav"}
+_SOUND_DIR = "apps/com.lightningpiggy.displaywallet/res/sounds/"
+
+
+def _pick_payment_sound(setting, choice=None):
+    """Map the `payment_sound` pref to a WAV filename, or None for silence.
+
+    `choice` is the picker used for "random" (defaults to random.choice);
+    injected so tests can pin the outcome. Unknown values are treated as
+    "off" so a stale/typo'd pref never crashes the payment path.
+    """
+    if setting == "random":
+        if choice is None:
+            import random
+            choice = random.choice
+        setting = choice(sorted(_PAYMENT_SOUND_FILES))
+    name = _PAYMENT_SOUND_FILES.get(setting)
+    return (_SOUND_DIR + name) if name else None
+
+
 def _slot_suffix(slot):
     """Suffix appended to per-slot pref keys: '' for slot 1 (preserves
     backward-compat with single-wallet builds — slot 1 keeps using
@@ -451,6 +482,12 @@ class CustomiseSettingsActivity(SettingsActivity):
             "default_value": "21",
             "changed_callback": callbacks.get("payments_to_show"),
         }
+        payment_sound_setting = {
+            "title": "Payment Sound", "key": "payment_sound", "ui": "radiobuttons",
+            "ui_options": PAYMENT_SOUND_OPTIONS,
+            "default_value": "off",
+            "changed_callback": callbacks.get("payment_sound"),
+        }
         self.settings = [
             {"title": "Balance Denomination", "key": denom_key, "ui": "activity",
              "activity_class": DenominationSettingsActivity,
@@ -461,6 +498,7 @@ class CustomiseSettingsActivity(SettingsActivity):
             {"title": "Theme", "key": "theme_override", "activity_class": True,
              "placeholder": theme_label},
             payments_to_show_setting,
+            payment_sound_setting,
         ]
         screen = lv.obj()
         screen.set_style_pad_all(DisplayMetrics.pct_of_width(2), lv.PART.MAIN)
@@ -2078,6 +2116,33 @@ class DisplayWallet(Activity):
         # coord read logic is shared between onCreate and hero-image swaps.
         self._reposition_stale_indicator()
 
+    def _play_payment_sound(self, setting=None):
+        """Play the configured payment sound. Never raises: no speaker, a
+        missing file, or an older MPOS without AudioManager just means
+        silence, the balance update must not be affected."""
+        try:
+            if setting is None:
+                setting = self.prefs.get_string("payment_sound", "off")
+            path = _pick_payment_sound(setting)
+            if not path:
+                return
+            from mpos import AudioManager
+            output = AudioManager.find_output_by_kind("i2s")
+            if output is None:
+                return
+            AudioManager.player(
+                file_path=path,
+                stream_type=AudioManager.STREAM_NOTIFICATION,
+                output=output,
+            ).start()
+        except Exception as e:
+            print(f"payment sound failed: {e}")
+
+    def _on_payment_sound_changed(self, new_value):
+        # Preview the newly chosen sound so the user hears what they picked
+        # (for "random" that is one of the two, like a real payment would).
+        self._play_payment_sound(new_value)
+
     def _on_hero_image_changed(self, new_value):
         """Called when hero image setting changes."""
         self._update_hero_image()
@@ -2350,6 +2415,7 @@ class DisplayWallet(Activity):
 
         if sats_added > 0:
             self.confetti.start()
+            self._play_payment_sound()
 
         balance = self.wallet.last_known_balance
         print(f"balance: {balance}")
@@ -2517,8 +2583,8 @@ class DisplayWallet(Activity):
              "_callbacks": _wallet_callbacks},
             {"title": "Customise", "key": "customise", "ui": "activity",
              "activity_class": CustomiseSettingsActivity,
-             "placeholder": "Balance denomination, hero image",
-             "_callbacks": {"denomination": self._on_denomination_changed, "hero_image": self._on_hero_image_changed, "hero_name": self._on_hero_name_changed, "payments_to_show": self._on_payments_to_show_changed}},
+             "placeholder": "Balance denomination, hero image, payment sound",
+             "_callbacks": {"denomination": self._on_denomination_changed, "hero_image": self._on_hero_image_changed, "hero_name": self._on_hero_name_changed, "payments_to_show": self._on_payments_to_show_changed, "payment_sound": self._on_payment_sound_changed}},
             {"title": "Screen Lock", "key": "screen_lock", "activity_class": True,
              "placeholder": "On - tapping disabled" if self.prefs.get_string("screen_lock", "off") == "on" else "Off - tapping changes display"},
         ]
