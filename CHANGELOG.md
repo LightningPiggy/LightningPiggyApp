@@ -1,6 +1,7 @@
 0.7.7
 =====
 - Payment sound clips re-cut with 45 ms of leading silence, a fade-in, DC-offset removal and a silent tail, following the ClipTV convention so a codec's start-of-playback transient never lands on the sound itself. No audible change on the 3.5 inch board's i2s speaker; matters on codec-driven boards
+- Sync nostr_service.py with com_micropythonos_nostr app: the relay watchdog reconnect now keeps the message pool (no more silent receive-path split after a reconnect) and any NWC event counts as wallet activity (MicroPythonOS#287)
 
 0.7.6
 =====
