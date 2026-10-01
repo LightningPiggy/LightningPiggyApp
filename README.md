@@ -10,6 +10,7 @@ App package: `com.lightningpiggy.displaywallet/`.
 
 ## Docs
 
+- [docs/troubleshooting.md](docs/troubleshooting.md) — setup problems and fixes (e.g. the LNbits Pay Link "Invalid URL for LNURL encoding" error on Umbrel).
 - [docs/appearance.md](docs/appearance.md) — theming / appearance.
 - [docs/assets.md](docs/assets.md) — image/asset format rules (indexed-palette PNGs).
 - [docs/dino-easter-egg.md](docs/dino-easter-egg.md) — **handover** for the
