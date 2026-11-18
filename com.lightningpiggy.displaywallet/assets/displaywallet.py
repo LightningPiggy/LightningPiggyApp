@@ -147,7 +147,7 @@ def _resolve_hero_src(icon_path, hero, factor, path_exists):
 
 
 # --- Payment sound effects ---------------------------------------------------
-# Played through the i2s speaker (if the board has one) when a payment lands,
+# Played through the board's speaker (see _payment_sound_output) when a payment lands,
 # alongside the confetti. Value is a single device-wide pref, `payment_sound`:
 # "off" (default), one of the sounds, or "random" (any of them). WAVs live in res/sounds/;
 # see res/sounds/CREDITS.md for their licenses.
@@ -185,6 +185,28 @@ def _payment_sound_label(value):
         if v == value:
             return label
     return "Off"
+
+
+def _payment_sound_output(audio):
+    """The audio output a payment sound plays on, or None for silence.
+
+    `audio` is the AudioManager class. The output chosen in Settings > Audio
+    is used when it can play a WAV file: an i2s speaker, or a piezo buzzer
+    on MicroPythonOS 0.22.0 and later, which plays files on a buzzer and is
+    recognised by the buzzer_gain setting its outputs gained in that same
+    release. Otherwise the first i2s output is used, as before 0.22.0.
+    """
+    try:
+        chosen = audio.get_default_output()
+    except Exception:
+        chosen = None
+    if chosen is not None:
+        kind = getattr(chosen, "kind", None)
+        if kind == "i2s":
+            return chosen
+        if kind == "buzzer" and hasattr(chosen, "buzzer_gain"):
+            return chosen
+    return audio.find_output_by_kind("i2s")
 
 
 def _pick_payment_sound(setting, choice=None):
@@ -2289,7 +2311,7 @@ class DisplayWallet(Activity):
             if not path:
                 return
             from mpos import AudioManager
-            output = AudioManager.find_output_by_kind("i2s")
+            output = _payment_sound_output(AudioManager)
             if output is None:
                 return
             AudioManager.player(

@@ -1,3 +1,8 @@
+0.7.8
+=====
+- Payment sound follows the speaker chosen in Settings > Audio. On MicroPythonOS 0.22.0 and later that includes a piezo buzzer, so boards with only a buzzer (Fri3d badges, M5Stack Fire, ODROID-GO, LilyGO T4 and others) now play the payment sound too. Older firmware keeps using the i2s speaker, as before
+- Sync nostr_service.py with com_micropythonos_nostr app (NIP-17 private chat changes only; nothing changes for Nostr Wallet Connect)
+
 0.7.7
 =====
 - Payment sound clips re-cut with 45 ms of leading silence, a fade-in, DC-offset removal and a silent tail, following the ClipTV convention so a codec's start-of-playback transient never lands on the sound itself. No audible change on the 3.5 inch board's i2s speaker; matters on codec-driven boards
