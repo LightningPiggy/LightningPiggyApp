@@ -35,6 +35,7 @@ import hashlib
 import time
 
 from mpos import SharedPreferences
+from mpos.util import urldecode
 from payment import Payment
 from unique_sorted_list import UniqueSortedList
 
@@ -81,6 +82,34 @@ def slot_suffix(slot):
     return "_2" if str(slot) == "2" else ""
 
 
+def nwc_url_lud16(nwc_url):
+    """The lightning address in an NWC URL's `lud16` parameter, or None."""
+    if not nwc_url:
+        return None
+    if nwc_url.startswith("nostr+walletconnect://"):
+        nwc_url = nwc_url[22:]
+    elif nwc_url.startswith("nwc:"):
+        nwc_url = nwc_url[4:]
+    else:
+        return None
+    parts = urldecode(nwc_url).split("?")
+    if len(parts) < 2:
+        return None
+    for param in parts[1].split("&"):
+        if param.startswith("lud16="):
+            lud16 = param[6:]
+            if "@" in lud16:
+                return lud16
+    return None
+
+
+def nwc_receive_override(prefs, suffix=""):
+    """The NWC wallet's receive address: the lud16 in its NWC URL when the
+    URL has one, otherwise the Optional LN Address setting."""
+    return (nwc_url_lud16(prefs.get_string("nwc_url" + suffix))
+            or prefs.get_string("nwc_static_receive_code" + suffix))
+
+
 def compute_slot_key(wallet_type, slot=1):
     """Return the cache slot_key for a (wallet_type, slot) pair, e.g.
     'lnbits_1', 'nwc_2', 'onchain_1'. The slot is always appended so the
@@ -108,7 +137,7 @@ def compute_fingerprints(wallet_type, prefs, slot=1):
         return creds_fp, qr_fp
     if wallet_type == "nwc":
         nwc_url = prefs.get_string("nwc_url" + s) or ""
-        override = prefs.get_string("nwc_static_receive_code" + s) or ""
+        override = nwc_receive_override(prefs, s) or ""
         creds_fp = _fingerprint("nwc", str(slot), nwc_url)
         qr_fp = _fingerprint("nwc", str(slot), nwc_url, override)
         return creds_fp, qr_fp
