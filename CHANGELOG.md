@@ -2,6 +2,7 @@
 =====
 - Payment sound follows the speaker chosen in Settings > Audio. On MicroPythonOS 0.22.0 and later that includes a piezo buzzer, so boards with only a buzzer (Fri3d badges, M5Stack Fire, ODROID-GO, LilyGO T4 and others) now play the payment sound too. Older firmware keeps using the i2s speaker, as before
 - Sync nostr_service.py with com_micropythonos_nostr app (NIP-17 private chat changes only; nothing changes for Nostr Wallet Connect)
+- Nostr Wallet Connect uses NIP-44 encryption with wallets that offer it (sync nostr_service.py with com_micropythonos_nostr, MicroPythonOS#412). The app reads the wallet's info event and switches to NIP-44 when it lists nip44_v2, falling back to NIP-04 if the wallet refuses. On firmware without the fast NIP-44 core (MicroPythonOS 0.22.0 and older) wallets that also offer NIP-04, such as coinos, stay on NIP-04 so a transaction list never takes seconds to decrypt. LNbits stays on NIP-04, as before
 
 0.7.7
 =====
