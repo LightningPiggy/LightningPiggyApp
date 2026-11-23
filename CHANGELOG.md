@@ -1,5 +1,6 @@
 0.7.8
 =====
+- Refreshing the transaction list no longer freezes the screen for about 3 seconds on every poll. For 21 transactions on an ESP32-S3 it now takes about 0.1 s (0.5 s when a new payment is saved), down from 3.3 s. The json module was imported again for every transaction, and on the device each of those imports searches the flash
 - Payment sound follows the speaker chosen in Settings > Audio. On MicroPythonOS 0.22.0 and later that includes a piezo buzzer, so boards with only a buzzer (Fri3d badges, M5Stack Fire, ODROID-GO, LilyGO T4 and others) now play the payment sound too. Older firmware keeps using the i2s speaker, as before
 - Sync nostr_service.py with com_micropythonos_nostr app (NIP-17 private chat changes only; nothing changes for Nostr Wallet Connect)
 

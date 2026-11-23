@@ -1,3 +1,5 @@
+import json
+
 from mpos import TaskManager
 
 from unique_sorted_list import UniqueSortedList
@@ -224,6 +226,11 @@ class Wallet:
         """
         if not isinstance(text, str):
             return text
+        try:
+            if b"\xed" not in text.encode():
+                return text
+        except UnicodeError:
+            pass
         out = []
         i = 0
         n = len(text)
@@ -244,8 +251,9 @@ class Wallet:
     # {"id": "d410....6e9", "content": "zap zap emoji", "pubkey":"e9f...f50", "created_at": 1767713767, "kind": 9734, "tags":[["p","06ff...4f42"], ["amount", "21000"], ["e", "c1c9...0e92"], ["relays", "wss://relay.nostr.band"]], "sig": "48a...4fd"}
     def try_parse_as_zap(self, comment):
         comment = self._decode_surrogate_pairs(comment)
+        if not isinstance(comment, str) or not comment.lstrip().startswith("{"):
+            return comment
         try:
-            import json
             json_comment = json.loads(comment)
             content = json_comment.get("content")
             if content:
