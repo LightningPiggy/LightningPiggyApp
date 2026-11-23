@@ -9,6 +9,8 @@
 #     relative paths.
 #   - The Lightning Piggy assets/ dir is auto-injected into sys.path so
 #     tests can `import wallet_cache` etc. without manual path hacks.
+#   - Desktop runs are headless (SDL's dummy video driver), as in
+#     MicroPythonOS scripts/test_runner.py; --show-window opts out.
 
 mydir=$(readlink -f "$0")
 mydir=$(dirname "$mydir")
@@ -45,11 +47,15 @@ fi
 # Parse arguments
 ondevice=""
 onetest=""
+show_window=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --ondevice)
             ondevice="yes"
+            ;;
+        --show-window)
+            show_window="yes"
             ;;
         *)
             onetest="$1"
@@ -57,6 +63,18 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
+
+# Desktop tests run headless: each test starts a new binary, and on macOS
+# every new SDL window took the keyboard focus from whatever the user was
+# typing in. The tests do not need the window: LVGL renders without it and
+# simulated input has its own indev. SDL3 (macOS sdl2-compat) reads
+# SDL_VIDEO_DRIVER, SDL2 reads SDL_VIDEODRIVER, and SDL_MAC_BACKGROUND_APP
+# stops activation if a window opens anyway. Values already set are kept.
+if [ -z "$ondevice" ] && [ -z "$show_window" ] && [ "$MPOS_TEST_SHOW_WINDOW" != "1" ]; then
+	export SDL_VIDEO_DRIVER="${SDL_VIDEO_DRIVER:-dummy}"
+	export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-dummy}"
+	export SDL_MAC_BACKGROUND_APP="${SDL_MAC_BACKGROUND_APP:-1}"
+fi
 
 # print os and set binary
 os_name=$(uname -s)
@@ -168,7 +186,7 @@ failed=0
 ran=0
 
 if [ -z "$onetest" ]; then
-	echo "Usage: $0 [one_test_to_run.py] [--ondevice]"
+	echo "Usage: $0 [one_test_to_run.py] [--ondevice] [--show-window]"
 	echo "Example: $0 tests/test_onchain_wallet.py"
 	echo "Example: $0 tests/test_onchain_wallet.py --ondevice"
 	echo "Example: $0 --ondevice"
@@ -176,6 +194,9 @@ if [ -z "$onetest" ]; then
 	echo "If no test is specified: run all tests from $testdir on local machine."
 	echo
 	echo "The '--ondevice' flag will run the test(s) on a connected device using mpremote.py over a serial connection."
+	echo
+	echo "Desktop tests run headless so no window takes the keyboard focus. The '--show-window' flag"
+	echo "(or MPOS_TEST_SHOW_WINDOW=1) shows the MicroPythonOS window instead."
 	echo
 	echo "MicroPythonOS checkout resolved to: $mpos"
 	echo "Lightning Piggy assets resolved to: $lp_assets"
