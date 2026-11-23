@@ -86,7 +86,7 @@ rm -f "$fs"/data/com.micropythonos.settings/config.json
 # disable() above, so the re-imported one starts the asyncio loop for real
 # and never returns: the harness hangs at boot. Re-issue disable() on the
 # fresh module right before main.py hands over to mpos.main.
-main_src=$(sed 's/^    import mpos.main  # noqa: F401$/    import mpos ; mpos.TaskManager.disable() ; import mpos.main  # noqa: F401/' main.py)
+main_src=$(sed 's/^    import mpos.main  # noqa: F401$/    import mpos ; mpos.TaskManager.disable() ; import mpos.main  # noqa: F401/' "$fs"/main.py)
 one_test() {
 	file="$1"
 	if [ ! -f "$file" ]; then
