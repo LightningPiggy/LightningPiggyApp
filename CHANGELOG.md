@@ -1,5 +1,6 @@
 0.7.8
 =====
+- The hero name under the piggy is shown in full instead of being cut to 8 characters, and no longer runs off the bottom of 480x320 screens. A name too wide for the space under the hero drops one font size, and only a name that still doesn't fit ends in "..."
 - Payment sound follows the speaker chosen in Settings > Audio. On MicroPythonOS 0.22.0 and later that includes a piezo buzzer, so boards with only a buzzer (Fri3d badges, M5Stack Fire, ODROID-GO, LilyGO T4 and others) now play the payment sound too. Older firmware keeps using the i2s speaker, as before
 - Sync nostr_service.py with com_micropythonos_nostr app (NIP-17 private chat changes only; nothing changes for Nostr Wallet Connect)
 
