@@ -69,10 +69,19 @@ done
 # typing in. The tests do not need the window: LVGL renders without it and
 # simulated input has its own indev. SDL3 (macOS sdl2-compat) reads
 # SDL_VIDEO_DRIVER, SDL2 reads SDL_VIDEODRIVER, and SDL_MAC_BACKGROUND_APP
-# stops activation if a window opens anyway. Values already set are kept.
-if [ -z "$ondevice" ] && [ -z "$show_window" ] && [ "$MPOS_TEST_SHOW_WINDOW" != "1" ]; then
-	export SDL_VIDEO_DRIVER="${SDL_VIDEO_DRIVER:-dummy}"
-	export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-dummy}"
+# stops activation if a window opens anyway. Values already set are kept,
+# and a driver set under only one of the two names is used for the other
+# too, so SDL2 and SDL3 agree. MPOS_TEST_SHOW_WINDOW takes 1, true, yes or
+# on, in any case.
+case "$(printf '%s' "$MPOS_TEST_SHOW_WINDOW" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')" in
+	1|true|yes|on)
+		show_window="yes"
+		;;
+esac
+if [ -z "$ondevice" ] && [ -z "$show_window" ]; then
+	sdl_driver="${SDL_VIDEO_DRIVER:-${SDL_VIDEODRIVER:-dummy}}"
+	export SDL_VIDEO_DRIVER="${SDL_VIDEO_DRIVER:-$sdl_driver}"
+	export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-$sdl_driver}"
 	export SDL_MAC_BACKGROUND_APP="${SDL_MAC_BACKGROUND_APP:-1}"
 fi
 
@@ -196,7 +205,8 @@ if [ -z "$onetest" ]; then
 	echo "The '--ondevice' flag will run the test(s) on a connected device using mpremote.py over a serial connection."
 	echo
 	echo "Desktop tests run headless so no window takes the keyboard focus. The '--show-window' flag"
-	echo "(or MPOS_TEST_SHOW_WINDOW=1) shows the MicroPythonOS window instead."
+	echo "(or MPOS_TEST_SHOW_WINDOW=1, true, yes or on) shows the MicroPythonOS window instead."
+	echo "An SDL video driver you set under one name (SDL_VIDEO_DRIVER or SDL_VIDEODRIVER) is used for both."
 	echo
 	echo "MicroPythonOS checkout resolved to: $mpos"
 	echo "Lightning Piggy assets resolved to: $lp_assets"
