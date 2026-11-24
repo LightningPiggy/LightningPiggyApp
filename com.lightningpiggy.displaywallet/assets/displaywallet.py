@@ -15,6 +15,7 @@ from lnbits_wallet import LNBitsWallet
 from nwc_wallet import NWCWallet
 from onchain_wallet import OnchainWallet
 from wallet import ensure_lightning_prefix
+import piggy_scan_checks
 
 def _apply_screen_theme(screen):
     """Force an explicit screen bg that matches the app's main display colour —
@@ -429,6 +430,7 @@ class WalletSettingsActivity(SettingsActivity):
              "placeholder": "Auto-rotates if empty.", "should_show": _should_show_wallet_setting, "_slot": self.slot,
              "changed_callback": static_cb},
         ]
+        piggy_scan_checks.add_scan_checks(self.settings, s)
         screen = lv.obj()
         screen.set_style_pad_all(DisplayMetrics.pct_of_width(2), lv.PART.MAIN)
         screen.set_flex_flow(lv.FLEX_FLOW.COLUMN)

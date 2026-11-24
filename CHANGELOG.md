@@ -1,5 +1,6 @@
 0.7.8
 =====
+- Scanning a QR code into a wallet setting now checks it has the right format (LNbits server address and read key, Nostr Wallet Connect link, Lightning Address, xpub or Bitcoin address, Blockbook server address). If it doesn't, a warning below the field says what the scanned code looks like and asks you to check you scanned the right QR code. Needs MicroPythonOS with `scan_check` support; older firmware shows no warning
 - Payment sound follows the speaker chosen in Settings > Audio. On MicroPythonOS 0.22.0 and later that includes a piezo buzzer, so boards with only a buzzer (Fri3d badges, M5Stack Fire, ODROID-GO, LilyGO T4 and others) now play the payment sound too. Older firmware keeps using the i2s speaker, as before
 - Sync nostr_service.py with com_micropythonos_nostr app (NIP-17 private chat changes only; nothing changes for Nostr Wallet Connect)
 
