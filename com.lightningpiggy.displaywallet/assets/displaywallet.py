@@ -125,6 +125,67 @@ def _density_font(base):
     return getattr(lv, "font_montserrat_%d" % size)
 
 
+# --- Hero name fit -----------------------------------------------------------
+# The hero name sits under the hero, right of the payments column and left of
+# the settings gear when the gear shares its rows. Fonts to try, largest first,
+# as mdpi base sizes (stepped up on hdpi screens like the other header fonts).
+_HERO_NAME_FONT_BASES = (12, 10)
+_HERO_NAME_GAP = 5  # px between the hero and the name, when there's room
+_HERO_NAME_EDGE_MARGIN = 2  # px kept clear of the gear glyph or the screen edge
+
+
+def _hero_name_y(height, hero_y2, screen_h):
+    """Top of a `height` px name row: up to _HERO_NAME_GAP below the hero,
+    but never running off the bottom of the screen."""
+    space = screen_h - (hero_y2 + 1)
+    gap = max(0, min(_HERO_NAME_GAP, (space - height) // 2))
+    return min(hero_y2 + 1 + gap, screen_h - height)
+
+
+def _hero_name_layout(widths, heights, hero_x1, hero_x2, hero_y2, left, gear, screen_w, screen_h):
+    """Place the hero name label. `widths` and `heights` are the name's size
+    in each candidate font, largest first. The rest are absolute pixel
+    coordinates: `left` is the first free column right of the payments
+    list, `gear` is the gear glyph's (x1, y1, y2). The right limit is the
+    gear when the name's row overlaps the gear's rows, else the screen edge.
+    Returns (font_index, x1, y1, width, dots): the largest font whose text
+    fits, centred under the hero and slid left if it would pass the right
+    limit. If no font fits, the smallest font with `dots` set and the full
+    available width (LVGL then ends the text with "...")."""
+    gear_x1, gear_y1, gear_y2 = gear
+    placements = []
+    for height in heights:
+        y1 = _hero_name_y(height, hero_y2, screen_h)
+        if y1 <= gear_y2 and y1 + height - 1 >= gear_y1:
+            right = gear_x1 - _HERO_NAME_EDGE_MARGIN
+        else:
+            right = screen_w - 1 - _HERO_NAME_EDGE_MARGIN
+        placements.append((y1, right))
+    index = None
+    for i, w in enumerate(widths):
+        if w <= placements[i][1] - left + 1:
+            index = i
+            break
+    dots = index is None
+    if dots:
+        index = len(widths) - 1
+    y1, right = placements[index]
+    width = max(1, right - left + 1) if dots else widths[index]
+    x1 = (hero_x1 + hero_x2 + 1 - width) // 2
+    if x1 + width - 1 > right:
+        x1 = right - width + 1
+    if x1 < left:
+        x1 = left
+    return index, x1, y1, width, dots
+
+
+def _text_size(text, font):
+    """(width, height) in px of `text` on one line in `font`."""
+    p = lv.point_t()
+    lv.text_get_size(p, text, font, 0, 0, 32767, lv.TEXT_FLAG.NONE)
+    return p.x, p.y
+
+
 def _resolve_hero_src(icon_path, hero, factor, path_exists):
     """Pick the hero PNG and LVGL zoom (256 = 1.0x) for a density factor.
 
@@ -1268,33 +1329,24 @@ class DisplayWallet(Activity):
         # sit on a shelf alongside another and be told apart. Per-slot
         # pref `hero_name<suffix>`; empty → label hidden.
         #
-        # Geometry: 84 px wide centred at the hero's centre x (x=264 on a
-        # 320 wide display, hero_container being centred under the QR).
-        # The widget therefore spans roughly x=222..306, which overlaps
-        # the settings cog widget on its right side (cog at x=280..320,
-        # cog gear glyph starts around x=291) — but this is INTENTIONAL:
-        # the label is created BEFORE the cog, so the cog draws on top
-        # and naturally clips the rightmost characters when a name is too
-        # long, exactly the way the hero image is also already overlapped
-        # by the cog on its bottom-right corner (transparent PNG corners
-        # make it invisible there too). For short names (≤ ~11 chars) the
-        # whole name renders cleanly under the hero; for longer names the
-        # cog gear progressively occludes the tail. Python-side truncation
-        # at 14 chars + "…" (see `_update_hero_name`) caps the worst case.
+        # Geometry: `_layout_hero_name` sizes and places the label once the
+        # settings cog exists: centred under the hero, slid left so it
+        # never runs under the gear glyph, a font step smaller if the name
+        # is too wide, and "..." only if it still doesn't fit (see
+        # `_hero_name_layout`).
         # Text aligned CENTER inside the widget so the visible content
         # sits centred under the hero.
         self.hero_name_label = lv.label(self.main_screen)
         self.hero_name_label.set_style_text_font(_density_font(12), lv.PART.MAIN)
         # CLIP enforces a hard pixel boundary so nothing escapes the widget
-        # bounds (the cog handles the visual occlusion on the right edge).
+        # bounds. Width, font and long mode here are placeholders until
+        # `_layout_hero_name` runs.
         self.hero_name_label.set_long_mode(lv.label.LONG_MODE.CLIP)
         self.hero_name_label.set_width(84)
         self.hero_name_label.set_style_text_align(lv.TEXT_ALIGN.CENTER, lv.PART.MAIN)
         self.hero_name_label.set_style_text_color(self._icon_color(), lv.PART.MAIN)
-        # OUT_BOTTOM_MID of hero_container = horizontally centred on the
-        # hero's centre x, vertically just below the hero. y offset 5 sits
-        # the label cleanly between hero bottom (y=216) and screen bottom
-        # (y=240) — leaves a 1–2 px gap above and below.
+        # Initial placement, centred just below the hero;
+        # `_layout_hero_name` sets the final position.
         self.hero_name_label.align_to(self.hero_container, lv.ALIGN.OUT_BOTTOM_MID, 0, 5)
         self.hero_name_label.set_text("")
         self._update_hero_name()
@@ -1317,6 +1369,7 @@ class DisplayWallet(Activity):
         # itself look uncomfortably close to the screen corner. Widget
         # bounds (and therefore the tap target) are unchanged.
         self.settings_icon.align(lv.ALIGN.CENTER, 4, 4)
+        self._layout_hero_name()
 
         # Track wallet-mode widgets so they can be hidden/shown as a group
         self.wallet_container_widgets = [balance_line, self.balance_label, self.balance_unit_label, self.receive_qr, self.lightning_bolt, self.chain_link, self.payments_container, self.hero_container, self.hero_name_label, settings_button]
@@ -2295,6 +2348,7 @@ class DisplayWallet(Activity):
             self.hero_image.remove_flag(lv.obj.FLAG.HIDDEN)
         else:
             self.hero_image.add_flag(lv.obj.FLAG.HIDDEN)
+        self._layout_hero_name()
         # Re-anchor the stale-indicator dot on the (new) mascot position.
         # Go through _reposition_stale_indicator so the layout-flush +
         # coord read logic is shared between onCreate and hero-image swaps.
@@ -2343,8 +2397,6 @@ class DisplayWallet(Activity):
         """Called when hero image setting changes."""
         self._update_hero_image()
 
-    HERO_NAME_DISPLAY_MAX_CHARS = 8
-
     def _update_hero_name(self):
         """Read the active slot's `hero_name<suffix>` pref and update the
         label below the hero image. Empty pref → label hidden. Per-slot,
@@ -2353,25 +2405,49 @@ class DisplayWallet(Activity):
         the slot-switch path runs before onCreate finishes wiring widgets
         on the very first paint.
 
-        Truncates names longer than `HERO_NAME_DISPLAY_MAX_CHARS`. No
-        ellipsis indicator is added — `font_montserrat_12` doesn't
-        include the Unicode `…` glyph (U+2026), and falling back to plain
-        `...` would consume three of only eight characters. Hard-truncate
-        keeps all eight slots showing actual name content. The full
-        untruncated name is still stored in prefs; only the on-screen
-        rendering is shortened. Edit the constant if you change the
-        label width or font."""
+        The full name is set on the label (no character limit);
+        `_layout_hero_name` fits it under the hero, ending it with "..."
+        only if it is too wide even in the smaller font."""
         if not hasattr(self, 'hero_name_label'):
             return
         _, s = self._active_slot_and_suffix()
         name = self.prefs.get_string("hero_name" + s) or ""
-        if len(name) > self.HERO_NAME_DISPLAY_MAX_CHARS:
-            name = name[:self.HERO_NAME_DISPLAY_MAX_CHARS]
+        self._hero_name_text = name
         self.hero_name_label.set_text(name)
         if name:
             self.hero_name_label.remove_flag(lv.obj.FLAG.HIDDEN)
         else:
             self.hero_name_label.add_flag(lv.obj.FLAG.HIDDEN)
+        self._layout_hero_name()
+
+    def _layout_hero_name(self):
+        """Fit the hero name label under the hero, between the payments
+        list and the settings gear (see `_hero_name_layout`). A no-op until onCreate has created
+        the gear, and for an empty name. Measures the stored name, not
+        `get_text()`, because LVGL's DOTS mode rewrites the label's text."""
+        if not hasattr(self, 'settings_icon') or not hasattr(self, 'hero_name_label'):
+            return
+        name = getattr(self, '_hero_name_text', "")
+        if not name:
+            return
+        self.main_screen.update_layout()
+        hero, qr, payments, gear = lv.area_t(), lv.area_t(), lv.area_t(), lv.area_t()
+        self.hero_container.get_coords(hero)
+        self.receive_qr.get_coords(qr)
+        self.payments_container.get_coords(payments)
+        self.settings_icon.get_coords(gear)
+        fonts = [_density_font(b) for b in _HERO_NAME_FONT_BASES]
+        sizes = [_text_size(name, f) for f in fonts]
+        index, x1, y1, width, dots = _hero_name_layout(
+            [w for w, _ in sizes], [h for _, h in sizes],
+            hero.x1, hero.x2, hero.y2,
+            max(qr.x1, payments.x2 + 1), (gear.x1, gear.y1, gear.y2),
+            DisplayMetrics.width(), DisplayMetrics.height())
+        label = self.hero_name_label
+        label.set_style_text_font(fonts[index], lv.PART.MAIN)
+        label.set_long_mode(lv.label.LONG_MODE.DOTS if dots else lv.label.LONG_MODE.CLIP)
+        label.set_size(width, sizes[index][1])  # one line, so DOTS can't wrap
+        label.align_to(self.hero_container, lv.ALIGN.OUT_BOTTOM_LEFT, x1 - hero.x1, y1 - (hero.y2 + 1))
 
     def _on_hero_name_changed(self, new_value):
         """Called when the user saves the Hero Name setting. Refreshes
