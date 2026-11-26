@@ -1,5 +1,6 @@
 0.7.8
 =====
+- Nostr Wallet Connect: when the NWC URL includes a lightning address (lud16), the receive QR shows that address, and Settings shows it greyed out in "Optional LN Address". Payments to the QR therefore always reach the wallet whose balance and transactions are on screen. When the URL has no lightning address, the field can still be filled in by hand; an address typed earlier is kept but not used while the URL carries one
 - Payment sound follows the speaker chosen in Settings > Audio. On MicroPythonOS 0.22.0 and later that includes a piezo buzzer, so boards with only a buzzer (Fri3d badges, M5Stack Fire, ODROID-GO, LilyGO T4 and others) now play the payment sound too. Older firmware keeps using the i2s speaker, as before
 - Sync nostr_service.py with com_micropythonos_nostr app (NIP-17 private chat changes only; nothing changes for Nostr Wallet Connect)
 

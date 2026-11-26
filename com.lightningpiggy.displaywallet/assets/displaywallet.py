@@ -437,8 +437,30 @@ class WalletSettingsActivity(SettingsActivity):
 
     def onResume(self, screen):
         super().onResume(screen)
+        self._lock_nwc_ln_address()
         _add_floating_back_button(screen, self.finish)
         self._maybe_activate_added_wallet()
+
+    def _lock_nwc_ln_address(self):
+        """When the NWC URL carries a lud16 lightning address, show it in the
+        Optional LN Address row and grey the row out: that address is the one
+        the wallet receives on. Without a lud16 the row stays editable."""
+        s = _slot_suffix(self.slot)
+        if self.prefs.get_string("wallet_type" + s) != "nwc":
+            return
+        lud16 = wallet_cache.nwc_url_lud16(self.prefs.get_string("nwc_url" + s))
+        if not lud16:
+            return
+        for setting in self.settings:
+            if setting.get("key") != "nwc_static_receive_code" + s:
+                continue
+            cont = setting.get("cont")
+            value_label = setting.get("value_label")
+            if cont is None or value_label is None:
+                continue
+            value_label.set_text(lud16)
+            cont.add_state(lv.STATE.DISABLED)
+            cont.set_style_opa(lv.OPA._50, lv.PART.MAIN)
 
     def _maybe_activate_added_wallet(self):
         """If the user just added a wallet to this slot (it transitioned from
@@ -2101,7 +2123,7 @@ class DisplayWallet(Activity):
             try:
                 self.wallet = NWCWallet(self.prefs.get_string("nwc_url" + s))
                 self.wallet.static_receive_code = ensure_lightning_prefix(
-                    self.prefs.get_string("nwc_static_receive_code" + s))
+                    wallet_cache.nwc_receive_override(self.prefs, s))
                 self.redraw_static_receive_code_cb()
             except Exception as e:
                 self.error_cb(f"Couldn't initialize NWC Wallet because: {e}")
@@ -2476,7 +2498,7 @@ class DisplayWallet(Activity):
             if wt == "lnbits":
                 override = self.prefs.get_string("lnbits_static_receive_code" + s)
             elif wt == "nwc":
-                override = self.prefs.get_string("nwc_static_receive_code" + s)
+                override = wallet_cache.nwc_receive_override(self.prefs, s)
             elif wt == "onchain":
                 override = self.prefs.get_string("onchain_static_receive_code" + s)
             else:
@@ -2696,7 +2718,7 @@ class DisplayWallet(Activity):
         wallet_type = self.prefs.get_string("wallet_type" + s)
         override = None
         if wallet_type == "nwc":
-            override = self.prefs.get_string("nwc_static_receive_code" + s)
+            override = wallet_cache.nwc_receive_override(self.prefs, s)
         elif wallet_type == "lnbits":
             override = self.prefs.get_string("lnbits_static_receive_code" + s)
         elif wallet_type == "onchain":

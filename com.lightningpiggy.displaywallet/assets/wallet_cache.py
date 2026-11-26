@@ -35,6 +35,7 @@ import hashlib
 import time
 
 from mpos import SharedPreferences
+from mpos.util import urldecode
 from payment import Payment
 from unique_sorted_list import UniqueSortedList
 
@@ -81,6 +82,64 @@ def slot_suffix(slot):
     return "_2" if str(slot) == "2" else ""
 
 
+_LN_ADDRESS_NAME_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789-_.+"
+_LN_ADDRESS_DOMAIN_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789-."
+
+
+def is_lightning_address(text):
+    """True when `text` is a well-formed lightning address (LUD-16):
+    `name@domain`, with nothing else in it."""
+    if not text or len(text) > 320 or text.count("@") != 1:
+        return False
+    name, domain = text.lower().split("@")
+    if not name or not all(c in _LN_ADDRESS_NAME_CHARS for c in name):
+        return False
+    if "." not in domain or not all(c in _LN_ADDRESS_DOMAIN_CHARS for c in domain):
+        return False
+    return all(label and label[0] != "-" and label[-1] != "-" for label in domain.split("."))
+
+
+def nwc_url_lud16(nwc_url):
+    """The lightning address in an NWC URL's `lud16` parameter, or None.
+
+    Never raises: the URL is whatever was typed or scanned, and this runs
+    while the settings screen is built. The value is returned only when it
+    is a well-formed lightning address, so nothing else from a malformed
+    URL (its secret, for one) can reach the display or the receive QR.
+    With several `lud16` parameters the last one counts, as in
+    NWCWallet.parse_nwc_url.
+    """
+    if not nwc_url:
+        return None
+    if nwc_url.startswith("nostr+walletconnect://"):
+        nwc_url = nwc_url[22:]
+    elif nwc_url.startswith("nwc:"):
+        nwc_url = nwc_url[4:]
+    else:
+        return None
+    try:
+        parts = urldecode(nwc_url).split("?")
+    except Exception:
+        # A "%" that is not followed by two hex digits.
+        return None
+    if len(parts) < 2:
+        return None
+    lud16 = None
+    for param in parts[1].split("&"):
+        if param.startswith("lud16="):
+            lud16 = param[6:]
+    if is_lightning_address(lud16):
+        return lud16
+    return None
+
+
+def nwc_receive_override(prefs, suffix=""):
+    """The NWC wallet's receive address: the lud16 in its NWC URL when the
+    URL has one, otherwise the Optional LN Address setting."""
+    return (nwc_url_lud16(prefs.get_string("nwc_url" + suffix))
+            or prefs.get_string("nwc_static_receive_code" + suffix))
+
+
 def compute_slot_key(wallet_type, slot=1):
     """Return the cache slot_key for a (wallet_type, slot) pair, e.g.
     'lnbits_1', 'nwc_2', 'onchain_1'. The slot is always appended so the
@@ -108,7 +167,7 @@ def compute_fingerprints(wallet_type, prefs, slot=1):
         return creds_fp, qr_fp
     if wallet_type == "nwc":
         nwc_url = prefs.get_string("nwc_url" + s) or ""
-        override = prefs.get_string("nwc_static_receive_code" + s) or ""
+        override = nwc_receive_override(prefs, s) or ""
         creds_fp = _fingerprint("nwc", str(slot), nwc_url)
         qr_fp = _fingerprint("nwc", str(slot), nwc_url, override)
         return creds_fp, qr_fp
