@@ -82,8 +82,33 @@ def slot_suffix(slot):
     return "_2" if str(slot) == "2" else ""
 
 
+_LN_ADDRESS_NAME_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789-_.+"
+_LN_ADDRESS_DOMAIN_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789-."
+
+
+def is_lightning_address(text):
+    """True when `text` is a well-formed lightning address (LUD-16):
+    `name@domain`, with nothing else in it."""
+    if not text or len(text) > 320 or text.count("@") != 1:
+        return False
+    name, domain = text.lower().split("@")
+    if not name or not all(c in _LN_ADDRESS_NAME_CHARS for c in name):
+        return False
+    if "." not in domain or not all(c in _LN_ADDRESS_DOMAIN_CHARS for c in domain):
+        return False
+    return all(label and label[0] != "-" and label[-1] != "-" for label in domain.split("."))
+
+
 def nwc_url_lud16(nwc_url):
-    """The lightning address in an NWC URL's `lud16` parameter, or None."""
+    """The lightning address in an NWC URL's `lud16` parameter, or None.
+
+    Never raises: the URL is whatever was typed or scanned, and this runs
+    while the settings screen is built. The value is returned only when it
+    is a well-formed lightning address, so nothing else from a malformed
+    URL (its secret, for one) can reach the display or the receive QR.
+    With several `lud16` parameters the last one counts, as in
+    NWCWallet.parse_nwc_url.
+    """
     if not nwc_url:
         return None
     if nwc_url.startswith("nostr+walletconnect://"):
@@ -92,14 +117,19 @@ def nwc_url_lud16(nwc_url):
         nwc_url = nwc_url[4:]
     else:
         return None
-    parts = urldecode(nwc_url).split("?")
+    try:
+        parts = urldecode(nwc_url).split("?")
+    except Exception:
+        # A "%" that is not followed by two hex digits.
+        return None
     if len(parts) < 2:
         return None
+    lud16 = None
     for param in parts[1].split("&"):
         if param.startswith("lud16="):
             lud16 = param[6:]
-            if "@" in lud16:
-                return lud16
+    if is_lightning_address(lud16):
+        return lud16
     return None
 
 

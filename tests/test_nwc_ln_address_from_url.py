@@ -75,6 +75,36 @@ class TestNwcUrlLud16(unittest.TestCase):
         for url in (None, "", "https://example.com/?lud16=a@b.com", "garbage"):
             self.assertIsNone(wallet_cache.nwc_url_lud16(url), repr(url))
 
+    def test_malformed_percent_escape_does_not_raise(self):
+        # mpos.util.urldecode raises on a "%" without two hex digits; this
+        # helper runs while the settings screen is built.
+        for tail in ("&lud16=a@b.com%", "&lud16=a%zz@b.com", "%", "&lud16=a@b.com&x=%zz"):
+            self.assertIsNone(wallet_cache.nwc_url_lud16(BASE + tail), tail)
+
+    def test_only_a_well_formed_address_comes_back(self):
+        for value in ("@", "a@", "@b.com", "a@b", "a@b@c.com", "a b@c.com",
+                      "a@b.com/x", "a@-b.com", "a@b..com", "a@b.com.",
+                      "lightning:a@b.com", "a@b.com:8080", "x" * 320 + "@b.com"):
+            self.assertIsNone(wallet_cache.nwc_url_lud16(BASE + "&lud16=" + value), value)
+
+    def test_secret_of_a_malformed_url_never_comes_back(self):
+        # ";" instead of "&": the whole tail used to be returned as the
+        # address, and from there it reaches the settings row and the QR.
+        url = ("nostr+walletconnect://" + PUBKEY + "?relay=wss://relay.example.com"
+               "&lud16=a@b.com;secret=" + SECRET)
+        self.assertIsNone(wallet_cache.nwc_url_lud16(url))
+
+    def test_usual_addresses_are_accepted(self):
+        for value in ("oink@rizful.com", "Oink@Rizful.com", "a.b-c_d+tag@sub.example.co.uk",
+                      "1@1.1.1.1"):
+            self.assertEqual(wallet_cache.nwc_url_lud16(BASE + "&lud16=" + value), value)
+
+    def test_last_lud16_counts_as_in_the_wallet_parser(self):
+        from nwc_wallet import NWCWallet
+        url = BASE + "&lud16=first@example.com&lud16=last@example.com"
+        self.assertEqual(wallet_cache.nwc_url_lud16(url), "last@example.com")
+        self.assertEqual(NWCWallet.parse_nwc_url(None, url)[3], "last@example.com")
+
     def test_matches_the_wallet_parser(self):
         from nwc_wallet import NWCWallet
         for url in (URL_WITH_LUD16, BASE + "&lud16=oink%40rizful.com"):
@@ -221,6 +251,13 @@ class TestSettingsRowLocked(unittest.TestCase):
         WalletSettingsActivity._lock_nwc_ln_address(stub)
         self.assertEqual(stub.row["value_label"].text, "(not set)")
         self.assertEqual(stub.row["cont"].states, set())
+
+    def test_malformed_url_leaves_the_row_editable(self):
+        for url in (URL_WITH_LUD16 + "%", BASE + "&lud16=a@b.com;secret=" + SECRET):
+            stub = _SettingsStub(_FakePrefs({"wallet_type": "nwc", "nwc_url": url}))
+            WalletSettingsActivity._lock_nwc_ln_address(stub)
+            self.assertEqual(stub.row["value_label"].text, "(not set)", url[-12:])
+            self.assertEqual(stub.row["cont"].states, set())
 
     def test_other_rows_untouched(self):
         stub = _SettingsStub(_FakePrefs({"wallet_type": "nwc", "nwc_url": URL_WITH_LUD16}))
