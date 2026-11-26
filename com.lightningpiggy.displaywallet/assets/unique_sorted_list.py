@@ -16,6 +16,12 @@ class UniqueSortedList:
         self._items = []
 
     def add(self, item):
+        items = self._items
+        if not items or item < items[-1]:
+            items.append(item)
+            if len(items) > self.MAX_ITEMS:
+                self._items = items[:self.MAX_ITEMS]
+            return
         # Check if item already exists (using __eq__)
         if item not in self._items:
             # Insert item in sorted position for descending order (using __gt__)

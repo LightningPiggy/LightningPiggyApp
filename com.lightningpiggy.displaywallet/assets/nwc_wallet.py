@@ -163,13 +163,14 @@ class NWCWallet(Wallet):
             comment = transaction["description"]
             if comment is None:
                 return comment
-            json_comment = json.loads(comment)
-            for field in json_comment:
-                if field[0] == "text/plain":
-                    comment = field[1]
-                    break
-            else:
-                print("text/plain field is missing from JSON description")
+            if isinstance(comment, str) and comment.lstrip().startswith("["):
+                json_comment = json.loads(comment)
+                for field in json_comment:
+                    if field[0] == "text/plain":
+                        comment = field[1]
+                        break
+                else:
+                    print("text/plain field is missing from JSON description")
         except Exception as e:
             print("Info: comment {} is not JSON, using as-is ({})".format(comment, e))
         comment = super().try_parse_as_zap(comment)
